@@ -1,0 +1,18 @@
+{
+  "name": "worship-full-to-look1",
+  "_comment": "Reverse of look1-to-worship-full: fade out the USK3 supersource blend, cut SS layout back to the display-fullframe position, transition SuperSource back onto program, animate boxes to look1, then fade the border keys back in. Replace input 6000 with your SuperSource input number if different.",
+  "from": "worship-full",
+  "to": "look1",
+  "steps": [
+    { "type": "setNextTransition", "selection": ["key3"], "style": "mix" },
+    { "type": "auto" },
+    { "type": "applyLook", "look": "display-fullframe" },
+    { "type": "preview", "input": 6000 },
+    { "type": "setNextTransition", "selection": ["background"], "style": "mix" },
+    { "type": "auto" },
+    { "type": "animate", "look": "look1", "duration": 1200, "easing": "easeInOutCubic" },
+    { "type": "setNextTransition", "selection": ["key1"], "style": "mix" },
+    { "type": "auto" },
+    { "type": "setCurrentLook", "look": "look1" }
+  ]
+}

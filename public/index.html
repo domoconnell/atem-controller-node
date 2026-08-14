@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATEM Controller</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1e2128; --line: #2e323b;
+    --text: #e6e8ec; --dim: #8b919c;
+    --ok: #3fb96b; --bad: #d8504d; --accent: #4f8fe8; --warn: #e0a53f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0 12px 0 0; font-weight: 600; }
+  .conn { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: #444; margin-left: auto; }
+  .pulse.tick { background: var(--accent); }
+  main {
+    display: grid; grid-template-columns: minmax(340px, 1.4fr) minmax(300px, 1fr);
+    gap: 14px; padding: 14px; max-width: 1250px; margin: 0 auto;
+  }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px;
+  }
+  section h2 {
+    margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--dim); font-weight: 600;
+  }
+  canvas.main-ss { width: 100%; border-radius: 4px; background: #000; display: block; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
+  button {
+    background: #2a2e37; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  button:hover { background: #343946; }
+  button:disabled { opacity: .3; cursor: not-allowed; }
+  button:disabled:hover { background: #2a2e37; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+  button.small { padding: 3px 8px; font-size: 12px; }
+  button.onair { background: var(--bad); border-color: var(--bad); color: #fff; }
+  input[type=text] {
+    background: #12141a; color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 10px; font: inherit; min-width: 140px;
+  }
+  .kv { color: var(--dim); font-size: 13px; }
+  .kv b { color: var(--text); font-weight: 600; }
+  .busybar { color: var(--warn); font-size: 13px; min-height: 18px; margin-bottom: 6px; }
+  .busybar.active {
+    background: #3a2f14; border: 1px solid var(--warn); border-radius: 6px;
+    padding: 6px 10px; font-weight: 600;
+  }
+  .melabel { font-size: 12.5px; color: var(--dim); margin-top: 8px; }
+  .look-card {
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    margin-bottom: 8px; background: #191c22;
+  }
+  .look-card.current { border-color: var(--ok); }
+  .look-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .look-head .name { font-weight: 600; cursor: pointer; user-select: none; }
+  .look-head .name::before { content: "▸ "; color: var(--dim); }
+  .look-card.open .look-head .name::before { content: "▾ "; }
+  .look-head .spacer { flex: 1; }
+  .look-body { display: none; margin-top: 8px; }
+  .look-card.open .look-body { display: grid; grid-template-columns: 150px 1fr; gap: 10px; }
+  .look-body canvas { width: 150px; border-radius: 4px; background: #000; }
+  table.params { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+  table.params td { padding: 2px 8px 2px 0; vertical-align: top; }
+  table.params td:first-child { color: var(--dim); white-space: nowrap; }
+  .chip {
+    display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px;
+    border: 1px solid var(--line); color: var(--dim); margin-right: 3px;
+  }
+  .chip.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ATEM Controller</h1>
+  <span class="conn"><span id="dot-server" class="dot"></span>Server</span>
+  <span class="conn"><span id="dot-atem" class="dot"></span>ATEM</span>
+  <span class="conn"><span id="dot-hd" class="dot"></span>HyperDeck</span>
+  <span class="kv">Look: <b id="current-look">—</b></span>
+  <span class="pulse" id="pulse" title="flashes on every live update"></span>
+</header>
+<main>
+  <section>
+    <h2>SuperSource — live</h2>
+    <canvas id="ss" class="main-ss" width="960" height="540"></canvas>
+    <div class="melabel" id="me-info"></div>
+    <div class="melabel" id="usk-row"></div>
+    <div class="melabel" id="hd-info"></div>
+  </section>
+
+  <section>
+    <h2>Control</h2>
+    <div class="busybar" id="busy"></div>
+    <div class="row">
+      <button class="danger" onclick="cmd('/stop')">STOP</button>
+      <button class="lockable" onclick="cmd('/transition/auto')">Auto Trans</button>
+      <button onclick="cmd('/reload')">Reload files</button>
+    </div>
+    <h2 style="margin-top:14px">Record look</h2>
+    <div class="row">
+      <input type="text" id="capname" placeholder="new look name"
+             onkeydown="if(event.key==='Enter')capture()">
+      <button class="primary lockable" onclick="capture()">⏺ Capture current state</button>
+    </div>
+    <h2 style="margin-top:14px">Looks</h2>
+    <div id="looks"></div>
+    <h2 style="margin-top:14px">Macros</h2>
+    <div class="row" id="macros"></div>
+    <h2 style="margin-top:14px">HyperDeck</h2>
+    <div class="row">
+      <button class="lockable" onclick="cmd('/hyperdeck/play', [1])">Play (loop)</button>
+      <button class="lockable" onclick="cmd('/hyperdeck/play', [0])">Play</button>
+      <button class="lockable" onclick="cmd('/hyperdeck/stop')">Stop</button>
+    </div>
+  </section>
+</main>
+<script>
+let state = null
+let ws
+const openCards = new Set()
+
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host)
+  ws.onopen = () => setDot('dot-server', true)
+  ws.onclose = () => { setDot('dot-server', false); setTimeout(connect, 2000) }
+  ws.onmessage = (ev) => {
+    try {
+      state = JSON.parse(ev.data)
+      flashPulse()
+      render()
+    } catch (e) { console.error('render failed:', e) }
+  }
+}
+connect()
+
+let pulseTimer
+function flashPulse() {
+  const p = document.getElementById('pulse')
+  p.classList.add('tick')
+  clearTimeout(pulseTimer)
+  pulseTimer = setTimeout(() => p.classList.remove('tick'), 150)
+}
+
+async function cmd(address, args) {
+  try {
+    const r = await fetch('/api/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address, args: args || [] }),
+    })
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}))
+      console.error('command failed:', body.error)
+      alert(body.error || 'command failed')
+    }
+  } catch (e) { console.error(e) }
+}
+
+async function showPlan(name) {
+  try {
+    const r = await fetch('/api/plan/' + encodeURIComponent(name))
+    const body = await r.json()
+    if (!body.ok) return alert(body.error)
+    const lines = body.steps.map((s) => {
+      const { type, ...rest } = s
+      const args = JSON.stringify(rest)
+      return '• ' + type + (args !== '{}' ? ' ' + args : '')
+    })
+    if (body.notes && body.notes.length) lines.push('', 'Notes: ' + body.notes.join('; '))
+    alert('Plan for → ' + name + '\n\n' + lines.join('\n'))
+  } catch (e) { alert(e.message) }
+}
+
+function capture() {
+  const name = document.getElementById('capname').value.trim()
+  if (name) { cmd('/look/capture', [name]); document.getElementById('capname').value = '' }
+}
+
+function setDot(id, on) {
+  document.getElementById(id).classList.toggle('on', !!on)
+}
+
+function inputName(id) {
+  if (id == null) return '—'
+  return (state && state.atem.inputs && state.atem.inputs[id]) || String(id)
+}
+
+function render() {
+  if (!state) return
+  setDot('dot-atem', state.atem.connected)
+  setDot('dot-hd', state.hyperdeck.connected)
+  document.getElementById('current-look').textContent = state.currentLook || '—'
+
+  const locked = !!(state.busy || state.animating)
+  const busy = document.getElementById('busy')
+  busy.classList.toggle('active', locked)
+  if (state.busy) {
+    const route = state.busy.to ? ` (${state.busy.from ?? '?'} → ${state.busy.to})` : ''
+    busy.textContent = `⏳ Running ${state.busy.name}${route} — step ${state.busy.stepIndex + 1}/${state.busy.totalSteps}`
+  } else if (state.animating) {
+    busy.textContent = '⏳ Animating SuperSource…'
+  } else {
+    busy.textContent = ''
+  }
+
+  renderLooks(locked)
+
+  const macrosEl = document.getElementById('macros')
+  macrosEl.innerHTML = ''
+  for (const m of state.macros) {
+    const b = document.createElement('button')
+    b.textContent = m.name
+    b.disabled = locked
+    if (m.from || m.to) b.title = `${m.from ?? '*'} → ${m.to ?? '?'}`
+    b.onclick = () => cmd('/macro/run', [m.name])
+    macrosEl.appendChild(b)
+  }
+  for (const el of document.querySelectorAll('button.lockable')) el.disabled = locked
+
+  const me = state.atem.mixEffects[state.mainMe]
+  document.getElementById('me-info').textContent = me
+    ? `M/E ${state.mainMe + 1} — PGM: ${inputName(me.programInput)} · PVW: ${inputName(me.previewInput)}` +
+      (me.mixRate != null ? ` · mix ${me.mixRate}f` : '') +
+      (me.inTransition ? ` · IN TRANSITION (${Math.round(me.handlePosition / 100)}%)` : '')
+    : 'No M/E state'
+
+  const uskRow = document.getElementById('usk-row')
+  uskRow.innerHTML = 'USK: '
+  ;(me && me.keyers || []).forEach((k, i) => {
+    if (!k) return
+    const b = document.createElement('button')
+    b.textContent = `${i + 1}`
+    b.classList.add('small')
+    b.style.marginRight = '4px'
+    if (k.onAir) b.classList.add('onair')
+    b.onclick = () => cmd('/usk', [i + 1, 'toggle'])
+    uskRow.appendChild(b)
+  })
+
+  const t = state.hyperdeck.transport || {}
+  document.getElementById('hd-info').textContent = t.status
+    ? `HyperDeck: ${t.status} · clip ${t['clip id'] ?? '—'} · loop ${t.loop ?? '—'} · ${t['video format'] ?? ''}`
+    : 'HyperDeck: no transport info'
+
+  drawBoxes(document.getElementById('ss'), state.atem.boxes)
+}
+
+function renderLooks(locked) {
+  const looksEl = document.getElementById('looks')
+  looksEl.innerHTML = ''
+  for (const look of state.looks) {
+    const card = document.createElement('div')
+    card.className = 'look-card'
+    if (look.name === state.currentLook) card.classList.add('current')
+    if (openCards.has(look.name)) card.classList.add('open')
+
+    const head = document.createElement('div')
+    head.className = 'look-head'
+    const name = document.createElement('span')
+    name.className = 'name'
+    name.textContent = look.name
+    name.onclick = () => {
+      openCards.has(look.name) ? openCards.delete(look.name) : openCards.add(look.name)
+      render()
+    }
+    head.appendChild(name)
+    const spacer = document.createElement('span')
+    spacer.className = 'spacer'
+    head.appendChild(spacer)
+    head.appendChild(btn('Goto', () => cmd('/goto', [look.name]), 'primary small', locked))
+    head.appendChild(btn('Plan', () => showPlan(look.name), 'small'))
+    head.appendChild(btn('Animate', () => cmd('/look/animate', [look.name]), 'small', locked))
+    head.appendChild(btn('Snap', () => cmd('/look/apply', [look.name]), 'small', locked))
+    head.appendChild(btn('Re-rec', () => {
+      if (confirm(`Overwrite '${look.name}' with the current live state?`)) cmd('/look/capture', [look.name])
+    }, 'small', locked))
+    head.appendChild(btn('✕', () => {
+      if (confirm(`Delete look '${look.name}'?`)) cmd('/look/delete', [look.name])
+    }, 'small', locked))
+    card.appendChild(head)
+
+    const body = document.createElement('div')
+    body.className = 'look-body'
+    const cv = document.createElement('canvas')
+    cv.width = 300; cv.height = 169
+    body.appendChild(cv)
+    body.appendChild(lookParams(look))
+    card.appendChild(body)
+    looksEl.appendChild(card)
+    if (openCards.has(look.name)) drawBoxes(cv, look.boxes)
+  }
+  if (!state.looks.length) {
+    looksEl.innerHTML = '<span class="kv">No looks recorded yet — set up a state on the switcher and hit Capture.</span>'
+  }
+}
+
+function lookParams(look) {
+  const tbl = document.createElement('table')
+  tbl.className = 'params'
+  const rows = []
+  const boxLines = (look.boxes || [])
+    .map((b, i) => {
+      if (!b) return null
+      const src = esc(b.sourceName || inputName(b.source))
+      const geom = `(${(b.x / 100).toFixed(1)}, ${(b.y / 100).toFixed(1)}) size ${(b.size / 10).toFixed(0)}%${b.cropped ? ' crop' : ''}`
+      return b.enabled
+        ? `${i + 1}: <b>${src}</b> · ${geom}`
+        : `<span style="opacity:.5">${i + 1}: ${src} · ${geom} · off</span>`
+    })
+    .filter(Boolean)
+  rows.push(['Boxes', boxLines.length ? boxLines.join('<br>') : '—'])
+  if (look.ssProperties) {
+    const p = look.ssProperties
+    let art = `<b>${esc(p.artFillSourceName || inputName(p.artFillSource))}</b>`
+    art += ` / key ${esc(p.artCutSourceName || inputName(p.artCutSource))}`
+    art += ` · ${esc(p.artOptionName || (p.artOption === 1 ? 'foreground' : 'background'))}`
+    if (!p.artPreMultiplied) art += ` · clip ${(p.artClip / 10).toFixed(1)}% gain ${(p.artGain / 10).toFixed(1)}%`
+    else art += ' · premult'
+    if (p.artInvertKey) art += ' · invert'
+    rows.push(['SS Art', art])
+  }
+  if (look.me) {
+    rows.push(['M/E ' + ((look.me.index ?? 1) + 1) + ' PGM', esc(look.me.programInputName || look.me.programInput)])
+    rows.push(['PVW', esc(look.me.previewInputName || look.me.previewInput)])
+    if (look.me.usk && look.me.usk.some(Boolean)) {
+      const lines = look.me.usk.map((k, i) => {
+        if (!k) return null
+        let line = `<span class="chip ${k.onAir ? 'on' : ''}">USK${i + 1}</span> ${esc(k.keyType)} · fill ${esc(k.fillSourceName)} / key ${esc(k.cutSourceName)}`
+        if (k.keyType === 'luma' && k.luma) {
+          line += ` · clip ${(k.luma.clip / 10).toFixed(1)}% gain ${(k.luma.gain / 10).toFixed(1)}%${k.luma.preMultiplied ? ' · premult' : ''}${k.luma.invert ? ' · invert' : ''}`
+        }
+        if (k.keyType === 'dve' && k.dve) {
+          line += ` · pos (${k.dve.positionX}, ${k.dve.positionY}) size (${k.dve.sizeX}, ${k.dve.sizeY})${k.dve.borderEnabled ? ' · border' : ''}`
+        }
+        if (k.flyEnabled) line += ' · fly'
+        if (k.mask && k.mask.maskEnabled) line += ' · mask'
+        return line
+      }).filter(Boolean)
+      rows.push(['USKs', lines.join('<br>')])
+    } else {
+      const usks = (look.me.uskOnAir || [])
+        .map((on, i) => `<span class="chip ${on ? 'on' : ''}">USK${i + 1}</span>`).join('')
+      rows.push(['USKs', usks || '—'])
+    }
+    if (look.me.nextTransition) {
+      rows.push(['Next trans', esc(look.me.nextTransition.style) + ' [' + look.me.nextTransition.selection.map(esc).join(', ') + ']'])
+    }
+  }
+  if (look.hyperdeck) {
+    const h = look.hyperdeck
+    rows.push(['HyperDeck', h.connected
+      ? `${esc(h.status)} · clip ${h.clipId ?? '—'}${h.loop ? ' · loop' : ''}${h.singleClip ? ' · single' : ''}`
+      : 'not connected'])
+  }
+  rows.push(['Captured', look.capturedAt ? new Date(look.capturedAt).toLocaleString() : '—'])
+  tbl.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')
+  return tbl
+}
+
+function esc(v) {
+  return String(v ?? '—').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))
+}
+
+function btn(label, fn, cls, disabled) {
+  const b = document.createElement('button')
+  b.textContent = label
+  if (cls) b.className = cls
+  b.disabled = !!disabled
+  b.onclick = fn
+  return b
+}
+
+// ATEM SuperSource coords: x/y are hundredths of DVE units. The visible
+// frame is 32 units wide × 18 tall; size 1000 = a full-frame box.
+function drawBoxes(c, boxes) {
+  const ctx = c.getContext('2d')
+  const W = c.width, H = c.height
+  ctx.clearRect(0, 0, W, H)
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, W, H)
+
+  const colors = ['#4f8fe8', '#3fb96b', '#e0a53f', '#c05fd6']
+  ;(boxes || []).forEach((b, i) => {
+    if (!b || !b.enabled) return
+    const scale = b.size / 1000
+    const bw = scale * W
+    const bh = scale * H
+    const cx = W / 2 + (b.x / 100 / 32) * W
+    const cy = H / 2 - (b.y / 100 / 18) * H
+    let x0 = cx - bw / 2, y0 = cy - bh / 2, w = bw, h = bh
+    if (b.cropped) {
+      // Crop values are thousandths of DVE units: left/right 0-32000
+      // (full 32-unit width), top/bottom 0-18000. The box stays centred on
+      // (x, y); cropping trims the scaled box inward from each edge.
+      const cl = (b.cropLeft / 32000) * bw
+      const cr = (b.cropRight / 32000) * bw
+      const ct = (b.cropTop / 18000) * bh
+      const cb = (b.cropBottom / 18000) * bh
+      x0 += cl; w = Math.max(0, w - cl - cr); y0 += ct; h = Math.max(0, h - ct - cb)
+    }
+    ctx.fillStyle = colors[i] + '33'
+    ctx.strokeStyle = colors[i]
+    ctx.lineWidth = 2
+    ctx.fillRect(x0, y0, w, h)
+    ctx.strokeRect(x0, y0, w, h)
+    if (W > 400) {
+      ctx.fillStyle = colors[i]
+      ctx.font = '13px sans-serif'
+      ctx.fillText(`Box ${i + 1} · ${inputName(b.source)}`, x0 + 6, y0 + 17)
+    }
+  })
+}
+</script>
+</body>
+</html>

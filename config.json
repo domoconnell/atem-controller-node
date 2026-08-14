@@ -1,0 +1,43 @@
+{
+  "atem": {
+    "ip": "10.10.10.51"
+  },
+  "hyperdeck": {
+    "ip": "10.10.10.55",
+    "port": 9993
+  },
+  "supersource": {
+    "id": 0,
+    "me": 1,
+    "ssInput": 6000,
+    "displayBox": 3,
+    "comment": "ssrc id 0 = SuperSource 1. me 1 = M/E 2 (zero-indexed). ssInput = ATEM input number of the SuperSource. displayBox = zero-indexed box that carries the main display feed (box 4)."
+  },
+  "osc": {
+    "listenPort": 9000,
+    "feedback": [
+      { "host": "10.10.10.20", "port": 9001 }
+    ],
+    "comment": "Add feedback targets as {\"host\": \"<companion-ip>\", \"port\": 9001} to push /status/... OSC to Companion."
+  },
+  "web": {
+    "port": 3000
+  },
+  "animation": {
+    "fps": 30,
+    "defaultDurationMs": 500,
+    "defaultEasing": "easeInOutQuad"
+  },
+  "transition": {
+    "mixRateFrames": null,
+    "keyFadeMs": 150,
+    "videoFps": 50,
+    "comment": "mixRateFrames: if set, the engine pins the M/E mix rate (frames) for background fades; null = inherit the switcher. keyFadeMs: speed of pure border-key (USK) fades. videoFps: frame rate used to convert times into mix-rate frames."
+  },
+  "companion": {
+    "host": "10.10.10.20",
+    "port": 12321,
+    "varPrefix": "atemcn_",
+    "comment": "Companion's built-in OSC API port (default 12321). Custom variables <prefix>active_look, <prefix>transitioning, <prefix>going_to, <prefix>coming_from are pushed there - create them in Companion."
+  }
+}
