@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Transparency Test</title>
+<style>
+  html { color-scheme: light dark; }
+  /* The whole point: the page background must be TRANSPARENT.
+     If ProPresenter composites correctly, everything outside the
+     graphics below shows the media layer underneath. */
+  html, body {
+    background: transparent;
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, Helvetica, Arial, sans-serif;
+  }
+  .wrap {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 4vh;
+  }
+  .big {
+    font-size: 18vw; font-weight: 900; letter-spacing: 0.05em;
+    color: #fff;
+    text-shadow: 0 4px 30px rgba(0,0,0,.55);
+    line-height: 1;
+  }
+  .clock {
+    font-size: 6vw; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #ffcf40;
+    text-shadow: 0 2px 16px rgba(0,0,0,.5);
+  }
+  .row { display: flex; gap: 3vw; align-items: center; }
+  .dot {
+    width: 3vw; height: 3vw; border-radius: 50%;
+    background: #ff4040;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.6); opacity: .5; }
+  }
+  .half {
+    padding: 1vh 2vw; border-radius: 1vw;
+    background: rgba(0, 128, 255, 0.35);   /* semi-transparent: tests alpha blending, not just full holes */
+    color: #fff; font-size: 2.5vw; font-weight: 600;
+  }
+  .lab { display: flex; flex-direction: column; gap: 0.6vh; }
+  .labrow { display: flex; align-items: center; gap: 1.5vw; }
+  .tag {
+    width: 2.2vw; height: 2.2vw; border-radius: 50%;
+    background: #fff; color: #000; font-weight: 800; font-size: 1.3vw;
+    display: grid; place-items: center;
+  }
+  .t { font-size: 3.6vw; font-weight: 900; color: #fff; line-height: 1.15; }
+  .how { font-size: 1.3vw; color: #ffcf40; font-weight: 600; }
+  .sh-text { text-shadow: 0 6px 18px rgba(0,0,0,.9); }
+  .sh-filter { filter: drop-shadow(0 6px 10px rgba(0,0,0,.9)); }
+  .sh-stack { position: relative; display: inline-block; }
+  .sh-stack .blurred {
+    position: absolute; left: 0; top: 6px; filter: blur(9px); color: #000; opacity: .9;
+  }
+  .sh-stack .crisp { position: relative; }
+  .sh-stroke {
+    -webkit-text-stroke: 3px rgba(0,0,0,.85);
+    paint-order: stroke fill;
+  }
+  .corner {
+    position: absolute; width: 4vw; height: 4vw;
+    border: 0.4vw solid rgba(255,255,255,.9);
+  }
+  .tl { top: 1vw; left: 1vw; border-right: 0; border-bottom: 0; }
+  .tr { top: 1vw; right: 1vw; border-left: 0; border-bottom: 0; }
+  .bl { bottom: 1vw; left: 1vw; border-right: 0; border-top: 0; }
+  .br { bottom: 1vw; right: 1vw; border-left: 0; border-top: 0; }
+</style>
+</head>
+<body>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+  <div class="wrap">
+    <div class="big">TEST</div>
+    <div class="row">
+      <div class="dot"></div>
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="dot" style="animation-delay:.5s"></div>
+    </div>
+    <div class="half">semi-transparent panel — background should show through, tinted</div>
+
+    <!-- Shadow lab: which of these render a visible shadow/outline? -->
+    <div class="lab">
+      <div class="labrow"><span class="tag">A</span><span class="t sh-text">SHADOW</span><span class="how">text-shadow</span></div>
+      <div class="labrow"><span class="tag">B</span><span class="t sh-filter">SHADOW</span><span class="how">filter: drop-shadow</span></div>
+      <div class="labrow"><span class="tag">C</span><canvas id="cnv" width="600" height="90"></canvas><span class="how">canvas shadowBlur</span></div>
+      <div class="labrow"><span class="tag">D</span><span class="t sh-stack"><span class="blurred">SHADOW</span><span class="crisp">SHADOW</span></span><span class="how">blurred twin underneath</span></div>
+      <div class="labrow"><span class="tag">E</span><span class="t sh-stroke">SHADOW</span><span class="how">text stroke outline</span></div>
+    </div>
+  </div>
+<script>
+  // Live clock proves the web view is rendering continuously,
+  // not showing a frozen snapshot.
+  const el = document.getElementById('clock')
+  setInterval(() => {
+    el.textContent = new Date().toLocaleTimeString('en-GB')
+  }, 250)
+
+  // C: canvas-drawn text — shadow baked into the bitmap itself, so the
+  // compositor has nothing extra to do. Most likely to survive anywhere.
+  const c = document.getElementById('cnv')
+  const ctx = c.getContext('2d')
+  const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  c.width = 600 * dpr; c.height = 90 * dpr
+  c.style.width = '18vw'
+  ctx.scale(dpr, dpr)
+  ctx.font = '900 64px -apple-system, Helvetica, sans-serif'
+  ctx.shadowColor = 'rgba(0,0,0,0.9)'
+  ctx.shadowBlur = 18
+  ctx.shadowOffsetY = 6
+  ctx.fillStyle = '#fff'
+  ctx.fillText('SHADOW', 4, 68)
+</script>
+</body>
+</html>

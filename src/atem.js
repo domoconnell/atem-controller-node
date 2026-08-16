@@ -230,6 +230,61 @@ export class AtemController extends EventEmitter {
     }
   }
 
+  // ---- USK settings (pattern / fill / mask) -----------------------------
+
+  async setUskPattern(keyer, props, me = this.me) {
+    await this.atem.setUpstreamKeyerPatternSettings(props, me, keyer)
+  }
+
+  async setUskType(keyer, props, me = this.me) {
+    await this.atem.setUpstreamKeyerType(props, me, keyer)
+  }
+
+  async setUskFillSource(keyer, source, me = this.me) {
+    await this.atem.setUpstreamKeyerFillSource(source, me, keyer)
+  }
+
+  async setUskCutSource(keyer, source, me = this.me) {
+    await this.atem.setUpstreamKeyerCutSource(source, me, keyer)
+  }
+
+  async setUskMask(keyer, props, me = this.me) {
+    await this.atem.setUpstreamKeyerMaskSettings(props, me, keyer)
+  }
+
+  /**
+   * Bring a keyer's static settings (type, sources, pattern, mask) in line
+   * with a recorded look's keyer entry. Only sends what differs.
+   */
+  async applyUskSettings(keyer, want, me = this.me) {
+    const live = this.getUskSettings(me)[keyer]
+    if (!live || !want) return
+    const KEY_TYPES = { luma: 0, chroma: 1, pattern: 2, dve: 3 }
+    if (want.keyType && want.keyType !== live.keyType) {
+      await this.setUskType(keyer, { mixEffectKeyType: KEY_TYPES[want.keyType] }, me)
+    }
+    if (want.fillSource !== undefined && want.fillSource !== live.fillSource) {
+      await this.setUskFillSource(keyer, want.fillSource, me)
+    }
+    if (want.cutSource !== undefined && want.cutSource !== live.cutSource) {
+      await this.setUskCutSource(keyer, want.cutSource, me)
+    }
+    if (want.pattern) {
+      const diff = {}
+      for (const [k, v] of Object.entries(want.pattern)) {
+        if (live.pattern?.[k] !== v) diff[k] = v
+      }
+      if (Object.keys(diff).length) await this.setUskPattern(keyer, diff, me)
+    }
+    if (want.mask) {
+      const diff = {}
+      for (const [k, v] of Object.entries(want.mask)) {
+        if (live.mask?.[k] !== v) diff[k] = v
+      }
+      if (Object.keys(diff).length) await this.setUskMask(keyer, diff, me)
+    }
+  }
+
   // ---- Snapshot for UI / looks ------------------------------------------
 
   /** Compact snapshot of everything the UI and look store care about. */

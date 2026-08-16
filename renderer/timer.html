@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Timer</title>
+<style>
+  html { color-scheme: dark; }
+  html, body { background: transparent; margin: 0; height: 100%; overflow: hidden; }
+  #frag { position: absolute; inset: 0; }
+</style>
+</head>
+<body>
+<div id="frag"></div>
+<script src="/r/fragment.js"></script>
+<script>
+// Single-fragment page: /r/timer.html?part=...&font=... (see fragment.js
+// for the full param list). Layouts with several elements use layout.html.
+const qp = new URLSearchParams(location.search)
+const frag = TimerFragment.create(document.getElementById('frag'), qp)
+let lastData = 0
+const ingest = (snap) => { lastData = Date.now(); frag.feed(snap) }
+
+if (qp.get('feed') === 'parent') {
+  // Embedded preview (designer canvas): the parent page holds ONE stream
+  // and forwards snapshots - avoids exhausting the browser's per-host
+  // connection limit when many previews are on screen.
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'tfr-timers') ingest(e.data.snap)
+  })
+} else {
+  const es = new EventSource('/api/timers/stream')
+  es.onmessage = (ev) => ingest(JSON.parse(ev.data))
+  setInterval(() => {
+    if (Date.now() - lastData > 2500) {
+      fetch('/api/timers').then((r) => r.json()).then(ingest).catch(() => {})
+    }
+  }, 1500)
+}
+</script>
+</body>
+</html>

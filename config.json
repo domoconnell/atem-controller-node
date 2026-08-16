@@ -16,7 +16,10 @@
   "osc": {
     "listenPort": 9000,
     "feedback": [
-      { "host": "10.10.10.20", "port": 9001 }
+      {
+        "host": "10.10.10.20",
+        "port": 9001
+      }
     ],
     "comment": "Add feedback targets as {\"host\": \"<companion-ip>\", \"port\": 9001} to push /status/... OSC to Companion."
   },
@@ -39,5 +42,11 @@
     "port": 12321,
     "varPrefix": "atemcn_",
     "comment": "Companion's built-in OSC API port (default 12321). Custom variables <prefix>active_look, <prefix>transitioning, <prefix>going_to, <prefix>coming_from are pushed there - create them in Companion."
+  },
+  "propresenter": {
+    "ip": "127.0.0.1",
+    "port": 49773,
+    "pollMs": 500,
+    "comment": "ProPresenter Mac (Preferences > Network). Empty ip = built-in demo timer for designing renderer pages."
   }
 }

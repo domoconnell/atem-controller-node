@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Countdown Renderer</title>
+<style>
+  :root { --bg:#14161a; --panel:#1e2128; --line:#2e323b; --text:#e6e8ec; --dim:#8b919c; --accent:#f2b84b; --ok:#3fb96b; --bad:#d8504d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 -apple-system,"Segoe UI",sans-serif; }
+  header { padding:12px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+  h1 { font-size:15px; margin:0; }
+  .sub { color:var(--dim); font-size:12px; }
+  main { display:grid; grid-template-columns: 300px 1fr 240px; gap:16px; padding:16px; height: calc(100vh - 54px); }
+  @media (max-width:1000px){ main{grid-template-columns:1fr; height:auto} }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; overflow-y:auto; }
+  label { display:block; font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:10px 0 3px; }
+  select, input { width:100%; background:#12141a; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
+  input[type=color]{ padding:2px; height:32px; }
+  input[type=checkbox]{ width:auto; accent-color:var(--accent); }
+  .checks { display:flex; gap:10px; align-items:center; height:32px; }
+  .chk { display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--text);
+    text-transform:none; letter-spacing:0; margin:0; cursor:pointer; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .preview-col { display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .preview-wrap { position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--line);
+    background: repeating-conic-gradient(#22252c 0% 25%, #2c3039 0% 50%) 0 0 / 32px 32px; flex:1; min-height:280px; }
+  iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+  .url { display:flex; gap:8px; }
+  .url input { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; }
+  button { background:var(--accent); border:0; color:#000; font-weight:700; border-radius:6px; padding:7px 12px; cursor:pointer; font:inherit; }
+  button.ghost { background:#2a2e37; color:var(--text); }
+  button.small { padding:4px 8px; font-size:11px; }
+  button.danger { background:transparent; color:var(--bad); }
+  .timers { margin-top:8px; font-size:11.5px; color:var(--dim); }
+  .timers b { color:var(--text); }
+  .hint { font-size:10.5px; color:var(--dim); margin-top:3px; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); margin:4px 0 8px; }
+  .bk { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin-bottom:8px; cursor:pointer; }
+  .bk:hover { border-color:var(--accent); }
+  .bk .name { font-weight:700; font-size:12.5px; }
+  .bk .q { font-family:ui-monospace,Menlo,monospace; font-size:9.5px; color:var(--dim); word-break:break-all;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .bk .actions { display:flex; gap:6px; margin-top:6px; }
+  .savebar { display:flex; gap:6px; margin-bottom:12px; }
+  fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 10px; padding:2px 10px 10px; }
+  .fontbox { position:relative; }
+  .fontlist {
+    position:absolute; left:0; right:0; top:100%; z-index:50; max-height:340px; overflow-y:auto;
+    background:#12141a; border:1px solid var(--accent); border-radius:0 0 8px 8px;
+    box-shadow:0 12px 30px rgba(0,0,0,.6);
+  }
+  .fontrow { padding:7px 10px; cursor:pointer; display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+  .fontrow:hover, .fontrow.sel { background:#262b35; }
+  .fontrow .fname { font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fontrow .sample { font-size:13px; color:var(--dim); white-space:nowrap; }
+  .fontlist .loadall { padding:8px 10px; font-size:11px; color:var(--accent); cursor:pointer; border-bottom:1px solid var(--line); }
+  legend { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); padding:0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Countdown Renderer</h1>
+  <span class="sub">build a fragment URL → paste into a ProPresenter web object · <a href="/transparency-test" style="color:var(--dim)">transparency test</a></span>
+</header>
+<main>
+  <div class="panel">
+    <fieldset><legend>Source</legend>
+      <label>Timer</label>
+      <select id="timer"></select>
+      <div class="timers" id="timerinfo"></div>
+      <div class="row2">
+        <div><label>Part</label>
+          <select id="part">
+            <option value="time">time (mm:ss)</option>
+            <option value="minutes">minutes</option>
+            <option value="seconds">seconds</option>
+            <option value="hours">hours</option>
+            <option value="total-seconds">total seconds</option>
+            <option value="total-minutes">total minutes</option>
+            <option value="progress-bar">progress bar</option>
+            <option value="progress-ring">progress ring</option>
+          </select></div>
+        <div><label>Format</label>
+          <select id="format"><option value="digits">digits</option><option value="words">words</option></select></div>
+      </div>
+      <div class="row2">
+        <div><label>Zero-pad</label>
+          <div class="checks">
+            <label class="chk"><input type="checkbox" id="padh"> hrs</label>
+            <label class="chk"><input type="checkbox" id="padm"> min</label>
+            <label class="chk"><input type="checkbox" id="pads" checked> sec</label>
+          </div></div>
+        <div><label>Case</label>
+          <select id="case"><option value="">as-is</option><option value="upper">UPPER</option><option value="title">Title</option><option value="lower">lower</option></select></div>
+      </div>
+    </fieldset>
+
+    <fieldset><legend>Type</legend>
+      <label>Font</label>
+      <div class="fontbox">
+        <input id="font" placeholder="Helvetica" value="Helvetica" autocomplete="off">
+        <div id="fontlist" class="fontlist" hidden></div>
+      </div>
+      <div class="hint" id="fonthint">fonts detected in this browser — check they exist on the Pro Mac too</div>
+      <div class="row3">
+        <div><label>Size</label><input id="size" value="fit" title="'fit' scales to fill the box; or a number in vh"></div>
+        <div><label>Fill %</label><input id="fitpad" type="number" value="94" min="10" max="100" step="2"></div>
+        <div><label>Weight</label><input id="weight" type="number" value="800" step="100" min="100" max="900"></div>
+      </div>
+      <div class="row3">
+        <div><label>Colour</label><input id="color" type="color" value="#ffffff"></div>
+        <div><label>Opacity</label><input id="opacity" type="number" value="1" min="0" max="1" step="0.05"></div>
+        <div><label>Italic</label><select id="italic"><option value="">no</option><option value="1">yes</option></select></div>
+      </div>
+      <div class="row2">
+        <div><label>Spacing (em)</label><input id="spacing" type="number" step="0.02" placeholder="0"></div>
+        <div><label>Shadow</label>
+          <select id="shadow"><option value="">none</option><option value="1">soft</option></select></div>
+      </div>
+      <label>Stroke (px,colour)</label><input id="stroke" placeholder="e.g. 3,#000000">
+    </fieldset>
+
+    <fieldset><legend>Panel & layout</legend>
+      <div class="row3">
+        <div><label>BG colour</label><input id="bg" type="color" value="#000000"></div>
+        <div><label>BG opacity</label><input id="bgopacity" type="number" value="0" min="0" max="1" step="0.05"></div>
+        <div><label>Radius (em)</label><input id="radius" type="number" step="0.05" placeholder="0.2"></div>
+      </div>
+      <div class="row2">
+        <div><label>H align</label>
+          <select id="align"><option value="">center</option><option value="left">left</option><option value="right">right</option></select></div>
+        <div><label>V align</label>
+          <select id="valign"><option value="">middle</option><option value="top">top</option><option value="bottom">bottom</option></select></div>
+      </div>
+    </fieldset>
+
+    <fieldset><legend>Behaviour</legend>
+      <div class="row2">
+        <div><label>When stopped</label>
+          <select id="stopped"><option value="">hold</option><option value="hide">hide</option><option value="dash">dash</option></select></div>
+        <div><label>Overrun</label>
+          <select id="overrun"><option value="">+count up</option><option value="zero">hold zero</option><option value="hide">hide</option></select></div>
+      </div>
+      <label>At zero, show</label><input id="zero" placeholder="e.g. HERE WE GO">
+      <div class="row2">
+        <div><label>Bar direction</label>
+          <select id="direction"><option value="">shrink ltr</option><option value="rtl">grow rtl</option></select></div>
+        <div><label>Ring thickness</label><input id="thickness" type="number" placeholder="8"></div>
+      </div>
+    </fieldset>
+  </div>
+
+  <div class="preview-col">
+    <div class="preview-wrap"><iframe id="preview"></iframe></div>
+    <div class="url">
+      <input id="url" readonly>
+      <button id="copy">Copy</button>
+      <button class="ghost" id="open">Open</button>
+    </div>
+    <div class="hint">Checkerboard is this page only — the fragment is transparent. Text auto-fits the web object's box unless Size is a number. In ProPresenter: Media → Web, paste URL, position/animate with Pro's tools.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Bookmarks</h2>
+    <div class="savebar">
+      <input id="bkname" placeholder="name this design…">
+      <button id="save" class="small">Save</button>
+    </div>
+    <div id="bookmarks"></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id)
+const FIELDS = ['timer','part','format','case','font','size','fitpad','weight','color','opacity','italic','spacing','shadow','stroke','bg','bgopacity','radius','align','valign','stopped','overrun','zero','direction','thickness']
+const CHECKS = { padh: '0', padm: '0', pads: '1' }   // defaults in timer.html
+const DEFAULTS = { part:'time', format:'digits', font:'Helvetica', size:'fit', fitpad:'94', weight:'800', color:'#ffffff', opacity:'1', bg:'#000000', bgopacity:'0' }
+
+async function loadTimers() {
+  try {
+    const snap = await (await fetch('/api/timers')).json()
+    const sel = $('timer'), cur = sel.value
+    sel.innerHTML = ''
+    for (const t of snap.timers) {
+      const o = document.createElement('option')
+      o.value = t.name
+      o.textContent = `${t.name} (${t.state}${t.duration ? ', ' + Math.round(t.duration / 60) + 'min' : ''})`
+      sel.appendChild(o)
+    }
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur
+    $('timerinfo').innerHTML = snap.configured
+      ? (snap.connected ? `Connected — <b>${snap.timers.length}</b> timer(s) from ProPresenter` : '⚠ ProPresenter not reachable — check Settings')
+      : 'No ProPresenter configured — using the built-in <b>demo</b> timer.'
+  } catch { $('timerinfo').textContent = 'service unreachable' }
+}
+
+function buildQuery() {
+  const p = new URLSearchParams()
+  for (const f of FIELDS) {
+    let v = $(f).value.trim()
+    if (f === 'fitpad' && v) {
+      const frac = String((parseFloat(v) || 94) / 100)
+      if (frac !== '0.94') p.set('fitpad', frac)
+      continue
+    }
+    if (!v || v === (DEFAULTS[f] ?? '')) {
+      if (f === 'timer' && v) p.set(f, v)
+      continue
+    }
+    p.set(f, v)
+  }
+  for (const [f, dflt] of Object.entries(CHECKS)) {
+    const on = $(f).checked ? '1' : '0'
+    if (on !== dflt) p.set(f, on)
+  }
+  return p.toString()
+}
+function applyQuery(query) {
+  const p = new URLSearchParams(query)
+  for (const f of FIELDS) {
+    if (f === 'fitpad') {
+      $(f).value = p.has('fitpad') ? String(Math.round(parseFloat(p.get('fitpad')) * 100)) : DEFAULTS.fitpad
+      continue
+    }
+    $(f).value = p.get(f) ?? (DEFAULTS[f] ?? '')
+  }
+  for (const [f, dflt] of Object.entries(CHECKS)) {
+    $(f).checked = (p.get(f) ?? dflt) === '1'
+  }
+  update()
+}
+
+let t
+function update() {
+  clearTimeout(t)
+  t = setTimeout(() => {
+    const qs = buildQuery()
+    const u = location.origin + '/r/timer.html' + (qs ? '?' + qs : '')
+    $('url').value = u
+    $('preview').src = u
+  }, 250)
+}
+FIELDS.forEach((f) => $(f).addEventListener('input', update))
+Object.keys(CHECKS).forEach((f) => $(f).addEventListener('change', update))
+$('copy').onclick = () => navigator.clipboard.writeText($('url').value)
+$('open').onclick = () => window.open($('url').value, '_blank')
+
+// ---- bookmarks ----
+async function refreshBookmarks() {
+  try {
+    const { presets } = await (await fetch('/api/renderer-presets')).json()
+    const box = $('bookmarks')
+    box.innerHTML = presets.length ? '' : '<div class="hint">Nothing saved yet — design something and hit Save.</div>'
+    for (const p of presets) {
+      const d = document.createElement('div')
+      d.className = 'bk'
+      d.innerHTML = `<div class="name"></div><div class="q"></div>
+        <div class="actions"><button class="small ghost bk-copy">Copy URL</button><button class="small danger bk-del">✕</button></div>`
+      d.querySelector('.name').textContent = p.name
+      d.querySelector('.q').textContent = p.query || '(defaults)'
+      d.onclick = (e) => { if (!e.target.closest('button')) { applyQuery(p.query); $('bkname').value = p.name } }
+      d.querySelector('.bk-copy').onclick = () =>
+        navigator.clipboard.writeText(location.origin + '/r/timer.html' + (p.query ? '?' + p.query : ''))
+      d.querySelector('.bk-del').onclick = async () => {
+        if (!confirm(`Delete bookmark '${p.name}'?`)) return
+        await fetch('/api/renderer-presets/' + encodeURIComponent(p.name), { method: 'DELETE' })
+        refreshBookmarks()
+      }
+      box.appendChild(d)
+    }
+  } catch { $('bookmarks').innerHTML = '<div class="hint">service unreachable</div>' }
+}
+$('save').onclick = async () => {
+  const name = $('bkname').value.trim()
+  if (!name) return alert('Give it a name first')
+  await fetch('/api/renderer-presets', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, query: buildQuery() }),
+  })
+  refreshBookmarks()
+}
+
+// ---- font combobox: detect available fonts, render each in itself ----
+const CANDIDATES = [
+  // macOS system + bundled
+  'SF Pro Display','SF Pro Text','Helvetica','Helvetica Neue','Arial','Arial Black','Arial Narrow',
+  'Avenir','Avenir Next','Avenir Next Condensed','Futura','Gill Sans','Optima','Baskerville','Didot',
+  'Georgia','Palatino','Times New Roman','Times','American Typewriter','Courier New','Menlo','Monaco',
+  'Andale Mono','Impact','Trebuchet MS','Verdana','Tahoma','Copperplate','Chalkboard SE','Marker Felt',
+  'Bradley Hand','Brush Script MT','Noteworthy','Zapfino','Snell Roundhand','Savoye LET','Papyrus',
+  'Herculanum','Luminari','Trattatello','Phosphate','Rockwell','Superclarendon','Charter','Seravek',
+  'Iowan Old Style','Hoefler Text','Big Caslon','Bodoni 72','Bodoni 72 Oldstyle','Cochin','Garamond',
+  'Athelas','Marion','PT Serif','PT Sans','Lucida Grande','Geneva','Skia','Krungthep','Sathu',
+  // Windows core (often present via Office)
+  'Segoe UI','Calibri','Cambria','Candara','Consolas','Constantia','Corbel','Franklin Gothic Medium',
+  'Century Gothic','Book Antiqua','Bookman Old Style','Garamond','Perpetua','Rockwell Condensed',
+  // common downloads / Google fonts people install
+  'Montserrat','Oswald','Bebas Neue','Roboto','Roboto Condensed','Open Sans','Lato','Raleway',
+  'Poppins','Inter','Source Sans Pro','Nunito','Playfair Display','Merriweather','Anton','Barlow',
+  'Barlow Condensed','Archivo','Archivo Black','League Gothic','Josefin Sans','Quicksand','Karla',
+  'Rubik','Work Sans','DM Sans','Space Grotesk','Space Mono','IBM Plex Sans','IBM Plex Mono',
+  'Fira Sans','Fira Code','JetBrains Mono','Abril Fatface','Lobster','Pacifico','Caveat',
+  'Dancing Script','Great Vibes','Sacramento','Shadows Into Light','Permanent Marker','Amatic SC',
+]
+function detectFonts(list) {
+  const c = document.createElement('canvas')
+  const ctx = c.getContext('2d')
+  const SAMPLE = 'mmmMMMwwWWlli017.:'
+  const base = {}
+  for (const g of ['monospace', 'sans-serif', 'serif']) {
+    ctx.font = '72px ' + g
+    base[g] = ctx.measureText(SAMPLE).width
+  }
+  return list.filter((f) => {
+    for (const g of ['monospace', 'sans-serif', 'serif']) {
+      ctx.font = `72px "${f}", ${g}`
+      if (Math.abs(ctx.measureText(SAMPLE).width - base[g]) > 0.5) return true
+    }
+    return false
+  })
+}
+let FONTS = [...new Set(detectFonts(CANDIDATES))].sort((a, b) => a.localeCompare(b))
+const canQueryAll = 'queryLocalFonts' in window
+
+const fontInput = $('font')
+const fontList = $('fontlist')
+let fontSel = -1
+
+let fontFilterActive = false
+function renderFontList() {
+  const filter = fontFilterActive ? fontInput.value.trim().toLowerCase() : ''
+  const matches = FONTS.filter((f) => !filter || f.toLowerCase().includes(filter))
+  fontList.innerHTML = ''
+  if (canQueryAll && !fontList.dataset.loadedAll) {
+    const la = document.createElement('div')
+    la.className = 'loadall'
+    la.textContent = '⤓ Load ALL system fonts (browser will ask permission)'
+    la.onmousedown = async (e) => {
+      e.preventDefault()
+      try {
+        const all = await window.queryLocalFonts()
+        FONTS = [...new Set(all.map((f) => f.family))].sort((a, b) => a.localeCompare(b))
+        fontList.dataset.loadedAll = '1'
+        $('fonthint').textContent = FONTS.length + ' system fonts loaded — check they exist on the Pro Mac too'
+        renderFontList()
+      } catch { /* denied */ }
+    }
+    fontList.appendChild(la)
+  }
+  for (const f of matches.slice(0, 400)) {
+    const row = document.createElement('div')
+    row.className = 'fontrow'
+    row.innerHTML = '<span class="fname"></span><span class="sample">12:34 AaBb</span>'
+    row.querySelector('.fname').textContent = f
+    row.querySelector('.fname').style.fontFamily = `"${f}"`
+    row.querySelector('.sample').style.fontFamily = `"${f}"`
+    row.onmousedown = (e) => { e.preventDefault(); fontInput.value = f; closeFontList(); update() }
+    fontList.appendChild(row)
+  }
+  if (!matches.length) fontList.innerHTML += '<div class="fontrow"><span class="fname" style="color:var(--dim)">no match — free-typed names still work</span></div>'
+  fontList.hidden = false
+  fontSel = -1
+}
+function closeFontList() { fontList.hidden = true }
+fontInput.addEventListener('focus', () => { fontFilterActive = false; renderFontList() })
+fontInput.addEventListener('input', () => { fontFilterActive = true; renderFontList() })
+fontInput.addEventListener('blur', () => setTimeout(closeFontList, 150))
+fontInput.addEventListener('keydown', (e) => {
+  const rows = [...fontList.querySelectorAll('.fontrow .fname')]
+  if (e.key === 'Escape') closeFontList()
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    fontSel = Math.max(0, Math.min(rows.length - 1, fontSel + (e.key === 'ArrowDown' ? 1 : -1)))
+    fontList.querySelectorAll('.fontrow').forEach((r, i) => r.classList.toggle('sel', i === fontSel))
+    rows[fontSel]?.scrollIntoView({ block: 'nearest' })
+  } else if (e.key === 'Enter' && fontSel >= 0) {
+    e.preventDefault()
+    fontInput.value = rows[fontSel].textContent
+    closeFontList(); update()
+  }
+})
+$('fonthint').textContent = FONTS.length + ' fonts detected in this browser — check they exist on the Pro Mac too'
+
+loadTimers(); setInterval(loadTimers, 10000)
+refreshBookmarks()
+update()
+</script>
+</body>
+</html>

@@ -5,7 +5,12 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "ui:dev": "cd ui && npm run dev -- --port 3001",
+    "ui:build": "cd ui && npm run build",
+    "build": "npm run ui:build",
+    "deploy": "npm run ui:build && ./deploy/deploy.sh",
+    "postinstall": "cd ui && npm install --no-audit --no-fund"
   },
   "engines": {
     "node": ">=18"

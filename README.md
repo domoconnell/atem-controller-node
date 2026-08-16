@@ -1,232 +1,377 @@
 # atem-controller
 
-A small Node service (built to live on a Raspberry Pi) that replaces the
+A small Node service (living on a Raspberry Pi) that replaces the
 Companion + MixEffect gymnastics for SuperSource animation and multi-step
-M/E choreography:
+M/E choreography on the church projection setup:
 
 - **ATEM connection** (10.10.10.51) — full state readback, SuperSource box
   control, M/E transitions, USKs.
-- **MixEffect-style SuperSource animation** — tweens box position/size/crop
-  from the *live* state to a saved look at 25fps with easing.
-- **Looks** — named snapshots of the SuperSource layout, captured from the
-  live switcher and stored as editable JSON in `looks/`.
-- **Transition macros** — JSON step lists in `macros/` that choreograph
-  "remove border key → animate boxes → transition M/E → apply key3" style
-  sequences. Macros declare `from`/`to` looks so `/goto` picks the right
-  choreography for where you currently are.
-- **HyperDeck** (10.10.10.55) — play/stop/goto over the Ethernet protocol,
-  with transport feedback.
-- **OSC** in/out so Companion remains the control surface, with feedback for
-  button states.
-- **Web UI** — live SuperSource box visualisation, connection status, look &
-  macro buttons, USK toggles, HyperDeck transport.
+- **Look recorder** — one button captures the complete state as a named
+  "look": SuperSource boxes + art, M/E 2 program/preview, full USK settings
+  (type, fill/key sources, luma/pattern/DVE params, masks — all four
+  keyers), HyperDeck clip and
+  transport. Stored as editable JSON in `looks/`.
+- **Transition engine** — `/goto/<look>` plans the choreography by diffing
+  the live switcher state against the target look: border keys fade out,
+  boxes animate, backgrounds hand off seamlessly, blend keys bracket layout
+  changes, HyperDeck is only touched when needed.
+- **MixEffect-style SuperSource animation** — tweens box
+  position/size/crop from the live state at 30fps with easing.
+- **HyperDeck** (10.10.10.55) — play/stop/goto over the Ethernet protocol
+  with transport feedback; never restarts a clip that's already playing.
+- **Companion integration** — OSC commands in, custom variables + OSC
+  feedback out.
+- **Web UI** (port 3000) — broadcast-console style app shell: pinned
+  Program + Preview SuperSource monitors (preview shows the target layout
+  with the live layout ghosted underneath), a scrolling library of look
+  tiles with Take buttons, a detail sheet with every recorded parameter +
+  the engine's plan, USK lamps, HyperDeck transport, a transition widget
+  in the header with busy lockout, and Record + Settings dialogs. Built
+  with Next.js + Tailwind + shadcn/ui, exported to static files.
 
 ## Running
 
 ```bash
-npm install
-npm start
+npm install        # also installs ui/ deps (postinstall)
+npm run build      # builds the web UI into public/ (needed once before npm start)
+npm start          # the service: ATEM/HyperDeck/OSC + serves public/ on :3000
+npm run deploy     # build UI + deploy everything to the Raspberry Pi (see below)
 ```
 
-Then open http://<pi-ip>:3000 for the status UI.
+Web UI: `http://<host>:3000`.
 
-All addresses/ports live in `config.json`. Notable:
+### Working on the UI
 
-- `supersource.me` is **zero-indexed**: `1` = M/E 2 (the projection M/E).
-- `supersource.id` `0` = SuperSource 1.
-- `osc.feedback` — set `host` to the machine running Companion.
+The UI is a Next.js app in `ui/` (App Router, TypeScript, Tailwind 4,
+shadcn/ui). It is **statically exported** (`output: 'export'`) into
+`public/`, which the express service serves — so on the Pi there is no
+Next server, just static files. `public/` is a build artifact (gitignored).
 
-## Workflow: capturing your looks
+```bash
+npm start           # terminal 1: the service on :3000
+npm run ui:dev      # terminal 2: Next dev server on :3001 with hot reload
+```
 
-1. Recall one of your existing looks on the ATEM (however you do it today —
-   MixEffect, ATEM macro, etc.).
-2. In the web UI type a name and hit **Capture current** (or send OSC
-   `/look/capture "look1"`).
-3. Repeat for every layout, including intermediate positions the macros need
-   (e.g. `display-fullframe`, `worship-imag`).
+The dev page on :3001 talks to the service on :3000 for `/api/*` and the
+WebSocket. Components live in `ui/src/components/atem/`; the live state
+hook is `ui/src/hooks/use-atem-state.ts`; API calls in `ui/src/lib/api.ts`;
+types mirroring the server snapshot in `ui/src/lib/types.ts`. Add shadcn
+components with `cd ui && npx shadcn add <name>`.
 
-Looks are plain JSON in `looks/` — tweak numbers by hand and hit
-**Reload files** (or `/reload`) any time.
+The previous single-file UI is kept in `ui-legacy/index.html` for reference.
 
-Once looks exist, `/goto <name>` from Companion animates between them, and
-if a macro exists for the specific from→to pair it runs the full
-choreography instead.
+## Configuration (config.json)
+
+| Key | Meaning |
+|---|---|
+| `atem.ip` | ATEM switcher address (10.10.10.51) |
+| `hyperdeck.ip` / `.port` | HyperDeck 3 (10.10.10.55:9993) |
+| `supersource.id` | SuperSource number, zero-indexed (`0` = SS1) |
+| `supersource.me` | Main M/E, zero-indexed (`1` = M/E 2, the projection M/E) |
+| `supersource.ssInput` | ATEM input number of the SuperSource (6000) |
+| `supersource.displayBox` | Zero-indexed box carrying the main display feed (`3` = box 4) |
+| `osc.listenPort` | Command port Companion sends to (9000) |
+| `osc.feedback[]` | Targets for `/status/...` OSC feedback (Companion listen port 9001) |
+| `companion.host` / `.port` | Companion's built-in OSC API for custom variables (10.10.10.20:12321) |
+| `companion.varPrefix` | Prefix for the pushed variables (`atemcn_`) |
+| `web.port` | Web UI / HTTP API port (3000) |
+| `propresenter.ip` / `.port` | ProPresenter Mac's REST API for the countdown renderer (blank IP = demo timer) |
+| `propresenter.pollMs` | Timer poll interval (500) |
+| `animation.fps` | SuperSource animation tick rate (30) |
+| `animation.defaultDurationMs` | Box-move duration when no override given (500) |
+| `animation.defaultEasing` | Default easing (`easeInOutQuad`) |
+| `transition.keyFadeMs` | Border-key (USK) fade speed (150) |
+| `transition.mixRateFrames` | If set, pins the M/E mix rate for background fades; `null` = inherit the switcher |
+| `transition.videoFps` | Frame rate used to convert seconds → mix-rate frames (50 — set 60 for 59.94/60p) |
+
+## Workflow: recording looks
+
+1. Set the switcher up exactly how the look should be (SuperSource layout,
+   USKs on air, HyperDeck clip).
+2. Web UI → **Record** in the header → name it (or OSC
+   `/look/capture <name>`).
+3. Repeat per look. Names are canonicalised to lowercase-hyphen slugs
+   (`Worship Zoom!` → `worship-zoom`) and must be unique — capturing an
+   existing name overwrites it (that's what the **Re-rec** button does).
+
+Each look card in the UI shows everything that was recorded: box layout
+preview, per-box sources, SS art fill/key, M/E program/preview, per-USK
+settings, HyperDeck clip. Look files in `looks/` are plain JSON — hand-edit
+and **Reload files** (or `/reload`) any time.
+
+## The transition engine
+
+`/goto/<look>` first checks for a hand-written macro matching
+(current look → target). If none exists, the engine plans the choreography
+by diffing the **live** switcher state (not an assumed current look, so it
+self-corrects drift) against the target look:
+
+- USKs fade via mix transitions, never cut. Keys come off before boxes
+  move; keys go on after boxes settle. Pure border-key fades run fast
+  (`keyFadeMs`, 150ms); fades involving the SS-fed blend key (USK3) use the
+  normal background rate.
+- USK3-style blend keys (fill = SuperSource) fade out before the SS layout
+  changes and fade back in only after the new layout is set.
+- **Keys on air in both looks** are compared setting-by-setting:
+  - same key type / sources / pattern style, only numeric pattern params
+    differ (size, softness, symmetry, position) → the key stays on air and
+    the params are **tweened live** (`animateUskPattern`);
+  - different pattern style, key type, fill/cut source, or mask → the key is
+    **recycled**: faded off, reconfigured, faded back on.
+- Keys coming on fresh have their recorded settings applied while still off
+  air, so they fade in already correct.
+- A **blend-key swap** (e.g. USK3 off + USK4 on, same layout) is done as one
+  crossfade transition (`key3,key4` selection) so the overlay never fully
+  disappears.
+- Background changes (SS ↔ direct feed) go via preview + auto transition:
+  - **Leaving SS**: the box carrying the incoming feed animates to true
+    fullscreen (others shrink out), so the mix fades between identical
+    pictures; then SS is snapped offline to the target layout.
+  - **Entering SS**: the box carrying the outgoing feed is prepped
+    fullscreen offline, the mix lands invisibly, then the box animates to
+    its recorded position and keys fade in. If no target box carries the
+    feed, it's a genuine content change and fades directly.
+- Boxes turning on grow from nothing at their target; boxes turning off
+  shrink in place, then are disabled with their recorded geometry restored.
+- The HyperDeck is only touched when the target's transport differs from
+  live (already-playing clips are never restarted).
+- The mix rate is switched per fade and restored at the end; the recorded
+  "next transition" selection is restored for normal manual operation.
+
+While a sequence runs, further `/goto`s are **rejected, never queued** —
+the UI disables its buttons and Companion's `atemcn_transitioning`
+variable goes `true`. `/stop` bails out after the current step.
+
+Dry-run any plan without executing: **Plan** button in the UI or
+`GET /api/plan/<look>` — returns the exact steps the engine would run from
+the current live state.
 
 ## OSC reference (Companion → port 9000)
 
 | Address | Args | Action |
 |---|---|---|
-| `/goto/<look>[/<seconds>]` | (none) | **Companion-friendly.** Transition to a look; optional seconds retimes every fade and box move in that transition (mix rate is set for the run and restored after) |
-| `/goto` | look name, [duration ms] | Same, classic argument form |
+| `/goto/<look>[/<seconds>]` | (none) | Transition to a look. Optional seconds retimes the background fades and box moves of that run (border-key fades stay at `keyFadeMs`) |
+| `/goto` | look, [duration ms] | Same, argument form |
 | `/look/apply` | name | Snap SuperSource to look |
 | `/look/animate` | name, [ms], [easing] | Tween SuperSource to look |
-| `/look/capture` | name | Save live layout as look |
-| `/macro/run` | name | Run a macro |
-| `/stop` | | Stop running macro/animation |
+| `/look/capture` | name | Record the live state as a look |
+| `/look/delete` | name | Delete a look |
+| `/macro/run` | name | Run a hand-written macro |
+| `/stop` | | Stop the running sequence/animation |
 | `/usk` | keyer 1-4, `0`/`1`/`toggle` | USK on-air on main M/E |
 | `/transition/next` | e.g. `"background,key3"`, [style] | Set next transition |
 | `/transition/auto` | | Auto transition main M/E |
+| `/transition/rate` | frames | Set the M/E mix rate |
 | `/hyperdeck/play` | [loop 0/1] | Play |
 | `/hyperdeck/stop` | | Stop |
 | `/hyperdeck/clip` | clip id | Goto clip |
-| `/reload` | | Re-read looks/ and macros/ |
+| `/companion/test` | | Push test values into the Companion variables |
+| `/reload` | | Re-read looks/ and macros/ from disk |
 
-Feedback pushed to each `osc.feedback` target:
+All commands are also available over HTTP for testing:
+`POST /api/command {"address": "/goto/worship-zoom-top"}` — plus
+`GET /api/status` and `GET /api/plan/<look>`.
 
-`/status/currentLook <name>` · `/status/busy <0|1> <macro>` ·
-`/status/animating <0|1>` · `/status/atem <0|1>` · `/status/hyperdeck <0|1>` ·
-`/status/usk/<1-4> <0|1>` · `/status/error <message>`
+## Companion setup
 
-### Companion setup
+1. **Generic: OSC** connection → target the Pi's IP, port **9000**,
+   feedback/listen port **9001**. Look buttons use the action
+   *Send message without arguments* with paths like
+   `/goto/propres-full-imag` or `/goto/worship-zoom-top/2`.
+2. Create **custom variables**: `atemcn_active_look`,
+   `atemcn_transitioning`, `atemcn_going_to`, `atemcn_coming_from`.
+   The service pushes values via Companion's built-in OSC API
+   (`companion.host:12321` — enable OSC in Companion settings). Verify the
+   pipe with `/companion/test`.
+3. Button feedback via the internal *Variable: check value* feedback:
+   green when `$(custom:atemcn_active_look)` equals the button's look;
+   dimmed while `$(custom:atemcn_transitioning)` is `true` (presses are
+   rejected during a transition).
+4. The `/status/...` stream to port 9001 additionally provides:
+   `/status/currentLook <name>` · `/status/busy <0|1> <name>` ·
+   `/status/animating <0|1>` · `/status/atem <0|1>` ·
+   `/status/hyperdeck <0|1>` · `/status/usk/<1-4> <0|1>` ·
+   `/status/error <msg>` — usable with the Generic OSC module's
+   listen-feedback for USK/connection lamps.
 
-1. Add a **Generic: OSC** connection pointed at this box, port **9000**.
-   Buttons send path-style commands, e.g. `/goto/propres-full-imag` or
-   `/goto/worship-zoom-top/2` (2-second version).
-2. In Companion create **custom variables** named `atemcn_active_look`,
-   `atemcn_transitioning`, `atemcn_going_to`, `atemcn_coming_from`. This
-   service pushes values into them via Companion's built-in OSC API
-   (`config.companion`, default `10.10.10.20:12321` — make sure OSC is
-   enabled in Companion settings; the `atemcn_` prefix is configurable via
-   `companion.varPrefix`).
-3. Use them for button feedback: e.g. light a look button green when
-   `$(custom:atemcn_active_look)` equals its look name, and dim/disable
-   the whole page style while `atemcn_transitioning` is `true`. A busy `/goto` is
-   **rejected** (never queued) — the `transitioning` variable is the signal
-   to not bother pressing.
+## Countdown renderer (ProPresenter timers)
 
-Look names are canonicalised to lowercase-hyphen slugs on capture
-(`Worship Zoom!` → `worship-zoom`), so OSC paths always match exactly.
+The service doubles as a **transparent countdown graphics engine** for
+ProPresenter. Pro stays the timer authority (create/start/pause/reset
+there); this renders it prettier.
 
-The plain `/status/...` OSC feedback (below) is also still available for
-any target listed in `config.osc.feedback`.
+- The service polls the Pro7 REST API (`propresenter.ip` / `.port` in
+  Settings; enable Preferences → Network on the Pro Mac) and streams timer
+  values to renderer pages over SSE, interpolated client-side for smooth
+  seconds. With no IP configured a built-in looping **demo** timer runs so
+  designs can be built anywhere.
+- **The Timer Designer** (linked from the main UI header, `/designer`) is
+  the primary tool: ProPresenter's slide editor only takes ONE web object
+  per slide, so a design is built as a **layout** — multiple elements
+  dragged, resized and layered on a 16:9 canvas with live transparent
+  previews. Element types: **timer fragments** (part/format/font/styling),
+  **static text**, **rectangles** and **ellipses** (fill, border,
+  radius). Everything can be **rotated**, snaps to a 10px grid and to
+  centre guides, and gets an **entrance animation** (fade, slides, zoom,
+  pop, wibble, bounce, spin, blur, flip, roll — with duration and delay,
+  played when the slide fires; Replay in the designer). A **Layers**
+  panel with drag-to-reorder controls stacking; Delete removes the
+  selected element (Enter confirms). Layouts are stored server-side
+  (`data/timer-layouts.json`, deploy-protected) and each has a single URL
+  for ProPresenter: `/r/layout.html?id=<layout-id>` — one web object
+  renders every element with one shared data feed.
+- **`/r/` remains the single-fragment builder** (URL-parameter based, with
+  bookmarks in `data/renderer-presets.json`) for quick one-piece uses.
+- Each URL renders **one fragment** of one timer, e.g.
+  `/r/timer.html?timer=pre-service&part=minutes&format=words&font=Times New Roman`
+  or `?part=seconds&pad=2&font=Helvetica&size=40&shadow=1`.
+  Parts: `time`, `minutes`, `seconds`, `hours`, `total-seconds`,
+  `total-minutes`, `progress-bar`, `progress-ring`. Options: `format`
+  (digits/words — words works on every part, `time` reads "four minutes
+  thirty-seven seconds"), `padh`/`padm`/`pads` (zero-pad hours/minutes/
+  seconds independently; seconds default on), `case`, `font`, `weight`, `italic`,
+  `color`, `opacity`, `shadow`, `stroke`, `spacing`, `align`/`valign`,
+  `bg`/`bgopacity`/`radius`/`boxpad` (translucent panel behind the text),
+  `stopped` (hold/hide/dash), `zero` (text at 0), `overrun`
+  (negative/zero/hide).
+- **Text auto-fits its bounding box** by default — and the size is
+  **stable for the whole countdown**: it fits against a worst-case template
+  (widest digits string for the timer's duration, e.g. `88:88`, or the
+  widest words string in the part's value range), so `10:00 → 9:59 → 0:07`
+  never changes size mid-run. Only a box resize or a genuine state change
+  (zero text, overrun sign) re-fits. `fitpad` scales the fill factor
+  (default 0.94); `size=<number>` (vh) gives a fixed size instead.
+- The builder's **font dropdown** lists fonts detected in the current
+  browser, each rendered in its own face; in Chromium browsers a
+  "Load ALL system fonts" option uses the Local Font Access API for the
+  complete list. Free-typed font names always work — what matters is the
+  font existing on the ProPresenter Mac.
+- In ProPresenter add a **Web** media object per fragment, paste the URL,
+  and use Pro's own tools to position/size/animate each piece over normal
+  media-layer backgrounds. Transparency confirmed working (including
+  text-shadow, CSS filters, canvas — re-trigger the slide if a fresh web
+  object ever renders without effects).
+- `/transparency-test` remains available as a diagnostic page.
 
-The same commands are available over HTTP for testing:
-`POST /api/command {"address": "/goto", "args": ["worship-full"]}`.
+## Settings
 
-## The transition engine
+The gear icon in the web UI header opens **Settings** — a form over
+`config.json` (hardware IPs, SuperSource/M/E numbers, timing, Companion,
+ports). Timing and Companion values apply live; hardware addresses and
+ports are marked *restart* and the dialog offers a **Restart now** button
+after saving (the service exits and systemd brings it straight back, the
+page reloads itself). Same API: `GET /api/config`, `PUT /api/config`,
+`POST /api/restart`.
 
-`/goto <look>` first checks for a hand-written macro matching
-(current look → target). If none exists, the **engine** plans the
-choreography automatically by diffing the *live* switcher state against the
-target look:
+## Hand-written macros (escape hatch — you probably don't need this)
 
-- USKs fade via mix transitions, never cut. Keys come off before boxes
-  move; keys go on after boxes settle.
-- USKs fed by the SuperSource (the USK3 blend) fade out before the layout
-  changes and fade back in only after the new layout is set.
-- Background changes (SS ↔ direct feed) go via preview + auto. Leaving SS,
-  the box carrying the incoming feed animates to true fullscreen first and
-  other boxes shrink out; entering SS, the layout is prepared offline first.
-- Keys that should fade in together with a background change are folded
-  into the same transition (`background + keyN` selection).
-- Boxes turning on grow from nothing at their target; boxes turning off
-  shrink in place, then are disabled with their recorded geometry restored.
-- The HyperDeck is only touched when the target look's transport differs
-  from what the deck is doing right now (a clip that is already playing is
-  never restarted).
-- At the end, the recorded "next transition" selection is restored so
-  manual operation behaves normally.
-
-Dry-run any plan without executing it: **Plan** button in the UI, or
-`GET /api/plan/<look>` — it returns the exact step list the engine would run
-from the current live state. Hand-written macros in `macros/` always win
-over the engine for their specific from→to pair, so odd corner cases can be
-overridden without touching code.
-
-## Macro step reference
-
-Macros are JSON files in `macros/`:
+Macros predate the transition engine. Every transition is now planned
+automatically by the engine, and there is nothing in `macros/` — the folder
+exists purely as an override mechanism: if the engine ever produces the
+wrong choreography for one specific (from → to) pair and you'd rather
+script it than fix the engine, drop a JSON file in `macros/` and it will win
+for that pair (`/reload` after adding). Macros are not shown in the UI.
 
 ```json
 {
-  "name": "look1-to-worship-full",
-  "from": "look1",
-  "to": "worship-full",
-  "steps": [ ... ]
+  "name": "special-case",
+  "from": "look-a",
+  "to": "look-b",
+  "steps": [ { "type": "setNextTransition", "selection": ["key1"] }, ... ]
 }
 ```
 
-`from`/`to` are optional; `from: "*"` (or omitted) matches any current look.
-When `/goto <look>` runs and no macro matches, it falls back to a plain
-SuperSource animation to that look.
+`from: "*"` (or omitted) matches any current look.
 
 | Step | Fields | Notes |
 |---|---|---|
-| `setNextTransition` | `selection` (array of `background`, `key1`..`key4`), `style` (`mix`/`dip`/`wipe`/`dve`/`sting`), `me` | The "next transition" block |
+| `setNextTransition` | `selection` (`background`, `key1`..`key4`), `style` (`mix`/`dip`/`wipe`/`dve`/`sting`), `me` | |
 | `auto` | `me`, `wait` (default true) | Auto transition; waits for completion |
 | `cut` | `me` | |
-| `preview` / `program` | `input`, `me` | Input numbers: SuperSource 1 = 6000 |
-| `uskOnAir` | `keyer` (0-indexed), `onAir`, `me` | Hard cut a keyer on/off |
-| `animate` | `look`, `duration` (ms), `easing` | Tween SuperSource to a look |
-| `applyLook` | `look` | Snap SuperSource to a look |
+| `preview` / `program` | `input`, `me` | SuperSource 1 = 6000 |
+| `uskOnAir` | `keyer` (0-indexed), `onAir`, `me` | Hard cut a keyer |
+| `animate` | `look`, `duration` ms, `easing` | Tween SS to a look's layout |
+| `applyLook` | `look` | Snap SS to a look's layout |
+| `animateBoxes` | `targets` (array of 4 box prop objects/null), `duration`, `easing` | Tween to explicit values |
+| `setBoxes` | `boxes` (`{index: props}`) | Raw box set (offline prep) |
+| `setSsProperties` | `props` | SuperSource art settings |
+| `uskSettings` | `keyer` (0-indexed), `settings` (a look's `me.usk[n]` record) | Apply type/sources/pattern/mask (diff only) |
+| `animateUskPattern` | `keyer`, `pattern` (target values), `duration`, `easing` | Tween pattern params on air |
+| `setMixRate` | `frames`, `me` | M/E mix rate |
+| `hyperdeckEnsure` | `status` (`play`/`stop`), `clipId`, `loop`, `singleClip` | Idempotent transport control |
+| `hyperdeck` | `command`: `play`/`stop`/`gotoClip`/`nextClip`/`prevClip`/`raw` | Unconditional |
 | `wait` | `ms` | |
-| `waitForTransition` | `me` | Wait out a transition started elsewhere |
-| `hyperdeck` | `command`: `play` (`loop`, `singleClip`, `speed`), `stop`, `gotoClip` (`clip`), `nextClip`, `prevClip`, `raw` | |
-| `setCurrentLook` | `look` | Update the tracked look (appended automatically when `to` is set) |
+| `waitForTransition` | `me` | Wait out an external transition |
+| `setCurrentLook` | `look` | Update tracked look (auto-appended when `to` set) |
 
 Easings: `linear`, `easeInQuad`, `easeOutQuad`, `easeInOutQuad`,
 `easeInCubic`, `easeOutCubic`, `easeInOutCubic`, `easeInOutSine`.
-
-`me` is zero-indexed and defaults to `supersource.me` from config, so you
-almost never need it.
-
-The two example macros implement the Look 1 ⇄ Worship Full sequence
-described in the design conversation — **edit the placeholder input
-numbers** (`16` for the main display source) before use, and capture the
-looks they reference: `look1`, `display-fullframe`, `worship-imag`.
+`me` is zero-indexed and defaults to `supersource.me`.
 
 ## Raspberry Pi deployment
 
-```bash
-sudo apt install nodejs npm   # or install Node 18+ via nodesource
-git clone <this project> /opt/atem-controller && cd /opt/atem-controller
-npm install --omit=dev
-```
-
-`/etc/systemd/system/atem-controller.service`:
-
-```ini
-[Unit]
-Description=ATEM controller
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-WorkingDirectory=/opt/atem-controller
-ExecStart=/usr/bin/node src/index.js
-Restart=always
-RestartSec=3
-User=pi
-
-[Install]
-WantedBy=multi-user.target
-```
+One command from the dev machine (asks for the Pi password once):
 
 ```bash
-sudo systemctl enable --now atem-controller
+npm run deploy                     # deploys to pi@10.10.10.33
+npm run deploy -- pi@<other-ip>    # different target
 ```
+
+The script (`deploy/deploy.sh`, run via `npm run deploy` which builds the
+UI first):
+
+1. opens a multiplexed SSH connection (password typed once, never stored),
+2. installs Node 20 via NodeSource if the Pi lacks Node ≥ 18,
+3. rsyncs the project (service source + built `public/`, not the `ui/`
+   source tree) to `/home/pi/atem-controller` — looks/macros captured
+   **on the Pi** are protected from deletion,
+4. `npm install --omit=dev`, installs `deploy/atem-controller.service` into
+   systemd, enables it (**starts on boot**, auto-restarts on crash within
+   3s), restarts it,
+5. verifies the web UI answers on port 3000 and reports ATEM connectivity.
+
+Re-run the same command to deploy updates.
+
+Afterwards:
+
+```bash
+ssh pi@10.10.10.33 journalctl -u atem-controller -f      # live logs
+ssh pi@10.10.10.33 sudo systemctl restart atem-controller
+rsync -az pi@10.10.10.33:atem-controller/looks/ looks/   # pull Pi-captured looks back
+```
+
+**Run only ONE instance at a time** — the HyperDeck Ethernet protocol
+accepts a single controller connection, so stop the dev-machine copy
+(Ctrl+C) when the Pi service is running. And give the Pi a DHCP
+reservation/static IP: Companion's OSC target points at it.
 
 ## Architecture
 
 ```
 src/index.js      wiring / bootstrap
+src/config.js     config.json loader
 src/atem.js       atem-connection wrapper (state, transitions, USKs, SS boxes)
-src/animator.js   SuperSource tween engine (25fps, easing, cancellable)
-src/looks.js      look capture/store (looks/*.json), tracks current look
-src/sequencer.js  macro engine (macros/*.json), from→to matching, /goto
+src/animator.js   SuperSource tween engine (30fps, easing, cancellable,
+                  fire-and-forget frames so network RTT can't throttle it)
+src/looks.js      look recorder/store (looks/*.json), slug names, current look
+src/engine.js     transition planner: live state → target look → step list
+src/sequencer.js  step runner + hand-written macro overrides (macros/*.json)
 src/hyperdeck.js  minimal HyperDeck Ethernet protocol client (TCP 9993)
-src/osc.js        OSC in (control) + out (feedback) — the command router
-src/web.js        express + websocket status server (reuses OSC router)
-public/index.html status/control UI
+src/osc.js        OSC in (commands) + out (/status feedback, Companion vars)
+src/web.js        express + websocket status server (reuses the OSC router)
+ui/               Next.js + Tailwind + shadcn UI source (static export → public/)
+public/           built UI (generated, gitignored)
+ui-legacy/        the old single-file UI, for reference
+deploy/           deploy.sh + systemd unit
 ```
 
 Notes:
 
 - SuperSource box units are raw ATEM protocol values: `x` ±4800, `y` ±2700
-  (hundredths of DVE units; frame is 32×18 units), `size` 0–1000.
-- The animator sends ~25 box updates/sec over the ATEM connection; if the
-  switcher gets grumpy lower `animation.fps` in config.
-- Starting a new animation while one runs cancels the old one and takes over
-  from the live position, so mashing look buttons behaves sanely.
-- The sequencer refuses to start a macro while one is running — send `/stop`
-  first if you need to bail out.
+  (hundredths of DVE units; the frame is 32×18 units), `size` 0–1000,
+  crops in thousandths (left/right 0–32000, top/bottom 0–18000).
+- Starting a new animation cancels any running one and takes over from the
+  live position.
+- On this Mac, macOS Local Network permission blocks LAN access for
+  processes spawned by the Claude Code extension — run `npm start` from
+  Terminal.app during development. Irrelevant on the Pi.

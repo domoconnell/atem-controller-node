@@ -2,7 +2,8 @@ import http from 'node:http'
 import path from 'node:path'
 import express from 'express'
 import { WebSocketServer } from 'ws'
-import { config, projectRoot } from './config.js'
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
+import { config, projectRoot, applyConfigUpdate } from './config.js'
 
 /**
  * Status web UI: express serves public/, a WebSocket pushes the full status
@@ -10,7 +11,7 @@ import { config, projectRoot } from './config.js'
  * so the UI buttons behave identically to Companion presses.
  */
 export class WebServer {
-  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine }) {
+  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter }) {
     this.atem = atem
     this.animator = animator
     this.looks = looks
@@ -18,12 +19,125 @@ export class WebServer {
     this.hyperdeck = hyperdeck
     this.oscServer = oscServer
     this.engine = engine
+    this.propresenter = propresenter
 
     const app = express()
     app.use(express.json())
     app.use(express.static(path.join(projectRoot, 'public')))
 
+    // Countdown renderer pages (and the ProPresenter transparency test).
+    app.use('/r', express.static(path.join(projectRoot, 'renderer')))
+    app.get('/transparency-test', (_req, res) =>
+      res.sendFile(path.join(projectRoot, 'renderer', 'transparency-test.html'))
+    )
+    app.get('/designer', (_req, res) => {
+      res.sendFile(path.join(projectRoot, 'public', 'designer.html'), (err) => {
+        if (err) res.sendFile(path.join(projectRoot, 'public', 'designer', 'index.html'))
+      })
+    })
+
     app.get('/api/status', (_req, res) => res.json(this.snapshot()))
+
+    // ---- Renderer presets (bookmarks for the /r/ builder) ---------------
+    const presetsFile = path.join(projectRoot, 'data', 'renderer-presets.json')
+    const loadPresets = () => {
+      try { return JSON.parse(readFileSync(presetsFile, 'utf8')) } catch { return [] }
+    }
+    const savePresets = (list) => {
+      mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
+      writeFileSync(presetsFile, JSON.stringify(list, null, 2) + '\n')
+    }
+    app.get('/api/renderer-presets', (_req, res) => res.json({ ok: true, presets: loadPresets() }))
+    app.post('/api/renderer-presets', (req, res) => {
+      const { name, query } = req.body ?? {}
+      if (!name || typeof query !== 'string') return res.status(400).json({ ok: false, error: 'name and query required' })
+      const list = loadPresets().filter((p) => p.name !== name)
+      list.push({ name: String(name).trim(), query, savedAt: new Date().toISOString() })
+      list.sort((a, b) => a.name.localeCompare(b.name))
+      savePresets(list)
+      res.json({ ok: true, presets: list })
+    })
+    app.delete('/api/renderer-presets/:name', (req, res) => {
+      const list = loadPresets().filter((p) => p.name !== req.params.name)
+      savePresets(list)
+      res.json({ ok: true, presets: list })
+    })
+
+    // ---- Timer layouts (full-frame designs for ProPresenter) -----------
+    const layoutsFile = path.join(projectRoot, 'data', 'timer-layouts.json')
+    const loadLayouts = () => {
+      try { return JSON.parse(readFileSync(layoutsFile, 'utf8')) } catch { return [] }
+    }
+    const saveLayouts = (list) => {
+      mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
+      writeFileSync(layoutsFile, JSON.stringify(list, null, 2) + '\n')
+    }
+    app.get('/api/layouts', (_req, res) => res.json({ ok: true, layouts: loadLayouts() }))
+    app.get('/api/layouts/:id', (req, res) => {
+      const layout = loadLayouts().find((l) => l.id === req.params.id)
+      if (!layout) return res.status(404).json({ ok: false, error: `No layout '${req.params.id}'` })
+      res.json({ ok: true, layout })
+    })
+    app.post('/api/layouts', (req, res) => {
+      const layout = req.body
+      if (!layout?.id || !layout?.name || !Array.isArray(layout.elements)) {
+        return res.status(400).json({ ok: false, error: 'id, name and elements[] required' })
+      }
+      const list = loadLayouts().filter((l) => l.id !== layout.id)
+      list.push({ ...layout, updatedAt: new Date().toISOString() })
+      list.sort((a, b) => a.name.localeCompare(b.name))
+      saveLayouts(list)
+      res.json({ ok: true, layouts: list })
+    })
+    app.delete('/api/layouts/:id', (req, res) => {
+      saveLayouts(loadLayouts().filter((l) => l.id !== req.params.id))
+      res.json({ ok: true })
+    })
+
+    // ---- ProPresenter timers: snapshot + SSE stream --------------------
+    app.get('/api/timers', (_req, res) => res.json(this.propresenter.snapshot()))
+    app.get('/api/timers/stream', (req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      })
+      const send = (snap) => res.write(`data: ${JSON.stringify(snap)}\n\n`)
+      send(this.propresenter.snapshot())
+      const onUpdate = (snap) => send(snap)
+      this.propresenter.on('update', onUpdate)
+      const heartbeat = setInterval(() => res.write(': ping\n\n'), 15000)
+      req.on('close', () => {
+        this.propresenter.off('update', onUpdate)
+        clearInterval(heartbeat)
+      })
+    })
+
+    // ---- Config: read + write config.json ------------------------------
+    // Safe-to-hot-apply keys are applied live; anything else needs a
+    // restart, which the response reports so the UI can say so.
+    app.get('/api/config', (_req, res) => {
+      res.json({ ok: true, config, path: path.join(projectRoot, 'config.json') })
+    })
+    app.put('/api/config', (req, res) => {
+      try {
+        const incoming = req.body
+        if (!incoming || typeof incoming !== 'object') throw new Error('Body must be a config object')
+        const { merged, restartRequired } = applyConfigUpdate(incoming)
+        writeFileSync(path.join(projectRoot, 'config.json'), JSON.stringify(merged, null, 2) + '\n')
+        console.log('[config] saved', restartRequired.length ? `(restart needed for: ${restartRequired.join(', ')})` : '(applied live)')
+        res.json({ ok: true, config: merged, restartRequired })
+        this.scheduleBroadcast()
+      } catch (e) {
+        res.status(400).json({ ok: false, error: e.message })
+      }
+    })
+    app.post('/api/restart', (_req, res) => {
+      // systemd (Restart=always) or the operator brings it back up.
+      res.json({ ok: true })
+      console.log('[config] restart requested from UI - exiting')
+      setTimeout(() => process.exit(0), 300)
+    })
     // Dry-run: what would the engine do to reach this look from live state?
     app.get('/api/plan/:look', (req, res) => {
       try {
@@ -68,6 +182,13 @@ export class WebServer {
     animator.on('start', markDirty)
     animator.on('done', markDirty)
     animator.on('cancelled', markDirty)
+    // Timer values tick every poll; only rebroadcast the main snapshot when
+    // the ProPresenter *connection* state changes.
+    let ppState = ''
+    propresenter.on('update', (snap) => {
+      const key = `${snap.connected}:${snap.configured}`
+      if (key !== ppState) { ppState = key; markDirty() }
+    })
   }
 
   start() {
@@ -108,6 +229,10 @@ export class WebServer {
       busy: this.sequencer.current,
       animating: this.animator.running,
       mainMe: this.atem.me,
+      propresenter: {
+        connected: this.propresenter.connected,
+        configured: !!this.propresenter.baseUrl,
+      },
     }
   }
 }

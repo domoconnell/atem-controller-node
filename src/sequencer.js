@@ -199,6 +199,17 @@ export class Sequencer extends EventEmitter {
         })
         break
 
+      case 'uskSettings':
+        await this.atem.applyUskSettings(step.keyer, step.settings, me)
+        break
+
+      case 'animateUskPattern':
+        await this.animator.animateUskPattern(step.keyer, step.pattern, {
+          durationMs: step.duration,
+          easing: step.easing,
+        })
+        break
+
       case 'setMixRate':
         await this.atem.setMixRate(step.frames, me)
         break

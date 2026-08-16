@@ -94,13 +94,6 @@ export class TransitionEngine {
     const removeNorm = remove.filter((i) => !isSsFed(i))
     const addSs = add.filter(isSsFed)
     const addNorm = add.filter((i) => !isSsFed(i))
-    // Keys that stay on but are fed by SS while the layout changes must be
-    // recycled (faded out and back in around the layout change).
-    const boxesChange = this._boxesDiffer(liveBoxes, target.boxes)
-    const recycle = liveKeys
-      .map((k, i) => (k?.onAir && wantOn[i] && isSsFed(i) && boxesChange && !ssTarget ? i : null))
-      .filter((i) => i !== null)
-
     const sel = (idxs) => idxs.map((i) => `key${i + 1}`)
     // Pure border-key fades run fast; any fade involving an SS-fed key
     // (the blend) keeps the normal/background rate.
@@ -114,18 +107,65 @@ export class TransitionEngine {
       ]
     }
 
+    // Keys that stay on but are fed by SS while the layout changes must be
+    // recycled (faded out and back in around the layout change).
+    const boxesChange = this._boxesDiffer(liveBoxes, target.boxes)
+    const recycle = liveKeys
+      .map((k, i) => (k?.onAir && wantOn[i] && isSsFed(i) && boxesChange && !ssTarget ? i : null))
+      .filter((i) => i !== null)
+
+    // Keys on in BOTH looks whose settings differ: same pattern style ->
+    // slide the params live (morph); different style/type/source -> must
+    // be recycled (fade off, reconfigure, fade on) since a style change
+    // would pop on air.
+    const morph = []
+    liveKeys.forEach((k, i) => {
+      if (!k?.onAir || !wantOn[i] || recycle.includes(i)) return
+      const change = this._uskChange(k, target.me.usk?.[i])
+      if (change === 'morph') morph.push(i)
+      else if (change === 'recycle') recycle.push(i)
+    })
+    // Keys coming on fresh get their settings applied while still off air.
+    const configureOffline = add.filter((i) => this._uskChange(liveKeys[i], target.me.usk?.[i]))
+    const uskConfig = (idxs) =>
+      idxs.map((i) => ({ type: 'uskSettings', keyer: i, settings: target.me.usk[i] }))
+    const uskMorph = (idxs) =>
+      idxs.map((i) => ({
+        type: 'animateUskPattern', keyer: i,
+        pattern: target.me.usk[i].pattern, duration,
+      }))
+    const recycleFadeOut = (idxs) => keysFade(idxs)
+    const recycleFadeIn = (idxs) => [...uskConfig(idxs), ...keysFade(idxs)]
+
+
     // ---- Branch on background change ------------------------------------
     if (ssNow && ssTarget) {
-      steps.push(...keysFade([...remove]))
-      if (boxesChange) steps.push(...this._animatePhase(liveBoxes, target.boxes, duration))
-      steps.push(...keysFade([...add]))
-      if (!boxesChange && !remove.length && !add.length) notes.push('nothing to change on M/E')
+      // Blend-key swap (e.g. USK3 off + USK4 on) with no layout change:
+      // configure the incoming key offline, then crossfade both in ONE
+      // transition so the overlay never fully disappears.
+      const swap = !boxesChange && removeSs.length && addSs.length && !recycle.length
+      if (swap) {
+        steps.push(...uskConfig(configureOffline))
+        steps.push(...keysFade([...remove, ...add]))
+        steps.push(...uskMorph(morph))
+      } else {
+        steps.push(...keysFade([...remove, ...recycle]))
+        if (boxesChange) steps.push(...this._animatePhase(liveBoxes, target.boxes, duration))
+        steps.push(...uskMorph(morph))
+        steps.push(...uskConfig(configureOffline))
+        steps.push(...keysFade([...add]))
+        steps.push(...recycleFadeIn(recycle))
+      }
+      if (!boxesChange && !remove.length && !add.length && !morph.length && !recycle.length) {
+        notes.push('nothing to change on M/E')
+      }
     } else if (ssNow && !ssTarget) {
       // Leaving SuperSource for a direct feed.
       steps.push(...keysFade([...remove, ...recycle]))
       const handoff = this._handoffFrame(liveBoxes, targetPgm)
       if (handoff.retargeted) notes.push(`box ${this.displayBox + 1} source cut to carry incoming feed`)
       if (handoff.frame) steps.push(...this._animatePhase(liveBoxes, handoff.frame, duration))
+      steps.push(...uskConfig(configureOffline.filter((i) => addNorm.includes(i))))
       steps.push({ type: 'preview', input: targetPgm })
       steps.push(...ensureRate(bgRate))
       steps.push({ type: 'setNextTransition', selection: ['background', ...sel(addNorm)], style: 'mix' })
@@ -133,7 +173,10 @@ export class TransitionEngine {
       // SS is now offline: snap it to the target layout for the blend/next use.
       steps.push({ type: 'setBoxes', boxes: this._fullFrame(target.boxes) })
       steps.push(...this._artSteps(target))
-      steps.push(...keysFade([...addSs, ...recycle]))
+      steps.push(...uskMorph(morph))
+      steps.push(...uskConfig(configureOffline.filter((i) => addSs.includes(i))))
+      steps.push(...keysFade([...addSs]))
+      steps.push(...recycleFadeIn(recycle))
     } else if (!ssNow && ssTarget) {
       // Entering SuperSource from a direct feed. If the target layout has a
       // box carrying the current program source, mirror the leaving-SS
@@ -142,7 +185,7 @@ export class TransitionEngine {
       // the box to its recorded spot, then fade keys in. Without a carrier
       // box the mix is a genuine content change, so just prep and fade.
       const entry = this._entryFrame(pgm, target.boxes)
-      steps.push(...keysFade([...removeSs]))
+      steps.push(...keysFade([...removeSs, ...recycle]))
       steps.push({
         type: 'setBoxes',
         boxes: this._fullFrame(entry ?? target.boxes),
@@ -150,22 +193,37 @@ export class TransitionEngine {
       steps.push(...this._artSteps(target))
       steps.push(...keysFade([...removeNorm]))
       steps.push({ type: 'preview', input: this.ssInput })
+      steps.push(...uskConfig(configureOffline))
       if (entry) {
         steps.push(...ensureRate(bgRate))
         steps.push({ type: 'setNextTransition', selection: ['background'], style: 'mix' })
         steps.push({ type: 'auto' })
         steps.push(...this._animatePhase(entry, target.boxes, duration))
+        steps.push(...uskMorph(morph))
         steps.push(...keysFade([...addNorm, ...addSs]))
+        steps.push(...recycleFadeIn(recycle))
       } else {
         notes.push('no target box carries the outgoing feed - straight crossfade into the layout')
         steps.push(...ensureRate(bgRate))
         steps.push({ type: 'setNextTransition', selection: ['background', ...sel(addNorm)], style: 'mix' })
         steps.push({ type: 'auto' })
+        steps.push(...uskMorph(morph))
         steps.push(...keysFade([...addSs]))
+        steps.push(...recycleFadeIn(recycle))
       }
     } else {
       // Direct feed to direct feed.
-      steps.push(...keysFade([...remove, ...recycle]))
+      const swap = pgm === targetPgm && !boxesChange && removeSs.length && addSs.length && !recycle.length
+      if (swap) {
+        // Blend-key swap: crossfade out/in keys together in one transition.
+        steps.push(...uskConfig(configureOffline.filter((i) => addSs.includes(i))))
+        steps.push(...keysFade([...removeNorm]))
+        steps.push(...keysFade([...removeSs, ...addSs]))
+        addSs.length = 0
+      } else {
+        steps.push(...keysFade([...remove, ...recycle]))
+      }
+      steps.push(...uskConfig(configureOffline.filter((i) => addNorm.includes(i))))
       if (pgm !== targetPgm) {
         steps.push({ type: 'preview', input: targetPgm })
         steps.push(...ensureRate(bgRate))
@@ -178,7 +236,10 @@ export class TransitionEngine {
         steps.push({ type: 'setBoxes', boxes: this._fullFrame(target.boxes) })
         steps.push(...this._artSteps(target))
       }
-      steps.push(...keysFade([...addSs, ...recycle]))
+      steps.push(...uskMorph(morph))
+      steps.push(...uskConfig(configureOffline.filter((i) => addSs.includes(i))))
+      steps.push(...keysFade([...addSs]))
+      steps.push(...recycleFadeIn(recycle))
     }
 
     // Leave the switcher at its resting rate (config pin or whatever it
@@ -335,6 +396,39 @@ export class TransitionEngine {
         artInvertKey: want.artInvertKey,
       },
     }]
+  }
+
+  /**
+   * Classify how a keyer's settings differ between live and target:
+   *   null      - nothing meaningful differs
+   *   'morph'   - same type/sources/pattern style; only numeric pattern
+   *               params differ -> can be tweened on air
+   *   'recycle' - type, fill/cut source or pattern style differ -> must go
+   *               off air to change
+   */
+  _uskChange(live, want, tol = 5) {
+    if (!live || !want) return null
+    if (want.keyType && want.keyType !== live.keyType) return 'recycle'
+    if (want.fillSource !== undefined && want.fillSource !== live.fillSource) return 'recycle'
+    if (want.cutSource !== undefined && want.cutSource !== live.cutSource) return 'recycle'
+    if (want.keyType === 'pattern' && want.pattern) {
+      const lp = live.pattern ?? {}
+      if (want.pattern.style !== lp.style) return 'recycle'
+      if (!!want.pattern.invert !== !!lp.invert) return 'recycle'
+      for (const f of ['size', 'softness', 'symmetry', 'positionX', 'positionY']) {
+        if (Math.abs((want.pattern[f] ?? 0) - (lp[f] ?? 0)) > tol) return 'morph'
+      }
+    }
+    if (want.mask) {
+      const lm = live.mask ?? {}
+      if (!!want.mask.maskEnabled !== !!lm.maskEnabled) return 'recycle'
+      if (want.mask.maskEnabled) {
+        for (const f of ['maskTop', 'maskBottom', 'maskLeft', 'maskRight']) {
+          if (Math.abs((want.mask[f] ?? 0) - (lm[f] ?? 0)) > tol) return 'recycle'
+        }
+      }
+    }
+    return null
   }
 
   _boxesDiffer(liveBoxes, targetBoxes, tol = 10) {

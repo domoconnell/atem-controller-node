@@ -1,0 +1,90 @@
+[
+  {
+    "id": "pre-service",
+    "name": "Pre Service",
+    "timer": "PreShow Countdown",
+    "elements": [
+      {
+        "id": "el-7wk39r",
+        "x": 2.08,
+        "y": 33.33,
+        "w": 46.35,
+        "h": 14.81,
+        "params": {
+          "part": "minutes",
+          "color": "#ffffff",
+          "format": "words",
+          "align": "right",
+          "font": "Geneva"
+        }
+      },
+      {
+        "id": "el-p72znf",
+        "x": 51.56,
+        "y": 38.89,
+        "w": 16.67,
+        "h": 5.56,
+        "params": {
+          "type": "text",
+          "text": "minutes",
+          "color": "#c0c0c0",
+          "case": "upper",
+          "align": "left"
+        }
+      },
+      {
+        "id": "el-onxh6q",
+        "x": 51.56,
+        "y": 57.41,
+        "w": 16.67,
+        "h": 5.56,
+        "params": {
+          "type": "text",
+          "text": "seconds",
+          "color": "#c0c0c0",
+          "case": "upper",
+          "align": "left"
+        }
+      },
+      {
+        "id": "el-r8eq08",
+        "x": 2.08,
+        "y": 51.85,
+        "w": 46.35,
+        "h": 14.81,
+        "params": {
+          "part": "seconds",
+          "color": "#ffffff",
+          "format": "words",
+          "align": "right",
+          "font": "Geneva"
+        }
+      },
+      {
+        "id": "el-6w9hor",
+        "x": 38.02,
+        "y": 81.48,
+        "w": 23.96,
+        "h": 15.74,
+        "params": {
+          "part": "time",
+          "color": "#ffffff",
+          "digitstyle": "flip"
+        }
+      },
+      {
+        "id": "el-0l6yul",
+        "x": 13.8,
+        "y": 14.81,
+        "w": 72.4,
+        "h": 4.63,
+        "params": {
+          "part": "progress-bar",
+          "color": "#c82828",
+          "direction": "rtl"
+        }
+      }
+    ],
+    "updatedAt": "2026-08-16T12:00:40.658Z"
+  }
+]

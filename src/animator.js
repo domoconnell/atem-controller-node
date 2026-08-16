@@ -147,6 +147,46 @@ export class Animator extends EventEmitter {
   cancel() {
     if (this._cancel) this._cancel()
   }
+
+  /**
+   * Tween a USK's pattern parameters (size, softness, symmetry, position)
+   * from live values to `target` while it stays on air. Used to slide an
+   * overlay between two looks that share the same pattern style.
+   */
+  async animateUskPattern(keyer, target, { durationMs, easing } = {}) {
+    const duration = durationMs ?? config.animation.defaultDurationMs
+    const ease = EASINGS[easing ?? config.animation.defaultEasing] ?? EASINGS.easeInOutQuad
+    const tickMs = Math.max(20, Math.round(1000 / (config.animation.fps ?? 25)))
+    const FIELDS = ['size', 'softness', 'symmetry', 'positionX', 'positionY']
+
+    const from = this.atem.getUskSettings()[keyer]?.pattern
+    if (!from) return
+    const moving = FIELDS.filter(
+      (f) => typeof target[f] === 'number' && typeof from[f] === 'number' && from[f] !== target[f]
+    )
+    if (!moving.length) return
+
+    const startTime = Date.now()
+    let inflight = 0
+    while (true) {
+      const t = Math.min(1, (Date.now() - startTime) / duration)
+      const k = ease(t)
+      const props = {}
+      for (const f of moving) props[f] = Math.round(from[f] + (target[f] - from[f]) * k)
+      if (inflight < 2) {
+        inflight++
+        this.atem
+          .setUskPattern(keyer, props)
+          .catch((e) => console.error('[animator] usk pattern send failed:', e.message))
+          .finally(() => inflight--)
+      }
+      if (t >= 1) break
+      await sleep(tickMs)
+    }
+    const final = {}
+    for (const f of moving) final[f] = target[f]
+    await this.atem.setUskPattern(keyer, final)
+  }
 }
 
 function sleep(ms) {

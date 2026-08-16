@@ -1,0 +1,16 @@
+[Unit]
+Description=ATEM Controller (SuperSource animation + transition engine)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/atem-controller
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=3
+User=pi
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

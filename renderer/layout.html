@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Timer Layout</title>
+<style>
+  html { color-scheme: dark; }
+  html, body { background: transparent; margin: 0; height: 100%; overflow: hidden; }
+  #stage { position: absolute; inset: 0; }
+  .el { position: absolute; }
+  #err {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    color: rgba(255,255,255,.6); font: 600 3vh -apple-system, Helvetica, sans-serif;
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="err"></div>
+<script src="/r/fragment.js"></script>
+<script>
+/*
+ * Full timer layout: /r/layout.html?id=<layout-id>
+ * One page renders every element of the saved layout with a single data
+ * feed - this is the URL that goes into a ProPresenter web object.
+ */
+const id = new URLSearchParams(location.search).get('id')
+const stage = document.getElementById('stage')
+const frags = []
+
+async function boot() {
+  if (!id) return showErr('no layout id')
+  try {
+    const r = await fetch('/api/layouts/' + encodeURIComponent(id))
+    const body = await r.json()
+    if (!body.ok) return showErr(body.error)
+    const layout = body.layout
+    for (const el of layout.elements) {
+      const div = document.createElement('div')
+      div.className = 'el'
+      div.style.left = el.x + '%'
+      div.style.top = el.y + '%'
+      div.style.width = el.w + '%'
+      div.style.height = el.h + '%'
+      stage.appendChild(div)
+      const params = { ...el.params }
+      if (el.r) params.r = String(el.r)
+      if (!params.timer && layout.timer) params.timer = layout.timer
+      frags.push(TimerFragment.create(div, params))
+    }
+    connect()
+  } catch (e) {
+    showErr(e.message)
+  }
+}
+function showErr(msg) {
+  const el = document.getElementById('err')
+  el.textContent = 'layout: ' + msg
+  el.style.display = 'flex'
+}
+
+let lastData = 0
+function ingest(snap) {
+  lastData = Date.now()
+  for (const f of frags) f.feed(snap)
+}
+function connect() {
+  const es = new EventSource('/api/timers/stream')
+  es.onmessage = (ev) => ingest(JSON.parse(ev.data))
+  setInterval(() => {
+    if (Date.now() - lastData > 2500) {
+      fetch('/api/timers').then((r) => r.json()).then(ingest).catch(() => {})
+    }
+  }, 1500)
+}
+boot()
+</script>
+</body>
+</html>

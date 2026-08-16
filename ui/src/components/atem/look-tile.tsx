@@ -1,0 +1,85 @@
+'use client'
+import type { Look, Snapshot } from '@/lib/types'
+import { cn } from '@/lib/utils'
+import { SsMonitor } from './ss-monitor'
+import { Play, Info } from 'lucide-react'
+
+export function LookTile({
+  look, state, isCurrent, isTarget, locked, onGoto, onSelect, onOpen,
+}: {
+  look: Look
+  state: Snapshot
+  isCurrent: boolean
+  isTarget: boolean
+  locked: boolean
+  onGoto: () => void
+  onSelect: () => void
+  onOpen: () => void
+}) {
+  const inputName = (id: number) => state.atem.inputs[id] ?? String(id)
+  const usks = look.me?.uskOnAir ?? []
+  const pgm = look.me?.programInputName ?? (look.me?.programInput != null ? inputName(look.me.programInput) : '—')
+
+  return (
+    <div
+      onMouseEnter={onSelect}
+      onFocus={onSelect}
+      className={cn(
+        'group relative rounded-xl surface p-2 transition-all duration-200 outline-none',
+        isCurrent && 'glow-live',
+        isTarget && !isCurrent && 'glow-pvw',
+        !isCurrent && !isTarget && 'hover:border-foreground/25'
+      )}
+    >
+      <SsMonitor boxes={look.boxes} inputName={inputName} showLabels={false} showGrid={false} className="p-1 rounded-lg" />
+
+      <div className="mt-2 flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold truncate">{look.name}</span>
+            {isCurrent && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-live">● Live</span>}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground truncate">
+            <span className="truncate">{pgm}</span>
+            <span className="opacity-40">·</span>
+            <span className="flex gap-0.5">
+              {usks.map((on, i) => (
+                <span key={i} className={cn('inline-block size-1.5 rounded-full', on ? 'bg-pgm' : 'bg-muted-foreground/30')} title={`USK${i + 1} ${on ? 'on' : 'off'}`} />
+              ))}
+            </span>
+            {look.hyperdeck?.clipId != null && (
+              <>
+                <span className="opacity-40">·</span>
+                <span>clip {look.hyperdeck.clipId}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 grid grid-cols-[1fr_auto] gap-1.5">
+        <button
+          disabled={locked || isCurrent}
+          onClick={onGoto}
+          className={cn(
+            'h-8 rounded-md text-[11px] font-bold uppercase tracking-[0.12em] transition-all',
+            'flex items-center justify-center gap-1.5',
+            isCurrent
+              ? 'bg-live/15 text-live cursor-default'
+              : 'bg-primary text-primary-foreground hover:brightness-110 active:scale-[0.98] shadow-[0_0_16px_-6px_var(--primary)]',
+            'disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none'
+          )}
+        >
+          <Play className="size-3.5 fill-current" /> {isCurrent ? 'On air' : 'Take'}
+        </button>
+        <button
+          onClick={onOpen}
+          className="h-8 w-8 rounded-md bg-muted/60 border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 grid place-items-center transition-colors"
+          title="Details, plan, re-record, delete"
+        >
+          <Info className="size-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
