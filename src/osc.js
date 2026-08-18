@@ -1,6 +1,7 @@
 import osc from 'osc'
 import { config } from './config.js'
 import { slug } from './looks.js'
+import { Simulator as SimulatorRef } from './simulator.js'
 
 /**
  * OSC control surface for Companion (or anything else).
@@ -76,6 +77,47 @@ export class OscServer {
 
   open() {
     this.port.open()
+  }
+
+  /**
+   * #4: give the Companion operator "will the next press be clean?".
+   *   atemcn_next_grade   - 'clean' | 'cuts' | '' for the look Companion
+   *                          nominates via /arm/<look> (or the last hovered
+   *                          /grade/<look> request)
+   *   atemcn_next_look    - the nominated look
+   *   atemcn_next_summary - e.g. "3 fades · 1 move · ~2.1s"
+   *   atemcn_verify       - 'ok' | 'DIVERGED' after each transition (hardware
+   *                          state vs simulator prediction), atemcn_verify_detail
+   */
+  attachVerifier(verifier) {
+    this.verifier = verifier
+    verifier.on('verified', (r) => {
+      this.sendCompanionVar('verify', r.ok ? 'ok' : 'DIVERGED')
+      this.sendCompanionVar('verify_detail', r.ok ? `${r.to ?? r.name} matched` : r.diffs.map((d) => `${d.what}: ${d.expected}->${d.actual}`).join('; '))
+      this.sendFeedback('/status/verify', [r.ok ? 1 : 0, r.to ?? r.name])
+    })
+    // Re-grade the armed look whenever the switcher settles into a new state.
+    let armed = null
+    this.armLook = (look) => { armed = look; this.pushGrade(armed) }
+    this.sequencer.on('idle', () => setTimeout(() => this.pushGrade(armed), 400))
+  }
+
+  pushGrade(look) {
+    if (!look || !this.verifier) return
+    try {
+      const target = this.looks.mustGet(look)
+      const { steps, notes } = this.verifier.engine.plan(target)
+      const rep = new SimulatorRef(this.verifier._liveForSim()).run(steps)
+      const grade = rep.grade === 'clean' ? 'clean' : 'cuts'
+      this.sendCompanionVar('next_look', target.name)
+      this.sendCompanionVar('next_grade', grade)
+      this.sendCompanionVar('next_summary', `${rep.counts.fades} fade${rep.counts.fades === 1 ? '' : 's'} · ${rep.counts.animations} move${rep.counts.animations === 1 ? '' : 's'} · ~${(rep.approxDurationMs / 1000).toFixed(1)}s${notes.length ? ' · ' + notes[0] : ''}`)
+      this.sendFeedback('/status/nextGrade', [grade === 'clean' ? 1 : 0, target.name])
+    } catch (e) {
+      this.sendCompanionVar('next_look', look)
+      this.sendCompanionVar('next_grade', '')
+      this.sendCompanionVar('next_summary', e.message)
+    }
   }
 
   wireFeedback() {
@@ -274,6 +316,17 @@ export class OscServer {
             return
         }
         break
+
+      case 'arm':
+      case 'grade': {
+        // /arm/<look>: nominate the look Companion is about to take; the
+        // atemcn_next_* variables then describe that transition from the
+        // live state (and re-grade after every transition).
+        const look = slug(parts[1] ?? String(args[0] ?? ''))
+        if (!look) throw new Error('/arm needs a look name')
+        if (this.armLook) this.armLook(look)
+        return
+      }
 
       case 'companion':
         if (parts[1] === 'test') {

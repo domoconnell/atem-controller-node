@@ -204,6 +204,25 @@ Because this event can't be rehearsed, this is the primary quality gate:
   missed (an on-air box retarget in the leave-SS handoff; a bottom-cropped
   carrier that wasn't truly invisible) — both fixed.
 
+### Hardware-truth verification (every transition, automatically)
+
+The simulator proves the *engine's logic*; it cannot prove the *hardware*
+behaves like the model. So `src/verify.js` closes the loop on every run:
+before a plan executes, the simulator predicts the end state; ~350ms after
+the sequencer finishes, the real switcher state is read back and diffed
+field-by-field (program, every box's enable/source/geometry/crop, every
+USK's on-air/fill/type/pattern, media players, SS art). Any divergence is
+exactly where reality differs from the model — logged (`[verify] ✗`),
+shown in the UI (storyboard strip: `last: ● hw ok` / `◆ hw diverged`,
+acceptance runner: an HW column and a detail panel per pair, attached to
+each acceptance result), pushed to Companion (`atemcn_verify` =
+`ok`/`DIVERGED`, `atemcn_verify_detail`) and to OSC (`/status/verify`).
+Verified end-to-end: a deliberately injected stray key press mid-transition
+was reported as `USK4 onAir: expected false → got true`. **In the office,
+a diverged result is a finding to send back — it means the model needs
+correcting before the event.** (Results against the built-in ATEM sim are
+labelled as such: they check plumbing, not hardware.)
+
 ### Acceptance runner (`/acceptance`, in the app switcher)
 
 For the office session: lists every look pair, shows the simulator's
@@ -239,6 +258,7 @@ the current live state.
 | `/hyperdeck/play` | [loop 0/1] | Play |
 | `/hyperdeck/stop` | | Stop |
 | `/hyperdeck/clip` | clip id | Goto clip |
+| `/arm/<look>` (or `/grade/<look>`) | (none) | Nominate the next look: grades it from live state into `atemcn_next_*` |
 | `/companion/test` | | Push test values into the Companion variables |
 | `/reload` | | Re-read looks/ and macros/ from disk |
 
@@ -261,6 +281,16 @@ All commands are also available over HTTP for testing:
    (input names), `atemcn_mp1`/`atemcn_mp2` (media player contents),
    `atemcn_usk_on` (e.g. `1,2`), `atemcn_atem`/`atemcn_hyperdeck`
    (`true`/`false`), `atemcn_last_error`.
+
+   **"Will the next press be clean?"** — send `/arm/<look>` (e.g. on the
+   button's *press* with the take on *release*, or from a page-load
+   trigger) and the service grades that transition from the live state:
+   `atemcn_next_look`, `atemcn_next_grade` (`clean`/`cuts`),
+   `atemcn_next_summary` ("3 fades · 1 move · ~2.1s"). It re-grades
+   automatically after every transition. Put a red-if-`cuts` feedback on
+   the take button and the operator sees trouble before pressing. After
+   each transition `atemcn_verify` reports `ok`/`DIVERGED` (hardware vs
+   prediction) with `atemcn_verify_detail`.
 3. Button feedback via the internal *Variable: check value* feedback:
    green when `$(custom:atemcn_active_look)` equals the button's look;
    dimmed while `$(custom:atemcn_transitioning)` is `true` (presses are

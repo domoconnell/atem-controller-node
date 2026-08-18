@@ -8,6 +8,7 @@ import { TransitionEngine } from './engine.js'
 import { OscServer } from './osc.js'
 import { WebServer } from './web.js'
 import { ProPresenter } from './propresenter.js'
+import { Verifier } from './verify.js'
 
 console.log('atem-controller starting')
 console.log(`  ATEM      ${config.atem.ip} (main M/E ${config.supersource.me + 1}, SuperSource ${config.supersource.id + 1})`)
@@ -21,7 +22,9 @@ const engine = new TransitionEngine(atem, hyperdeck)
 const sequencer = new Sequencer(atem, animator, looks, hyperdeck, engine)
 const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
 const propresenter = new ProPresenter()
-const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter })
+const verifier = new Verifier(atem, sequencer, engine, looks)
+const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier })
+oscServer.attachVerifier(verifier)
 
 oscServer.open()
 web.start()

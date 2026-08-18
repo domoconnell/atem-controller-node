@@ -12,7 +12,7 @@ import { Simulator } from './simulator.js'
  * so the UI buttons behave identically to Companion presses.
  */
 export class WebServer {
-  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter }) {
+  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier }) {
     this.atem = atem
     this.animator = animator
     this.looks = looks
@@ -21,6 +21,7 @@ export class WebServer {
     this.oscServer = oscServer
     this.engine = engine
     this.propresenter = propresenter
+    this.verifier = verifier
 
     const app = express()
     app.use(express.json())
@@ -104,6 +105,7 @@ export class WebServer {
     const acceptFile = path.join(projectRoot, 'data', 'acceptance.json')
     const loadAccept = () => { try { return JSON.parse(readFileSync(acceptFile, 'utf8')) } catch { return {} } }
     app.get('/api/acceptance', (_req, res) => res.json({ ok: true, results: loadAccept() }))
+    app.get('/api/verify', (_req, res) => res.json({ ok: true, ...(this.verifier?.snapshot() ?? { results: [] }) }))
     app.post('/api/acceptance', (req, res) => {
       const { from, to, verdict, note } = req.body ?? {}
       if (!from || !to || !['clean', 'issue', 'skip', 'clear'].includes(verdict)) {
@@ -111,8 +113,13 @@ export class WebServer {
       }
       const all = loadAccept()
       const key = `${from}→${to}`
+      // attach the most recent hardware verification for this pair, if any
+      const v = (this.verifier?.results ?? []).find((r) => r.to === to && (r.from === from || r.from == null))
       if (verdict === 'clear') delete all[key]
-      else all[key] = { from, to, verdict, note: note ?? '', at: new Date().toISOString() }
+      else all[key] = {
+        from, to, verdict, note: note ?? '', at: new Date().toISOString(),
+        verify: v ? { ok: v.ok, diffs: v.diffs, simGrade: v.simGrade, simulated: v.simulated } : null,
+      }
       mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
       writeFileSync(acceptFile, JSON.stringify(all, null, 2) + '\n')
       res.json({ ok: true, results: all })
@@ -222,6 +229,7 @@ export class WebServer {
     animator.on('start', markDirty)
     animator.on('done', markDirty)
     animator.on('cancelled', markDirty)
+    verifier?.on('verified', markDirty)
     // Timer values tick every poll; only rebroadcast the main snapshot when
     // the ProPresenter *connection* state changes.
     let ppState = ''
@@ -288,6 +296,7 @@ export class WebServer {
         connected: this.propresenter.connected,
         configured: !!this.propresenter.baseUrl,
       },
+      verify: this.verifier?.snapshot() ?? null,
     }
   }
 }

@@ -111,7 +111,15 @@ export default function Page() {
 
               {/* transition storyboard: what the engine will do + simulator verdict */}
               <div className="shrink-0 surface rounded-xl px-3 h-[76px] max-w-[1100px] flex flex-col justify-center overflow-hidden">
-                <div className="text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground mb-1 truncate">Transition plan {target && target.name !== state.currentLook ? `→ ${target.name}` : ''}</div>
+                <div className="text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground mb-1 truncate flex items-center gap-3">
+                  <span>Transition plan {target && target.name !== state.currentLook ? `→ ${target.name}` : ''}</span>
+                  {state.verify?.results[0] && (
+                    <span className={cn('normal-case tracking-normal font-semibold', state.verify.results[0].ok ? 'text-live/80' : 'text-pgm')}
+                      title={state.verify.results[0].ok ? 'last transition: hardware state matched the simulator prediction' : state.verify.results[0].diffs.map((d) => `${d.what}: ${d.expected}→${d.actual}`).join('\n')}>
+                      last: {state.verify.results[0].ok ? '● hw ok' : `◆ hw diverged (${state.verify.results[0].diffs.length})`}
+                    </span>
+                  )}
+                </div>
                 <PlanStoryboard look={target && target.name !== state.currentLook && state.atem.connected ? target.name : null} inputName={inputName} />
               </div>
 

@@ -94,6 +94,16 @@ export interface Snapshot {
   animating: boolean
   mainMe: number
   propresenter?: { connected: boolean; configured: boolean }
+  verify?: {
+    results: VerifyResult[]
+    lastGrade: unknown
+  } | null
+}
+
+export interface VerifyResult {
+  name: string; from: string | null; to: string | null
+  ok: boolean; simGrade: string; simulated: boolean; at: string; durationMs: number
+  diffs: { what: string; expected: unknown; actual: unknown }[]
 }
 
 export interface PlanStep { type: string; [k: string]: unknown }

@@ -10,7 +10,10 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { Play, Check, AlertTriangle, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Loader2, ClipboardList } from 'lucide-react'
 
-interface Result { from: string; to: string; verdict: 'clean' | 'issue' | 'skip'; note: string; at: string }
+interface Result {
+  from: string; to: string; verdict: 'clean' | 'issue' | 'skip'; note: string; at: string
+  verify?: { ok: boolean; diffs: { what: string; expected: unknown; actual: unknown }[]; simGrade: string; simulated: boolean } | null
+}
 
 /**
  * Acceptance runner for the office test session: walk every look pair,
@@ -80,7 +83,7 @@ export default function AcceptancePage() {
           <div className="surface rounded-xl min-h-0 overflow-y-auto">
             <table className="w-full text-[12px]">
               <thead className="sticky top-0 bg-card border-b border-border text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                <tr><th className="text-left p-2.5 font-semibold">From</th><th className="text-left p-2.5 font-semibold">To</th><th className="text-left p-2.5 font-semibold">Result</th><th className="text-left p-2.5 font-semibold">Note</th></tr>
+                <tr><th className="text-left p-2.5 font-semibold">From</th><th className="text-left p-2.5 font-semibold">To</th><th className="text-left p-2.5 font-semibold">Result</th><th className="text-left p-2.5 font-semibold" title="hardware state after the run vs simulator prediction">HW</th><th className="text-left p-2.5 font-semibold">Note</th></tr>
               </thead>
               <tbody>
                 {visible.map((p) => {
@@ -97,11 +100,17 @@ export default function AcceptancePage() {
                         {r?.verdict === 'skip' && <span className="text-muted-foreground">skipped</span>}
                         {!r && <span className="text-muted-foreground/50">—</span>}
                       </td>
+                      <td className="p-2.5">
+                        {r?.verify ? (r.verify.ok
+                          ? <span className="text-live" title="hardware matched prediction">●</span>
+                          : <span className="text-pgm font-bold" title={r.verify.diffs.map((d) => `${d.what}: ${d.expected}→${d.actual}`).join('\n')}>◆ {r.verify.diffs.length}</span>)
+                          : <span className="text-muted-foreground/40">—</span>}
+                      </td>
                       <td className="p-2.5 text-muted-foreground truncate max-w-[280px]">{r?.note}</td>
                     </tr>
                   )
                 })}
-                {visible.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">{pairs.length ? 'All pairs checked 🎉' : 'No looks recorded yet.'}</td></tr>}
+                {visible.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">{pairs.length ? 'All pairs checked 🎉' : 'No looks recorded yet.'}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -142,6 +151,25 @@ export default function AcceptancePage() {
                     <div className="text-[10.5px] font-mono text-muted-foreground break-words">{plan.steps.map((s) => s.type).join(' › ')}</div>
                   </div>
                 )}
+
+                {(() => {
+                  const v = state?.verify?.results.find((r) => r.to === sel.to && (r.from === sel.from || r.from == null))
+                  if (!v) return null
+                  return (
+                    <div className={cn('rounded-lg border p-3 space-y-1', v.ok ? 'border-live/40 bg-live/5' : 'border-pgm/50 bg-pgm/10')}>
+                      <div className={cn('text-[11px] font-bold uppercase tracking-wider', v.ok ? 'text-live' : 'text-pgm')}>
+                        {v.ok ? '● Hardware matched the simulator' : `◆ Hardware DIVERGED from simulator (${v.diffs.length})`}
+                        {v.simulated && <span className="ml-2 text-busy font-normal normal-case tracking-normal">(against the ATEM sim — run in the office for the real answer)</span>}
+                      </div>
+                      {!v.ok && (
+                        <ul className="text-[11px] font-mono text-pgm/90 space-y-0.5">
+                          {v.diffs.map((d, i) => <li key={i}>{d.what}: expected {String(d.expected)} → got {String(d.actual)}</li>)}
+                        </ul>
+                      )}
+                      <div className="text-[10.5px] text-muted-foreground">read back {Math.round(v.durationMs / 100) / 10}s after start · this is what the office session is for</div>
+                    </div>
+                  )
+                })()}
 
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">What did you see?</div>
