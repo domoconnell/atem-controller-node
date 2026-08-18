@@ -4,7 +4,12 @@ import path from 'node:path'
 
 export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-export const config = JSON.parse(readFileSync(path.join(projectRoot, 'config.json'), 'utf8'))
+// ATEMCN_CONFIG lets a second instance (tests, a scratch copy) run from a
+// different config file without ever touching the real config.json.
+export const configPath = process.env.ATEMCN_CONFIG
+  ? path.resolve(process.env.ATEMCN_CONFIG)
+  : path.join(projectRoot, 'config.json')
+export const config = JSON.parse(readFileSync(configPath, 'utf8'))
 
 export const looksDir = path.join(projectRoot, 'looks')
 export const macrosDir = path.join(projectRoot, 'macros')
@@ -17,6 +22,7 @@ const HOT_KEYS = new Set([
   'supersource.displayBox', 'companion.varPrefix', 'companion.host', 'companion.port',
   'osc.feedback',
   'propresenter.ip', 'propresenter.port', 'propresenter.pollMs',
+  'atem.simulate', 'atem.simFallbackMs',
 ])
 
 function flatten(obj, prefix = '', out = {}) {

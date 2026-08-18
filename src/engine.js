@@ -78,6 +78,42 @@ export class TransitionEngine {
       })
     }
 
+    // ---- Media players ---------------------------------------------------
+    // A media player must NEVER change while anything on air is showing it.
+    // Work out which MPs need a source change and which live keys carry
+    // them; those keys get recycled around the change (fade off -> change
+    // -> fade on). Keys coming on that need a changed MP have it changed
+    // before their fade-in.
+    const liveMps = this.atem.getMediaPlayers?.() ?? []
+    const mpChanges = []  // { player, source, name }
+    ;(target.mediaPlayers ?? []).forEach((want, i) => {
+      const live = liveMps[i]
+      if (!want || !live) return
+      const wantIdx = want.sourceType === 'still' ? want.stillIndex : want.clipIndex
+      const liveIdx = live.sourceType === 'still' ? live.stillIndex : live.clipIndex
+      if (want.sourceType !== live.sourceType || wantIdx !== liveIdx) {
+        mpChanges.push({
+          player: i,
+          source: { sourceType: want.sourceType, stillIndex: want.stillIndex, clipIndex: want.clipIndex },
+          name: want.name,
+        })
+      }
+    })
+    const mpInputsOf = (player) => this.atem.mediaPlayerInputs?.(player) ?? { fill: 3010 + player * 10, key: 3011 + player * 10 }
+    const usesChangingMp = (usk) => usk && mpChanges.some((c) => {
+      const { fill, key } = mpInputsOf(c.player)
+      return usk.fillSource === fill || usk.cutSource === key || usk.cutSource === fill || usk.fillSource === key
+    })
+    // Is a changing MP visible right now via SS art or a live SS box?
+    const liveArt = this.atem.getSsProperties?.()
+    const mpOnAirViaSs = ssNow && mpChanges.some((c) => {
+      const { fill, key } = mpInputsOf(c.player)
+      const artHit = liveArt && (liveArt.artFillSource === fill || liveArt.artCutSource === key)
+      const boxHit = liveBoxes.some((b) => b?.enabled && (b.source === fill || b.source === key))
+      return artHit || boxHit
+    })
+    if (mpChanges.length) notes.push(`media player change: ${mpChanges.map((c) => `MP${c.player + 1} -> ${c.name}`).join(', ')}`)
+
     // ---- USK diff -------------------------------------------------------
     const wantOn = target.me.uskOnAir ?? []
     const remove = []
@@ -125,8 +161,24 @@ export class TransitionEngine {
       if (change === 'morph') morph.push(i)
       else if (change === 'recycle') recycle.push(i)
     })
+    // Keys that stay on but show a media player that must change: recycle
+    // them (the MP source is switched while they are off air).
+    liveKeys.forEach((k, i) => {
+      if (k?.onAir && wantOn[i] && !recycle.includes(i) && (usesChangingMp(k) || usesChangingMp(target.me.usk?.[i]))) {
+        recycle.push(i)
+      }
+    })
     // Keys coming on fresh get their settings applied while still off air.
     const configureOffline = add.filter((i) => this._uskChange(liveKeys[i], target.me.usk?.[i]))
+    // Media player source changes - emitted once, at the first point where
+    // nothing on air shows them (after the recycled/removed keys fade out,
+    // and while SS is offline if SS shows them).
+    let mpDone = false
+    const mpSteps = () => {
+      if (mpDone || !mpChanges.length) return []
+      mpDone = true
+      return mpChanges.map((c) => ({ type: 'mediaPlayerSource', player: c.player, source: c.source }))
+    }
     const uskConfig = (idxs) =>
       idxs.map((i) => ({ type: 'uskSettings', keyer: i, settings: target.me.usk[i] }))
     const uskMorph = (idxs) =>
@@ -135,42 +187,136 @@ export class TransitionEngine {
         pattern: target.me.usk[i].pattern, duration,
       }))
     const recycleFadeOut = (idxs) => keysFade(idxs)
-    const recycleFadeIn = (idxs) => [...uskConfig(idxs), ...keysFade(idxs)]
+    const recycleFadeIn = (idxs) => [...mpSteps(), ...uskConfig(idxs), ...keysFade(idxs)]
 
 
     // ---- Branch on background change ------------------------------------
     if (ssNow && ssTarget) {
-      // Blend-key swap (e.g. USK3 off + USK4 on) with no layout change:
-      // configure the incoming key offline, then crossfade both in ONE
-      // transition so the overlay never fully disappears.
-      const swap = !boxesChange && removeSs.length && addSs.length && !recycle.length
-      if (swap) {
-        steps.push(...uskConfig(configureOffline))
-        steps.push(...keysFade([...remove, ...add]))
+      // Boxes whose SOURCE changes while staying enabled can't be animated -
+      // a source change is a hard cut inside the live SS. Also, MPs shown
+      // by SS itself can't change while SS is live. Both need SS taken off
+      // air for a moment: the "offline window" via a full-frame box.
+      const sourceSwaps = this._boxSourceSwaps(liveBoxes, target.boxes)
+      const needWindow = sourceSwaps.length > 0 || mpOnAirViaSs
+      const carrier = needWindow ? this._fullFrameCarrier(liveBoxes) : -1
+
+      if (needWindow && carrier >= 0) {
+        // === SS offline window (the "worship laptop in box 4" trick) ===
+        // 1. all keys off (borders + blends), 2. other boxes animate away,
+        // 3. invisible cut to the carrier's feed, 4. do everything offline
+        //    (fade between feeds if the carrier's own source changes),
+        // 5. invisible transition back to SS, 6. boxes animate in, 7. keys on.
+        const carrierSrcNow = liveBoxes[carrier].source
+        const carrierSrcTarget = target.boxes[carrier]?.source ?? carrierSrcNow
+        notes.push(`SS offline window via box ${carrier + 1}: ${sourceSwaps.length ? 'box source swap' : 'media player change'}`)
+        const stayOn = liveKeys.map((k, i) => (k?.onAir && wantOn[i] && !recycle.includes(i) ? i : null)).filter((i) => i !== null)
+        // everything on air comes off (it will be re-established after)
+        steps.push(...keysFade([...remove, ...recycle, ...stayOn]))
+        // Carrier goes TRUE fullscreen (any bottom crop animates away, so
+        // the cut to its feed is genuinely invisible), others shrink out.
+        const soloFrame = this._soloFrame(liveBoxes, carrier)
+        if (soloFrame) steps.push(...this._animatePhase(liveBoxes, soloFrame, duration))
+        // invisible cut: SS (carrier fullscreen) -> carrier's actual feed
+        steps.push({ type: 'preview', input: carrierSrcNow })
+        steps.push({ type: 'cut' })
+        // visible fade if the carrier's content itself changes
+        if (carrierSrcTarget !== carrierSrcNow) {
+          steps.push({ type: 'preview', input: carrierSrcTarget })
+          steps.push(...ensureRate(bgRate))
+          steps.push({ type: 'setNextTransition', selection: ['background'], style: 'mix' })
+          steps.push({ type: 'auto' })
+        }
+        // SS is offline: retarget freely, change MPs, set art
+        steps.push(...mpSteps())
+        const entry = this._entryFrame(carrierSrcTarget, target.boxes) ?? this._fullFrame(target.boxes)
+        steps.push({ type: 'setBoxes', boxes: this._fullFrame(Array.isArray(entry) ? entry : target.boxes) })
+        steps.push(...this._artSteps(target))
+        // invisible cut back: carrier feed -> SS with carrier fullscreen
+        steps.push({ type: 'preview', input: this.ssInput })
+        steps.push({ type: 'cut' })
+        const entryFrame = Array.isArray(entry) ? entry : null
+        if (entryFrame) steps.push(...this._animatePhase(entryFrame, target.boxes, duration))
         steps.push(...uskMorph(morph))
+        steps.push(...uskConfig([...configureOffline, ...recycle, ...stayOn]))
+        steps.push(...keysFade([...add, ...recycle, ...stayOn]))
+      } else if (needWindow && this._dipSource() != null) {
+        // === Dip-through fallback ===
+        // No full-frame carrier, but the change can't happen on air. Fade
+        // the whole M/E to a neutral dip source (black / a still), do the
+        // work offline, fade back. Visible - but graceful, never a cut.
+        const dip = this._dipSource()
+        notes.push(`no full-frame carrier - dipping through input ${dip} to change ${sourceSwaps.length ? 'box sources' : 'media player'} offline`)
+        const stayOn = liveKeys.map((k, i) => (k?.onAir && wantOn[i] && !recycle.includes(i) ? i : null)).filter((i) => i !== null)
+        steps.push(...keysFade([...remove, ...recycle, ...stayOn]))
+        steps.push({ type: 'preview', input: dip })
+        steps.push(...ensureRate(bgRate))
+        steps.push({ type: 'setNextTransition', selection: ['background'], style: 'mix' })
+        steps.push({ type: 'auto' })
+        steps.push(...mpSteps())
+        steps.push({ type: 'setBoxes', boxes: this._fullFrame(target.boxes) })
+        steps.push(...this._artSteps(target))
+        steps.push({ type: 'preview', input: this.ssInput })
+        steps.push({ type: 'setNextTransition', selection: ['background'], style: 'mix' })
+        steps.push({ type: 'auto' })
+        steps.push(...uskMorph(morph))
+        steps.push(...uskConfig([...configureOffline, ...recycle, ...stayOn]))
+        steps.push(...keysFade([...add, ...recycle, ...stayOn]))
       } else {
-        steps.push(...keysFade([...remove, ...recycle]))
-        if (boxesChange) steps.push(...this._animatePhase(liveBoxes, target.boxes, duration))
-        steps.push(...uskMorph(morph))
-        steps.push(...uskConfig(configureOffline))
-        steps.push(...keysFade([...add]))
-        steps.push(...recycleFadeIn(recycle))
-      }
-      if (!boxesChange && !remove.length && !add.length && !morph.length && !recycle.length) {
-        notes.push('nothing to change on M/E')
+        if (needWindow) {
+          notes.push(sourceSwaps.length
+            ? `box ${sourceSwaps.map((i) => i + 1).join('/')} source change with no full-frame carrier - source will cut inside SS`
+            : 'media player shown by SS art/box changes with no full-frame carrier - MP switches while visible')
+        }
+        // Blend-key swap (e.g. USK3 off + USK4 on) with no layout change:
+        // configure the incoming key offline, then crossfade both in ONE
+        // transition so the overlay never fully disappears.
+        const swap = !boxesChange && removeSs.length && addSs.length && !recycle.length
+        if (swap) {
+          steps.push(...uskConfig(configureOffline))
+          steps.push(...keysFade([...remove, ...add]))
+          steps.push(...uskMorph(morph))
+        } else {
+          steps.push(...keysFade([...remove, ...recycle]))
+          if (boxesChange) steps.push(...this._animatePhase(liveBoxes, target.boxes, duration))
+          steps.push(...uskMorph(morph))
+          steps.push(...mpSteps())
+          steps.push(...uskConfig(configureOffline))
+          steps.push(...keysFade([...add]))
+          steps.push(...recycleFadeIn(recycle))
+        }
+        if (!boxesChange && !remove.length && !add.length && !morph.length && !recycle.length && !mpChanges.length) {
+          notes.push('nothing to change on M/E')
+        }
       }
     } else if (ssNow && !ssTarget) {
       // Leaving SuperSource for a direct feed.
       steps.push(...keysFade([...remove, ...recycle]))
       const handoff = this._handoffFrame(liveBoxes, targetPgm)
-      if (handoff.retargeted) notes.push(`box ${this.displayBox + 1} source cut to carry incoming feed`)
-      if (handoff.frame) steps.push(...this._animatePhase(liveBoxes, handoff.frame, duration))
       steps.push(...uskConfig(configureOffline.filter((i) => addNorm.includes(i))))
-      steps.push({ type: 'preview', input: targetPgm })
-      steps.push(...ensureRate(bgRate))
-      steps.push({ type: 'setNextTransition', selection: ['background', ...sel(addNorm)], style: 'mix' })
-      steps.push({ type: 'auto' })
+      if (handoff.retargeted) {
+        // No live box carries the incoming feed. Never retarget a box on
+        // air (that's a cut): animate the display box fullscreen with its
+        // CURRENT source, cut invisibly to that source's direct feed, then
+        // genuinely mix to the target feed.
+        const carrierSrc = liveBoxes[this.displayBox]?.source
+        notes.push(`no live box carries ${targetPgm}: handoff via box ${this.displayBox + 1} (${carrierSrc}) then mix`)
+        const solo = this._soloFrame(liveBoxes, this.displayBox)
+        if (solo) steps.push(...this._animatePhase(liveBoxes, solo, duration))
+        steps.push({ type: 'preview', input: carrierSrc })
+        steps.push({ type: 'cut' })
+        steps.push({ type: 'preview', input: targetPgm })
+        steps.push(...ensureRate(bgRate))
+        steps.push({ type: 'setNextTransition', selection: ['background', ...sel(addNorm)], style: 'mix' })
+        steps.push({ type: 'auto' })
+      } else {
+        if (handoff.frame) steps.push(...this._animatePhase(liveBoxes, handoff.frame, duration))
+        steps.push({ type: 'preview', input: targetPgm })
+        steps.push(...ensureRate(bgRate))
+        steps.push({ type: 'setNextTransition', selection: ['background', ...sel(addNorm)], style: 'mix' })
+        steps.push({ type: 'auto' })
+      }
       // SS is now offline: snap it to the target layout for the blend/next use.
+      steps.push(...mpSteps())
       steps.push({ type: 'setBoxes', boxes: this._fullFrame(target.boxes) })
       steps.push(...this._artSteps(target))
       steps.push(...uskMorph(morph))
@@ -186,6 +332,7 @@ export class TransitionEngine {
       // box the mix is a genuine content change, so just prep and fade.
       const entry = this._entryFrame(pgm, target.boxes)
       steps.push(...keysFade([...removeSs, ...recycle]))
+      steps.push(...mpSteps())
       steps.push({
         type: 'setBoxes',
         boxes: this._fullFrame(entry ?? target.boxes),
@@ -232,6 +379,7 @@ export class TransitionEngine {
       } else {
         steps.push(...keysFade([...addNorm]))
       }
+      steps.push(...mpSteps())
       if (boxesChange) {
         steps.push({ type: 'setBoxes', boxes: this._fullFrame(target.boxes) })
         steps.push(...this._artSteps(target))
@@ -356,6 +504,66 @@ export class TransitionEngine {
       }
     }
     return frame
+  }
+
+  /** Neutral source to dip through when nothing can hide a change. Black (0) by default. */
+  _dipSource() {
+    const d = config.transition?.dipInput
+    return d === null ? null : (d ?? 0)
+  }
+
+  /** Enabled boxes whose source differs between live and target. */
+  _boxSourceSwaps(liveBoxes, targetBoxes) {
+    const out = []
+    for (let i = 0; i < 4; i++) {
+      const f = liveBoxes[i], t = targetBoxes?.[i]
+      if (f?.enabled && t?.enabled && f.source !== t.source) out.push(i)
+    }
+    return out
+  }
+
+  /**
+   * A live box that fills the frame edge-to-edge horizontally and from the
+   * top (bottom crop is fine) - i.e. cutting to its feed directly would be
+   * invisible. Returns the box index or -1.
+   */
+  _fullFrameCarrier(liveBoxes) {
+    for (let i = 0; i < 4; i++) {
+      const b = liveBoxes[i]
+      if (!b?.enabled || b.size < 995) continue
+      const cl = b.cropped ? b.cropLeft : 0
+      const cr = b.cropped ? b.cropRight : 0
+      const ct = b.cropped ? b.cropTop : 0
+      // centred horizontally, top edge at/above frame top, no side crops
+      if (Math.abs(b.x) > 20 || cl > 50 || cr > 50 || ct > 50) continue
+      // top edge: box top = y + 9 units (half of 18) must be >= 9 (frame top)
+      const topEdge = b.y / 100 + 9 * (b.size / 1000)
+      if (topEdge < 8.9) continue
+      return i
+    }
+    return -1
+  }
+
+  /**
+   * Frame where only `carrier` remains (true fullscreen), every other
+   * enabled box shrunk away. Null if nothing needs to move.
+   */
+  _soloFrame(liveBoxes, carrier) {
+    const frame = [null, null, null, null]
+    let any = false
+    for (let i = 0; i < 4; i++) {
+      const b = liveBoxes[i]
+      if (!b) continue
+      if (i === carrier) {
+        frame[i] = { enabled: true, source: b.source, x: 0, y: 0, size: 1000, cropped: false, cropTop: 0, cropBottom: 0, cropLeft: 0, cropRight: 0 }
+        const cropped = b.cropped && (b.cropTop || b.cropBottom || b.cropLeft || b.cropRight)
+        if (b.x !== 0 || b.y !== 0 || b.size !== 1000 || cropped) any = true
+      } else if (b.enabled) {
+        frame[i] = { enabled: false, size: 0, x: b.x, y: b.y }
+        any = true
+      }
+    }
+    return any ? frame : null
   }
 
   /** Full offline snap frame from a look's recorded boxes. */

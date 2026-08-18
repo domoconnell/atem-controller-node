@@ -10,7 +10,8 @@
     "ui:build": "cd ui && npm run build",
     "build": "npm run ui:build",
     "deploy": "npm run ui:build && ./deploy/deploy.sh",
-    "postinstall": "cd ui && npm install --no-audit --no-fund"
+    "postinstall": "cd ui && npm install --no-audit --no-fund",
+    "test": "node test/audit-looks.mjs && node test/adversarial.mjs"
   },
   "engines": {
     "node": ">=18"

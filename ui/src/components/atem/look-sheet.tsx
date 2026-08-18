@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SsMonitor } from './ss-monitor'
+import { lookScene } from '@/lib/scene'
 import { Play, Route, Zap, MoveRight, RefreshCcw, Trash2 } from 'lucide-react'
 
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
@@ -57,7 +58,7 @@ export function LookSheet({
         </SheetHeader>
 
         <div className="px-5">
-          <SsMonitor boxes={look.boxes} inputName={inputName} label={isCurrent ? 'PGM' : 'Look'} tally={isCurrent ? 'pgm' : 'plain'} sublabel={look.me?.programInputName} />
+          <SsMonitor scene={lookScene(look)} inputName={inputName} label={isCurrent ? 'PGM' : 'Look'} tally={isCurrent ? 'pgm' : 'plain'} sublabel={look.me?.programInputName} />
         </div>
 
         <div className="px-5 pt-3 grid grid-cols-4 gap-1.5">
@@ -113,6 +114,14 @@ export function LookSheet({
                   <KV k="Program" v={<b className="text-pgm">{look.me.programInputName ?? inputName(look.me.programInput)}</b>} />
                   <KV k="Preview" v={<span className="text-pvw">{look.me.previewInputName ?? inputName(look.me.previewInput)}</span>} />
                   {look.me.nextTransition && <KV k="Next trans" v={`${look.me.nextTransition.style} [${look.me.nextTransition.selection.join(', ')}]`} />}
+                </div>
+              )}
+              {look.mediaPlayers && look.mediaPlayers.some(Boolean) && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">Media players</div>
+                  {look.mediaPlayers.map((mp) => mp && (
+                    <KV key={mp.index} k={`MP ${mp.index + 1}`} v={<><b>{mp.name}</b> <span className="text-muted-foreground">· {mp.sourceType} {(mp.sourceType === 'still' ? mp.stillIndex : mp.clipIndex) + 1}</span></>} />
+                  ))}
                 </div>
               )}
               {look.hyperdeck && (

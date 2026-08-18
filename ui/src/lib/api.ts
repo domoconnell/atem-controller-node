@@ -2,7 +2,7 @@
 // also serves this UI, so relative URLs work in prod (Pi) and via the dev
 // proxy.
 
-import type { Plan } from './types'
+import type { Plan, PlanGrades } from './types'
 
 export async function cmd(address: string, args: unknown[] = []): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -22,6 +22,11 @@ export async function cmd(address: string, args: unknown[] = []): Promise<{ ok: 
 export async function fetchPlan(look: string): Promise<Plan> {
   const r = await fetch('/api/plan/' + encodeURIComponent(look))
   return r.json()
+}
+export async function fetchPlanGrades(): Promise<PlanGrades> {
+  const r = await fetch('/api/plan-all')
+  const b = await r.json()
+  return b.plans ?? {}
 }
 
 export function wsUrl(): string {

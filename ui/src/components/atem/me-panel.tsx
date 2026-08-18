@@ -68,6 +68,17 @@ export function MePanel({ state, locked }: { state: Snapshot; locked: boolean })
         </div>
       </div>
 
+      {state.atem.mediaPlayers && state.atem.mediaPlayers.some(Boolean) && (
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">Media players</div>
+          <div className="rounded-lg bg-muted/40 border border-border p-3">
+            {state.atem.mediaPlayers.map((mp) => mp && (
+              <Row key={mp.index} k={`MP ${mp.index + 1}`}><span className="truncate max-w-[160px] inline-block align-bottom" title={mp.name}>{mp.name}</span></Row>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">HyperDeck</div>
         <div className="rounded-lg bg-muted/40 border border-border p-3">

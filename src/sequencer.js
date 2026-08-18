@@ -210,6 +210,10 @@ export class Sequencer extends EventEmitter {
         })
         break
 
+      case 'mediaPlayerSource':
+        await this.atem.setMediaPlayerSource(step.player, step.source)
+        break
+
       case 'setMixRate':
         await this.atem.setMixRate(step.frames, me)
         break

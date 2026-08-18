@@ -98,9 +98,33 @@ export class OscServer {
     this.animator.on('start', () => this.sendFeedback('/status/animating', [1]))
     this.animator.on('done', () => this.sendFeedback('/status/animating', [0]))
     this.animator.on('cancelled', () => this.sendFeedback('/status/animating', [0]))
-    this.sequencer.on('error', ({ macro, error }) =>
+    this.sequencer.on('error', ({ macro, error }) => {
       this.sendFeedback('/status/error', [`${macro}: ${error}`])
-    )
+      this.sendCompanionVar('last_error', `${macro}: ${error}`)
+    })
+    // Richer state: what's on program, which MPs are loaded, connections.
+    let lastRich = ''
+    const pushRich = () => {
+      const me = this.atem.getMixEffect()
+      const mps = this.atem.getMediaPlayers?.() ?? []
+      const rich = {
+        program: this.atem.getInputName(me?.programInput ?? -1),
+        preview: this.atem.getInputName(me?.previewInput ?? -1),
+        mp1: mps[0]?.name ?? '', mp2: mps[1]?.name ?? '',
+        usk_on: (me?.upstreamKeyers ?? []).map((k, i) => (k?.onAir ? i + 1 : null)).filter(Boolean).join(','),
+        atem: this.atem.connected ? 'true' : 'false',
+        hyperdeck: this.hyperdeck.connected ? 'true' : 'false',
+      }
+      const key = JSON.stringify(rich)
+      if (key === lastRich) return
+      lastRich = key
+      for (const [k, v] of Object.entries(rich)) this.sendCompanionVar(k, v)
+    }
+    this.atem.on('stateChanged', pushRich)
+    this.atem.on('connected', pushRich)
+    this.atem.on('disconnected', pushRich)
+    this.hyperdeck.on('connected', pushRich)
+    this.hyperdeck.on('disconnected', pushRich)
     this.atem.on('connected', () => this.sendFeedback('/status/atem', [1]))
     this.atem.on('disconnected', () => this.sendFeedback('/status/atem', [0]))
     this.hyperdeck.on('connected', () => this.sendFeedback('/status/hyperdeck', [1]))
@@ -136,7 +160,11 @@ export class OscServer {
     if (!c?.host) return
     const varName = (c.varPrefix ?? 'atemcn_') + name
     try {
-      console.log(`[companion] ${c.host}:${c.port ?? 12321} /custom-variable/${varName}/value = "${value}"`)
+      this._loggedVars ??= new Set()
+      if (!this._loggedVars.has(varName)) {
+        this._loggedVars.add(varName)
+        console.log(`[companion] pushing ${varName} -> ${c.host}:${c.port ?? 12321} (further updates not logged)`)
+      }
       this.port.send(
         { address: `/custom-variable/${varName}/value`, args: [String(value)] },
         c.host,

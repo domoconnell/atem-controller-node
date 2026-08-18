@@ -9,8 +9,8 @@ M/E choreography on the church projection setup:
 - **Look recorder** — one button captures the complete state as a named
   "look": SuperSource boxes + art, M/E 2 program/preview, full USK settings
   (type, fill/key sources, luma/pattern/DVE params, masks — all four
-  keyers), HyperDeck clip and
-  transport. Stored as editable JSON in `looks/`.
+  keyers), media player contents, HyperDeck clip and transport. Stored as
+  editable JSON in `looks/`.
 - **Transition engine** — `/goto/<look>` plans the choreography by diffing
   the live switcher state against the target look: border keys fade out,
   boxes animate, backgrounds hand off seamlessly, blend keys bracket layout
@@ -22,12 +22,33 @@ M/E choreography on the church projection setup:
 - **Companion integration** — OSC commands in, custom variables + OSC
   feedback out.
 - **Web UI** (port 3000) — broadcast-console style app shell: pinned
-  Program + Preview SuperSource monitors (preview shows the target layout
-  with the live layout ghosted underneath), a scrolling library of look
+  Program + Preview **scene monitors** that render what's actually on the
+  output — direct feeds as full-frame plates, SuperSource as art + boxes,
+  USKs as overlays (pattern keys drawn as their shape), every source in a
+  stable distinct colour with labels, **source delineators inside every
+  SuperSource box** (the whole source frame dashed, the cropped-away part
+  hatched, the visible slice solid with a `100×45%` crop readout — so you
+  can see exactly which part of ProPresenter/a camera comes through), and
+  **mixes rendered in flight**
+  (outgoing under incoming at the transition handle) so a fade looks like a
+  fade, not a cut. Preview shows the target look with the live layout
+  ghosted underneath, a scrolling library of look
   tiles with Take buttons, a detail sheet with every recorded parameter +
   the engine's plan, USK lamps, HyperDeck transport, a transition widget
   in the header with busy lockout, and Record + Settings dialogs. Built
   with Next.js + Tailwind + shadcn/ui, exported to static files.
+
+## No ATEM? It simulates one
+
+If the real switcher isn't reachable within `atem.simFallbackMs` (4s), the
+service runs a **built-in ATEM simulator** (`src/atem-sim.js`) — a drop-in
+for the `atem-connection` object with the same state shape and methods,
+seeded from your first recorded look. Transitions genuinely execute against
+it (auto transitions run over the mix rate, boxes move, keys toggle), so
+the UI, plan previews, storyboard, acceptance runner and even OSC/Companion
+all work anywhere. It's unmissable: the ATEM LED goes **amber "ATEM · SIM"**
+and the page carries a banner. If the real ATEM appears later it takes over
+automatically. Disable with `atem.simulate: false`.
 
 ## Running
 
@@ -65,6 +86,7 @@ The previous single-file UI is kept in `ui-legacy/index.html` for reference.
 | Key | Meaning |
 |---|---|
 | `atem.ip` | ATEM switcher address (10.10.10.51) |
+| `atem.simulate` / `.simFallbackMs` | Run the built-in ATEM simulator when the real one is unreachable (default on, after 4s) |
 | `hyperdeck.ip` / `.port` | HyperDeck 3 (10.10.10.55:9993) |
 | `supersource.id` | SuperSource number, zero-indexed (`0` = SS1) |
 | `supersource.me` | Main M/E, zero-indexed (`1` = M/E 2, the projection M/E) |
@@ -83,6 +105,7 @@ The previous single-file UI is kept in `ui-legacy/index.html` for reference.
 | `transition.keyFadeMs` | Border-key (USK) fade speed (150) |
 | `transition.mixRateFrames` | If set, pins the M/E mix rate for background fades; `null` = inherit the switcher |
 | `transition.videoFps` | Frame rate used to convert seconds → mix-rate frames (50 — set 60 for 59.94/60p) |
+| `transition.dipInput` | Neutral input for the dip-through fallback (default black `0`; `null` disables) |
 
 ## Workflow: recording looks
 
@@ -133,10 +156,61 @@ self-corrects drift) against the target look:
     feed, it's a genuine content change and fades directly.
 - Boxes turning on grow from nothing at their target; boxes turning off
   shrink in place, then are disabled with their recorded geometry restored.
+- **Media players are never changed while visible.** Each look records
+  what every media player shows (still/clip + filename). When a target
+  needs an MP change, every live USK that keys or fills from that MP is
+  recycled around the change (fade off → switch → fade on); keys coming on
+  get the MP switched before their fade-in; and if SS itself shows the MP
+  (art or a box), the change happens inside an SS offline window.
+- **Box source swaps** (same layout, different source in an enabled box —
+  e.g. ProPresenter → worship laptop in box 4) can't be animated: a source
+  change is a hard cut inside live SS. If a live box is a *full-frame
+  carrier* (fullscreen, top-aligned, no side/top crop — bottom crop is
+  fine), the engine opens an **SS offline window**: keys fade off, other
+  boxes animate away, an *invisible* cut to the carrier's own feed, a
+  proper mix to the new feed, box retargeting/MP changes/art offline, an
+  invisible cut back to SS, boxes animate back, keys fade in. Without a
+  valid carrier it degrades to a plain in-SS cut and says so in the plan.
+  The same window mechanism serves any "must be off air to change" case.
+- **Dip-through fallback**: if a change can't happen on air and there is
+  no full-frame carrier, the engine fades the whole M/E to a neutral
+  source (`transition.dipInput`, default black), does the work offline,
+  and fades back — visible, but graceful, never a cut. Set `dipInput` to
+  `null` to disable (the engine then degrades to an in-SS cut and says so).
+- **Leaving SS to a feed no live box carries** never retargets a box on air:
+  the display box goes fullscreen with its current source, an invisible cut
+  lands on that feed, then a genuine mix to the target.
 - The HyperDeck is only touched when the target's transport differs from
   live (already-playing clips are never restarted).
 - The mix rate is switched per fade and restored at the end; the recorded
   "next transition" selection is restored for normal manual operation.
+
+### The simulator: every plan is proven before it runs
+
+`src/simulator.js` is a virtual switcher. It executes a plan against a
+model of the ATEM (program, SS boxes with real geometry and occlusion,
+USKs, media players, art) and records every moment the *program picture*
+changes, classifying each as invisible / fade / animate / **visible cut**.
+Because this event can't be rehearsed, this is the primary quality gate:
+
+- `GET /api/plan/<look>` returns the plan **and its grade**; the main UI
+  shows a storyboard of the journey (fade USK1 → animate boxes → mix …)
+  with a CLEAN / ▲ CUT badge and timing under the monitors when you hover a
+  look, and every tile carries a ✓/▲ graded from live state.
+- `npm test` runs `test/audit-looks.mjs` (every look-pair, must be 100%
+  clean) and `test/adversarial.mjs` (engineered nasty combos). Run it after
+  recording new looks or touching the engine. Today: **72/72 pairs clean**.
+- The simulator has already caught two real defects the code reading
+  missed (an on-air box retarget in the leave-SS handoff; a bottom-cropped
+  carrier that wasn't truly invisible) — both fixed.
+
+### Acceptance runner (`/acceptance`, in the app switcher)
+
+For the office session: lists every look pair, shows the simulator's
+verdict, **1. Set up** puts the switcher on the from-look, **2. Run**
+transitions, and you mark Clean / Issue / Skip with a note. Results are
+stored in `data/acceptance.json` (deploy-protected) so the session ends
+with a defect list, not memories.
 
 While a sequence runs, further `/goto`s are **rejected, never queued** —
 the UI disables its buttons and Companion's `atemcn_transitioning`
@@ -183,6 +257,10 @@ All commands are also available over HTTP for testing:
    The service pushes values via Companion's built-in OSC API
    (`companion.host:12321` — enable OSC in Companion settings). Verify the
    pipe with `/companion/test`.
+   Additional variables pushed live: `atemcn_program`, `atemcn_preview`
+   (input names), `atemcn_mp1`/`atemcn_mp2` (media player contents),
+   `atemcn_usk_on` (e.g. `1,2`), `atemcn_atem`/`atemcn_hyperdeck`
+   (`true`/`false`), `atemcn_last_error`.
 3. Button feedback via the internal *Variable: check value* feedback:
    green when `$(custom:atemcn_active_look)` equals the button's look;
    dimmed while `$(custom:atemcn_transitioning)` is `true` (presses are
@@ -295,6 +373,7 @@ for that pair (`/reload` after adding). Macros are not shown in the UI.
 | `animateBoxes` | `targets` (array of 4 box prop objects/null), `duration`, `easing` | Tween to explicit values |
 | `setBoxes` | `boxes` (`{index: props}`) | Raw box set (offline prep) |
 | `setSsProperties` | `props` | SuperSource art settings |
+| `mediaPlayerSource` | `player` (0-indexed), `source` `{sourceType, stillIndex, clipIndex}` | Switch a media player (engine only emits it while off air) |
 | `uskSettings` | `keyer` (0-indexed), `settings` (a look's `me.usk[n]` record) | Apply type/sources/pattern/mask (diff only) |
 | `animateUskPattern` | `keyer`, `pattern` (target values), `duration`, `easing` | Tween pattern params on air |
 | `setMixRate` | `frames`, `me` | M/E mix rate |

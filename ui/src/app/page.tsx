@@ -1,5 +1,5 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAtemState } from '@/hooks/use-atem-state'
 import { cmd } from '@/lib/api'
 import type { Look } from '@/lib/types'
@@ -9,6 +9,10 @@ import { SsMonitor } from '@/components/atem/ss-monitor'
 import { MePanel } from '@/components/atem/me-panel'
 import { LookTile } from '@/components/atem/look-tile'
 import { LookSheet } from '@/components/atem/look-sheet'
+import { PlanStoryboard } from '@/components/atem/plan-storyboard'
+import { lookScene, liveScene } from '@/lib/scene'
+import { fetchPlanGrades } from '@/lib/api'
+import type { PlanGrades } from '@/lib/types'
 import { RecordDialog } from '@/components/atem/record-dialog'
 import { SettingsDialog } from '@/components/atem/settings-dialog'
 import { Button } from '@/components/ui/button'
@@ -22,8 +26,17 @@ export default function Page() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [recordOpen, setRecordOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [grades, setGrades] = useState<PlanGrades>({})
 
   const locked = !!(state?.busy || state?.animating)
+  const gradeKey = state ? `${state.currentLook}|${state.atem.mixEffects[state.mainMe]?.programInput}|${state.busy?.name ?? ''}|${state.looks.length}` : ''
+  useEffect(() => {
+    if (!state?.atem.connected || locked) return
+    let alive = true
+    fetchPlanGrades().then((g) => alive && setGrades(g)).catch(() => {})
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gradeKey, state?.atem.connected, locked])
   const inputName = (id: number) => state?.atem.inputs[id] ?? String(id)
 
   // Preview monitor shows: the look currently transitioning to, else the
@@ -49,17 +62,23 @@ export default function Page() {
             </div>
           </div>
         ) : (
-          <main className="flex-1 min-h-0 p-4 grid gap-4 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <main className="relative flex-1 min-h-0 p-4 grid gap-4 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
+            {state.atem.simulated && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 z-40 rounded-b-md bg-busy text-black text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1 shadow-[0_0_16px_-4px_var(--busy)]">
+                Simulator — no ATEM connected
+              </div>
+            )}
             {/* ---- Left column: pinned monitors + scrolling looks ---- */}
             <div className="min-w-0 min-h-0 flex flex-col gap-4">
               <div className="shrink-0 grid gap-4 grid-cols-2 max-w-[1100px]">
                 <div>
                   <SsMonitor
-                    boxes={state.atem.boxes}
+                    scene={liveScene(state).scene}
+                    mixTo={liveScene(state).mixTo}
                     inputName={inputName}
                     label="Program"
                     tally="pgm"
-                    sublabel={me ? `${inputName(me.programInput)}${me.inTransition ? ' · IN TRANSITION' : ''}` : undefined}
+                    sublabel={me ? `${inputName(me.programInput)}${me.inTransition ? ` · MIX ${Math.round((me.handlePosition / 10000) * 100)}%` : ''}` : undefined}
                     className={cn(me?.inTransition && 'glow-busy')}
                   />
                   <div className="mt-1 h-8 shrink-0 flex items-center justify-between px-1 text-[11px] text-muted-foreground">
@@ -70,8 +89,8 @@ export default function Page() {
 
                 <div>
                   <SsMonitor
-                    boxes={target?.boxes ?? state.atem.boxes}
-                    ghost={target ? state.atem.boxes : null}
+                    scene={target ? lookScene(target) : liveScene(state).scene}
+                    ghost={target && (target.me?.programInput ?? 6000) === 6000 ? state.atem.boxes : null}
                     inputName={inputName}
                     label={state.busy?.to ? 'Going to' : 'Preview'}
                     tally="pvw"
@@ -88,6 +107,12 @@ export default function Page() {
                     {target && target.name === state.currentLook && <span className="text-live font-medium">already on air</span>}
                   </div>
                 </div>
+              </div>
+
+              {/* transition storyboard: what the engine will do + simulator verdict */}
+              <div className="shrink-0 surface rounded-xl px-3 h-[76px] max-w-[1100px] flex flex-col justify-center overflow-hidden">
+                <div className="text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground mb-1 truncate">Transition plan {target && target.name !== state.currentLook ? `→ ${target.name}` : ''}</div>
+                <PlanStoryboard look={target && target.name !== state.currentLook && state.atem.connected ? target.name : null} inputName={inputName} />
               </div>
 
               <div className="flex-1 min-h-0 flex flex-col">
@@ -112,6 +137,7 @@ export default function Page() {
                         state={state}
                         isCurrent={state.currentLook === look.name}
                         isTarget={targetName === look.name}
+                        grade={grades[look.name]?.grade}
                         locked={locked}
                         onSelect={() => setTargetName(look.name)}
                         onGoto={() => cmd('/goto', [look.name])}

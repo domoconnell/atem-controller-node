@@ -85,6 +85,7 @@ export class LookStore extends EventEmitter {
         uskOnAir: (me?.upstreamKeyers ?? []).map((k) => k?.onAir ?? false),
         usk: this.atem.getUskSettings(),
       },
+      mediaPlayers: this.atem.getMediaPlayers(),
       hyperdeck: {
         connected: this.hyperdeck?.connected ?? false,
         status: transport['status'] ?? null,

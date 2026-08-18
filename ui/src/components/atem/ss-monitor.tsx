@@ -1,55 +1,102 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import type { Box } from '@/lib/types'
+import type { Box, MixEffectLive } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-const BOX_COLORS = ['#6aa7ff', '#4fd487', '#f2b84b', '#d77df0']
+/**
+ * Broadcast-style monitor that renders a *scene*: what is on the output.
+ *  - direct feed  -> full-frame plate in that source's colour, big label
+ *  - SuperSource  -> art plate + boxes, each box in ITS SOURCE's colour
+ *  - during a mix -> outgoing scene under incoming scene at handle alpha
+ *  - USKs on air  -> translucent overlays (pattern keys drawn as shape)
+ * Every source has a stable, distinct colour so ProMain always looks the
+ * same wherever it appears (box, direct feed, key fill).
+ */
+
+export interface Scene {
+  program: number
+  boxes: (Box | null)[]
+  artFill?: number | null
+  keyers?: (MixEffectLive['keyers'][number])[]
+}
 
 export interface SsMonitorProps {
-  boxes: (Box | null)[] | undefined
+  /** Legacy: SS boxes only (treated as program=SS). Prefer `scene`. */
+  boxes?: (Box | null)[] | undefined
+  scene?: Scene
+  /** Incoming scene + progress (0..1) to render a mix in flight. */
+  mixTo?: { scene: Scene; t: number; keysOnly?: boolean } | null
   inputName?: (id: number) => string
-  /** 'pgm' | 'pvw' | 'plain' — tints the bezel + tally strip */
   tally?: 'pgm' | 'pvw' | 'plain'
   label?: string
   sublabel?: string
   className?: string
   showGrid?: boolean
   showLabels?: boolean
-  /** Ghost boxes drawn faintly under the main ones (e.g. current vs target) */
   ghost?: (Box | null)[] | null
+  ssInput?: number
 }
 
-/**
- * ATEM SuperSource coordinates: x/y are hundredths of DVE units on a
- * 32×18 unit frame; size 1000 = full frame; crops are thousandths of a
- * unit (left/right 0–32000, top/bottom 0–18000).
- */
+// ---- source colours: stable per input id -------------------------------
+const NAMED: Record<number, string> = {
+  0: '#3a3f4a',      // black
+  6000: '#b48cff',   // SuperSource (only used as a fallback plate)
+  14: '#4c9be8',     // HD 3 (art loop)
+  15: '#f2b84b',     // ProMain
+  9: '#f06292',      // Worship
+  1: '#4fd487', 2: '#26c6da', 3: '#9ccc65', 4: '#ffb74d', 5: '#ba68c8',
+  3010: '#8d99ae', 3020: '#a8b5c7', 3011: '#8d99ae', 3021: '#a8b5c7',
+}
+export function sourceColor(id: number): string {
+  if (NAMED[id]) return NAMED[id]
+  // hash -> pleasant hue
+  let h = (id * 2654435761) % 360
+  if (h < 0) h += 360
+  return `hsl(${h} 62% 62%)`
+}
+
+// ATEM SuperSource coordinates: hundredths of DVE units on a 32×18 frame;
+// size 1000 = full frame; crops in thousandths (l/r 0–32000, t/b 0–18000).
 export function boxRect(b: Box, W: number, H: number) {
   const scale = b.size / 1000
-  const bw = scale * W
-  const bh = scale * H
+  const bw = scale * W, bh = scale * H
   const cx = W / 2 + (b.x / 100 / 32) * W
   const cy = H / 2 - (b.y / 100 / 18) * H
   let x = cx - bw / 2, y = cy - bh / 2, w = bw, h = bh
+  const full = { x, y, w, h }   // the whole source frame, before cropping
   if (b.cropped) {
-    const cl = (b.cropLeft / 32000) * bw
-    const cr = (b.cropRight / 32000) * bw
-    const ct = (b.cropTop / 18000) * bh
-    const cb = (b.cropBottom / 18000) * bh
+    const cl = (b.cropLeft / 32000) * bw, cr = (b.cropRight / 32000) * bw
+    const ct = (b.cropTop / 18000) * bh, cb = (b.cropBottom / 18000) * bh
     x += cl; w = Math.max(0, w - cl - cr); y += ct; h = Math.max(0, h - ct - cb)
   }
-  return { x, y, w, h }
+  return { x, y, w, h, full }
+}
+
+/** Thumbnail-sized source label: "Camera 1" -> "C1", "ProMain" -> "Pro", "Media Player 1" -> "MP1". */
+function shortName(n: string): string {
+  const m = /^(Camera|Cam)\s*(\d+)/i.exec(n); if (m) return 'C' + m[2]
+  const mp = /^Media Player\s*(\d+)/i.exec(n); if (mp) return 'MP' + mp[1]
+  if (/^SuperSource/i.test(n)) return 'SS'
+  const w = n.split(/\s+/)
+  if (w.length > 1) return w.map((x) => x[0]).join('').toUpperCase().slice(0, 3)
+  // single word: CamelCase initials ("ProMain" -> "PM"), else first 4 chars
+  const caps = n.match(/[A-Z]/g)
+  if (caps && caps.length >= 2) return caps.join('').slice(0, 3)
+  return n.slice(0, 4)
+}
+
+function hexA(hex: string, a: number) {
+  if (hex.startsWith('hsl')) return hex.replace(')', ` / ${a})`).replace('hsl(', 'hsl(')
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
 }
 
 export function SsMonitor({
-  boxes, inputName, tally = 'plain', label, sublabel, className,
-  showGrid = true, showLabels = true, ghost,
+  boxes, scene, mixTo, inputName, tally = 'plain', label, sublabel, className,
+  showGrid = true, showLabels = true, ghost, ssInput = 6000,
 }: SsMonitorProps) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [, force] = useState(0)
-
-  // Redraw whenever the canvas gets laid out / resized (tiles mount at 0px
-  // width before layout, so a plain effect would draw into a 1px canvas).
   useEffect(() => {
     const c = ref.current
     if (!c) return
@@ -57,6 +104,8 @@ export function SsMonitor({
     ro.observe(c)
     return () => ro.disconnect()
   }, [])
+
+  const sc: Scene = scene ?? { program: ssInput, boxes: boxes ?? [] }
 
   useEffect(() => {
     const c = ref.current
@@ -68,14 +117,237 @@ export function SsMonitor({
     if (c.width !== W || c.height !== H) { c.width = W; c.height = H }
     const ctx = c.getContext('2d')
     if (!ctx) return
+    const name = (id: number) => (inputName ? inputName(id) : String(id))
+    const big = W > 400 * dpr
 
     ctx.clearRect(0, 0, W, H)
-    const bg = ctx.createLinearGradient(0, 0, 0, H)
-    bg.addColorStop(0, '#0b0c10'); bg.addColorStop(1, '#06070a')
-    ctx.fillStyle = bg
+    ctx.fillStyle = '#07080b'
     ctx.fillRect(0, 0, W, H)
 
-    if (showGrid) {
+    // ---- draw one scene (background layer + boxes) ----
+    const drawScene = (s: Scene, alpha: number, labels: boolean) => {
+      ctx.save()
+      ctx.globalAlpha = alpha
+      if (s.program === ssInput) {
+        // art plate
+        if (s.artFill != null) {
+          const col = sourceColor(s.artFill)
+          const g = ctx.createLinearGradient(0, 0, 0, H)
+          g.addColorStop(0, hexA(col, 0.22)); g.addColorStop(1, hexA(col, 0.10))
+          ctx.fillStyle = g
+          ctx.fillRect(0, 0, W, H)
+          if (labels && showLabels && big) {
+            ctx.fillStyle = hexA(col, 0.55)
+            ctx.font = `600 ${11 * dpr}px ui-sans-serif, system-ui, sans-serif`
+            ctx.textAlign = 'right'
+            ctx.fillText(`art · ${name(s.artFill)}`, W - 10 * dpr, H - 10 * dpr)
+            ctx.textAlign = 'left'
+          }
+        }
+        ;(s.boxes || []).forEach((b, i) => {
+          if (!b || !b.enabled || b.size <= 0) return
+          const { x, y, w, h, full } = boxRect(b, W, H)
+          if (w <= 0 || h <= 0) return
+          const col = sourceColor(b.source)
+          const isCropped = full.w - w > 1 || full.h - h > 1
+
+          // -- source delineator: the whole source frame, dashed and dim,
+          //    so you can see which slice the crop lets through --
+          if (isCropped && labels) {
+            ctx.save()
+            ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip()
+            ctx.fillStyle = hexA(col, 0.07)
+            ctx.fillRect(full.x, full.y, full.w, full.h)
+            ctx.strokeStyle = hexA(col, 0.55)
+            ctx.lineWidth = 1 * dpr
+            ctx.setLineDash([5 * dpr, 4 * dpr])
+            ctx.strokeRect(full.x + 0.5, full.y + 0.5, full.w - 1, full.h - 1)
+            ctx.setLineDash([])
+            // hatch the cropped-away area (inside full frame, outside visible)
+            ctx.beginPath()
+            ctx.rect(full.x, full.y, full.w, full.h)
+            ctx.rect(x, y, w, h)
+            ctx.clip('evenodd')
+            ctx.strokeStyle = hexA(col, 0.16)
+            ctx.lineWidth = 1 * dpr
+            const step = 9 * dpr
+            for (let d = -H; d < W + H; d += step) {
+              ctx.beginPath(); ctx.moveTo(d, 0); ctx.lineTo(d + H, H); ctx.stroke()
+            }
+            ctx.restore()
+          }
+
+          // -- visible region (what actually comes through the box) --
+          const g = ctx.createLinearGradient(x, y, x, y + h)
+          g.addColorStop(0, hexA(col, 0.42)); g.addColorStop(1, hexA(col, 0.22))
+          ctx.fillStyle = g
+          ctx.fillRect(x, y, w, h)
+          // faint "picture" cue of the FULL source (diagonals + centre ring),
+          // clipped to the visible region, so a top-half crop reads as "the
+          // top half of the picture" rather than "a smaller picture"
+          if (labels && (big || w > 40 * dpr)) {
+            ctx.save()
+            ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
+            ctx.strokeStyle = hexA(col, 0.22)
+            ctx.lineWidth = 1 * dpr
+            ctx.beginPath()
+            ctx.moveTo(full.x, full.y); ctx.lineTo(full.x + full.w, full.y + full.h)
+            ctx.moveTo(full.x + full.w, full.y); ctx.lineTo(full.x, full.y + full.h)
+            ctx.stroke()
+            const fcx = full.x + full.w / 2, fcy = full.y + full.h / 2, r = Math.min(full.w, full.h) * 0.06
+            ctx.beginPath(); ctx.arc(fcx, fcy, r, 0, Math.PI * 2); ctx.stroke()
+            ctx.restore()
+          }
+          ctx.strokeStyle = col
+          ctx.lineWidth = 1.5 * dpr
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
+          const t = Math.min(14 * dpr, w / 3, h / 3)
+          ctx.lineWidth = 3 * dpr
+          ctx.beginPath()
+          ctx.moveTo(x, y + t); ctx.lineTo(x, y); ctx.lineTo(x + t, y)
+          ctx.moveTo(x + w - t, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + t)
+          ctx.moveTo(x + w, y + h - t); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - t, y + h)
+          ctx.moveTo(x + t, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - t)
+          ctx.stroke()
+          if (labels && showLabels && big && h > 22 * dpr) {
+            // Label sits inside the VISIBLE region, clamped on-canvas. Wide
+            // slice: full text; narrow slice: just the box number.
+            const fs = Math.max(10 * dpr, Math.min(13 * dpr, Math.max(w, 60 * dpr) / 14))
+            ctx.font = `600 ${fs}px ui-sans-serif, system-ui, sans-serif`
+            const cropTxt = isCropped ? `  · ${Math.round((w / full.w) * 100)}×${Math.round((h / full.h) * 100)}%` : ''
+            const fullText = `${i + 1}  ${name(b.source)}${cropTxt}`
+            const fits = ctx.measureText(fullText).width + 12 * dpr < w - 8 * dpr
+            const text = fits ? fullText : String(i + 1)
+            const tw = ctx.measureText(text).width + 12 * dpr
+            const th = fs + 8 * dpr
+            const vx0 = Math.max(0, x), vx1 = Math.min(W, x + w)
+            const vy0 = Math.max(0, y), vy1 = Math.min(H, y + h)
+            if (vx1 - vx0 > tw + 4 * dpr && vy1 - vy0 > th + 4 * dpr) {
+              const lx = vx0 + 6 * dpr, ly = vy1 - th - 6 * dpr
+              ctx.fillStyle = 'rgba(0,0,0,0.6)'
+              ctx.fillRect(lx, ly, tw, th)
+              ctx.fillStyle = col
+              ctx.fillText(text, lx + 6 * dpr, ly + fs + 1 * dpr)
+            }
+          } else if (labels && showLabels && !big && w > 18 * dpr && h > 12 * dpr) {
+            // thumbnails: just the source initial
+            ctx.fillStyle = col
+            ctx.font = `700 ${Math.max(9 * dpr, Math.min(12 * dpr, h / 3))}px ui-sans-serif, system-ui, sans-serif`
+            ctx.fillText(shortName(name(b.source)), x + 4 * dpr, y + h - 5 * dpr)
+          }
+        })
+      } else {
+        // direct feed: full-frame plate
+        const col = sourceColor(s.program)
+        const g = ctx.createLinearGradient(0, 0, W, H)
+        g.addColorStop(0, hexA(col, 0.40)); g.addColorStop(1, hexA(col, 0.18))
+        ctx.fillStyle = g
+        ctx.fillRect(0, 0, W, H)
+        ctx.strokeStyle = hexA(col, 0.7)
+        ctx.lineWidth = 2 * dpr
+        ctx.strokeRect(1, 1, W - 2, H - 2)
+        if (labels && showLabels) {
+          const fs = big ? 22 * dpr : Math.max(9 * dpr, H / 6)
+          ctx.font = `800 ${fs}px ui-sans-serif, system-ui, sans-serif`
+          ctx.fillStyle = hexA(col, 0.95)
+          ctx.textAlign = 'center'
+          ctx.fillText(name(s.program), W / 2, H / 2 + fs / 3)
+          if (big) {
+            ctx.font = `600 ${11 * dpr}px ui-sans-serif, system-ui, sans-serif`
+            ctx.fillStyle = 'rgba(255,255,255,0.45)'
+            ctx.fillText('direct feed', W / 2, H / 2 + fs / 3 + 16 * dpr)
+          }
+          ctx.textAlign = 'left'
+        }
+      }
+      ctx.restore()
+    }
+
+    // ---- USK overlays for a scene ----
+    const drawKeys = (s: Scene, alpha: number) => {
+      ;(s.keyers ?? []).forEach((k, i) => {
+        if (!k || !k.onAir) return
+        ctx.save()
+        ctx.globalAlpha = alpha
+        const fill = k.fillSource ?? 0
+        const col = sourceColor(fill)
+        if (k.keyType === 'pattern' && k.pattern) {
+          // barn-door / box style: draw the pattern's shape as a soft region
+          const p = k.pattern
+          const size = Math.min(1, Math.max(0, p.size / 10000))
+          const cx = (p.positionX / 10000) * W, cy = (p.positionY / 10000) * H
+          const inv = !!p.invert
+          ctx.fillStyle = hexA(col, 0.28)
+          if (p.style === 2 || p.style === 3) {
+            // barn doors: horizontal (2) opens from centre out; inverted = edges
+            const half = size / 2
+            if (p.style === 2) {
+              const y0 = cy - half * H, y1 = cy + half * H
+              if (inv) { ctx.fillRect(0, 0, W, Math.max(0, y0)); ctx.fillRect(0, y1, W, H - y1) }
+              else ctx.fillRect(0, y0, W, y1 - y0)
+            } else {
+              const x0 = cx - half * W, x1 = cx + half * W
+              if (inv) { ctx.fillRect(0, 0, Math.max(0, x0), H); ctx.fillRect(x1, 0, W - x1, H) }
+              else ctx.fillRect(x0, 0, x1 - x0, H)
+            }
+          } else if (p.style === 7 || p.style === 6 || p.style === 5) {
+            const r = size * Math.max(W, H) * 0.5
+            ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2)
+            if (inv) { ctx.rect(W, 0, -W, H) }
+            ctx.fill('evenodd')
+          } else {
+            const w = size * W, h = size * H
+            ctx.fillRect(cx - w / 2, cy - h / 2, w, h)
+          }
+        } else {
+          // luma/other: dashed border (a full-frame key like a border graphic)
+          if (big) { ctx.fillStyle = hexA(col, 0.06); ctx.fillRect(0, 0, W, H) }
+          ctx.strokeStyle = hexA(col, 0.9)
+          ctx.lineWidth = 3 * dpr
+          ctx.setLineDash([6 * dpr, 4 * dpr])
+          ctx.strokeRect(4 * dpr, 4 * dpr, W - 8 * dpr, H - 8 * dpr)
+          ctx.setLineDash([])
+        }
+        if (showLabels && big) {
+          const fs = 10 * dpr
+          ctx.font = `700 ${fs}px ui-sans-serif, system-ui, sans-serif`
+          const text = `USK${i + 1} · ${name(fill)}`
+          const tw = ctx.measureText(text).width + 10 * dpr
+          const lx = W - tw - 8 * dpr, ly = 8 * dpr + i * (fs + 12 * dpr)
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'
+          ctx.fillRect(lx, ly, tw, fs + 8 * dpr)
+          ctx.fillStyle = col
+          ctx.fillText(text, lx + 5 * dpr, ly + fs + 1 * dpr)
+        }
+        ctx.restore()
+      })
+    }
+
+    // ---- compose ----
+    if (ghost) drawScene({ program: ssInput, boxes: ghost }, 0.28, false)
+    if (mixTo && mixTo.t > 0 && mixTo.t < 1) {
+      if (mixTo.keysOnly) {
+        drawScene(sc, 1, true)
+        // keys crossfade: outgoing keys fade out, incoming fade in
+        drawKeys(sc, 1 - mixTo.t)
+        drawKeys(mixTo.scene, mixTo.t)
+      } else {
+        drawScene(sc, 1, true)
+        drawScene(mixTo.scene, mixTo.t, true)
+        drawKeys(sc, 1 - mixTo.t)
+        drawKeys(mixTo.scene, mixTo.t)
+        // mix indicator
+        ctx.fillStyle = 'rgba(255,255,255,0.08)'
+        ctx.fillRect(0, H - 4 * dpr, W, 4 * dpr)
+        ctx.fillStyle = '#f2b84b'
+        ctx.fillRect(0, H - 4 * dpr, W * mixTo.t, 4 * dpr)
+      }
+    } else {
+      drawScene(sc, 1, true)
+      drawKeys(sc, 1)
+    }
+
+    if (showGrid && big) {
       ctx.strokeStyle = 'rgba(255,255,255,0.045)'
       ctx.lineWidth = 1
       for (let i = 1; i < 4; i++) {
@@ -83,61 +355,11 @@ export function SsMonitor({
         ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke()
         ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke()
       }
-      // centre cross
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)'
-      ctx.beginPath(); ctx.moveTo(W / 2 - 10 * dpr, H / 2); ctx.lineTo(W / 2 + 10 * dpr, H / 2); ctx.stroke()
-      ctx.beginPath(); ctx.moveTo(W / 2, H / 2 - 10 * dpr); ctx.lineTo(W / 2, H / 2 + 10 * dpr); ctx.stroke()
-      // action-safe
       ctx.strokeStyle = 'rgba(255,255,255,0.06)'
       ctx.setLineDash([4 * dpr, 4 * dpr])
       ctx.strokeRect(W * 0.05, H * 0.05, W * 0.9, H * 0.9)
       ctx.setLineDash([])
     }
-
-    const draw = (list: (Box | null)[] | null | undefined, alpha: number, labels: boolean) => {
-      ;(list || []).forEach((b, i) => {
-        if (!b || !b.enabled) return
-        const { x, y, w, h } = boxRect(b, W, H)
-        if (w <= 0 || h <= 0) return
-        const col = BOX_COLORS[i]
-        ctx.globalAlpha = alpha
-        const g = ctx.createLinearGradient(x, y, x, y + h)
-        g.addColorStop(0, col + '3a'); g.addColorStop(1, col + '14')
-        ctx.fillStyle = g
-        ctx.fillRect(x, y, w, h)
-        ctx.strokeStyle = col
-        ctx.lineWidth = 1.5 * dpr
-        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1)
-        // corner ticks
-        const t = Math.min(14 * dpr, w / 3, h / 3)
-        ctx.lineWidth = 3 * dpr
-        ctx.beginPath()
-        ctx.moveTo(x, y + t); ctx.lineTo(x, y); ctx.lineTo(x + t, y)
-        ctx.moveTo(x + w - t, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + t)
-        ctx.moveTo(x + w, y + h - t); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - t, y + h)
-        ctx.moveTo(x + t, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - t)
-        ctx.stroke()
-        if (labels && showLabels && w > 60 * dpr && h > 28 * dpr) {
-          const name = inputName ? inputName(b.source) : (b.sourceName ?? String(b.source))
-          const fs = Math.max(10 * dpr, Math.min(13 * dpr, w / 14))
-          ctx.font = `600 ${fs}px ui-sans-serif, system-ui, sans-serif`
-          const text = `${i + 1}  ${name}`
-          const tw = ctx.measureText(text).width + 12 * dpr
-          const th = fs + 8 * dpr
-          // Label sits at the box's bottom-left, so it never collides with
-          // the monitor header strip along the top edge.
-          const lx = x + 6 * dpr
-          const ly = y + h - th - 6 * dpr
-          ctx.fillStyle = 'rgba(0,0,0,0.6)'
-          ctx.fillRect(lx, ly, tw, th)
-          ctx.fillStyle = col
-          ctx.fillText(text, lx + 6 * dpr, ly + fs + 1 * dpr)
-        }
-        ctx.globalAlpha = 1
-      })
-    }
-    if (ghost) draw(ghost, 0.28, false)
-    draw(boxes, 1, true)
   })
 
   const tallyCls =

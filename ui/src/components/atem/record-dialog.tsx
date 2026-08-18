@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Circle } from 'lucide-react'
 import { SsMonitor } from './ss-monitor'
+import { liveScene } from '@/lib/scene'
 
 function slug(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -46,7 +47,7 @@ export function RecordDialog({ open, onOpenChange, state, locked }: {
           </DialogDescription>
         </DialogHeader>
 
-        <SsMonitor boxes={state.atem.boxes} inputName={inputName} label="Live" tally="pgm"
+        <SsMonitor scene={liveScene(state).scene} inputName={inputName} label="Live" tally="pgm"
           sublabel={me ? inputName(me.programInput) : undefined} className="p-1.5" />
 
         <div className="space-y-1.5">

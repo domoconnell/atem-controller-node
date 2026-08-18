@@ -1,6 +1,9 @@
 {
   "atem": {
-    "ip": "10.10.10.51"
+    "ip": "10.10.10.51",
+    "simulate": true,
+    "simFallbackMs": 4000,
+    "comment": "simulate: run the built-in ATEM simulator when the real switcher is unreachable (ATEM LED shows amber). simFallbackMs: how long to wait for the real one first."
   },
   "hyperdeck": {
     "ip": "10.10.10.55",

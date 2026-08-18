@@ -38,7 +38,7 @@ echo "== 3/5 Syncing project =="
 # from being deleted by a later deploy; new local ones still sync over.
 rsync -az --delete \
   --exclude node_modules --exclude .git --exclude .DS_Store \
-  --exclude ui --exclude ui-legacy \
+  --exclude ui --exclude ui-legacy --exclude test \
   --filter='P looks/***' --filter='P macros/***' --filter='P data/***' \
   -e "ssh -o ControlMaster=auto -o ControlPath=$CTRL -o ControlPersist=600" \
   "$PROJECT_DIR/" "$PI:$APP_DIR/"

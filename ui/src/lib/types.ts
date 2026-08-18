@@ -16,6 +16,9 @@ export interface Box {
 
 export interface KeyerLive {
   onAir: boolean
+  fillSource?: number
+  keyType?: string
+  pattern?: { style: number; size: number; symmetry: number; positionX: number; positionY: number; invert: boolean } | null
 }
 
 export interface MixEffectLive {
@@ -27,6 +30,9 @@ export interface MixEffectLive {
   nextSelection?: number[]
   mixRate?: number
   keyers: (KeyerLive | null)[]
+  nextSelectionNames?: string[]
+  transitionSelectionNames?: string[]
+  art?: { artFillSource: number; artCutSource: number; artOption: number } | null
 }
 
 export interface UskSettings {
@@ -64,6 +70,7 @@ export interface Look {
     uskOnAir: boolean[]
     usk?: (UskSettings | null)[]
   }
+  mediaPlayers?: ({ index: number; sourceType: 'still' | 'clip'; stillIndex: number; clipIndex: number; name: string } | null)[]
   hyperdeck?: {
     connected: boolean; status: string | null; clipId: number | null
     loop: boolean; singleClip: boolean; speed: number | null
@@ -73,9 +80,11 @@ export interface Look {
 export interface Snapshot {
   atem: {
     connected: boolean
+    simulated?: boolean
     boxes: (Box | null)[]
     mixEffects: (MixEffectLive | null)[]
     inputs: Record<string, string>
+    mediaPlayers?: ({ index: number; sourceType: string; name: string } | null)[]
   }
   hyperdeck: { connected: boolean; transport: Record<string, string> }
   currentLook: string | null
@@ -88,7 +97,15 @@ export interface Snapshot {
 }
 
 export interface PlanStep { type: string; [k: string]: unknown }
-export interface Plan { ok: boolean; steps: PlanStep[]; notes: string[]; error?: string }
+export interface SimReport {
+  grade: 'clean' | 'has-cuts'
+  counts: { visibleCuts: number; fades: number; animations: number; steps: number }
+  visibleCuts: { step: number; type: string; detail: string }[]
+  events: { step: number; type: string; kind: 'cut' | 'fade' | 'animate'; detail: string }[]
+  approxDurationMs: number
+}
+export interface Plan { ok: boolean; steps: PlanStep[]; notes: string[]; sim?: SimReport; error?: string }
+export type PlanGrades = Record<string, { grade: string; counts?: SimReport['counts']; approxDurationMs?: number; notes?: string[]; error?: string }>
 
 export const PATTERN_NAMES = [
   'L→R bar', 'T→B bar', 'H barn door', 'V barn door', 'Corners in', 'Rect iris',

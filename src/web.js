@@ -3,7 +3,8 @@ import path from 'node:path'
 import express from 'express'
 import { WebSocketServer } from 'ws'
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
-import { config, projectRoot, applyConfigUpdate } from './config.js'
+import { config, projectRoot, configPath, applyConfigUpdate } from './config.js'
+import { Simulator } from './simulator.js'
 
 /**
  * Status web UI: express serves public/, a WebSocket pushes the full status
@@ -30,6 +31,11 @@ export class WebServer {
     app.get('/transparency-test', (_req, res) =>
       res.sendFile(path.join(projectRoot, 'renderer', 'transparency-test.html'))
     )
+    app.get('/acceptance', (_req, res) => {
+      res.sendFile(path.join(projectRoot, 'public', 'acceptance.html'), (err) => {
+        if (err) res.sendFile(path.join(projectRoot, 'public', 'acceptance', 'index.html'))
+      })
+    })
     app.get('/designer', (_req, res) => {
       res.sendFile(path.join(projectRoot, 'public', 'designer.html'), (err) => {
         if (err) res.sendFile(path.join(projectRoot, 'public', 'designer', 'index.html'))
@@ -94,6 +100,24 @@ export class WebServer {
       res.json({ ok: true })
     })
 
+    // ---- Acceptance results (office test session notes) ----------------
+    const acceptFile = path.join(projectRoot, 'data', 'acceptance.json')
+    const loadAccept = () => { try { return JSON.parse(readFileSync(acceptFile, 'utf8')) } catch { return {} } }
+    app.get('/api/acceptance', (_req, res) => res.json({ ok: true, results: loadAccept() }))
+    app.post('/api/acceptance', (req, res) => {
+      const { from, to, verdict, note } = req.body ?? {}
+      if (!from || !to || !['clean', 'issue', 'skip', 'clear'].includes(verdict)) {
+        return res.status(400).json({ ok: false, error: 'from, to, verdict (clean|issue|skip|clear) required' })
+      }
+      const all = loadAccept()
+      const key = `${from}→${to}`
+      if (verdict === 'clear') delete all[key]
+      else all[key] = { from, to, verdict, note: note ?? '', at: new Date().toISOString() }
+      mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
+      writeFileSync(acceptFile, JSON.stringify(all, null, 2) + '\n')
+      res.json({ ok: true, results: all })
+    })
+
     // ---- ProPresenter timers: snapshot + SSE stream --------------------
     app.get('/api/timers', (_req, res) => res.json(this.propresenter.snapshot()))
     app.get('/api/timers/stream', (req, res) => {
@@ -117,14 +141,14 @@ export class WebServer {
     // Safe-to-hot-apply keys are applied live; anything else needs a
     // restart, which the response reports so the UI can say so.
     app.get('/api/config', (_req, res) => {
-      res.json({ ok: true, config, path: path.join(projectRoot, 'config.json') })
+      res.json({ ok: true, config, path: configPath })
     })
     app.put('/api/config', (req, res) => {
       try {
         const incoming = req.body
         if (!incoming || typeof incoming !== 'object') throw new Error('Body must be a config object')
         const { merged, restartRequired } = applyConfigUpdate(incoming)
-        writeFileSync(path.join(projectRoot, 'config.json'), JSON.stringify(merged, null, 2) + '\n')
+        writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n')
         console.log('[config] saved', restartRequired.length ? `(restart needed for: ${restartRequired.join(', ')})` : '(applied live)')
         res.json({ ok: true, config: merged, restartRequired })
         this.scheduleBroadcast()
@@ -139,13 +163,29 @@ export class WebServer {
       setTimeout(() => process.exit(0), 300)
     })
     // Dry-run: what would the engine do to reach this look from live state?
+    // Includes the simulator's grade of the plan (visible cuts, fades, ...).
     app.get('/api/plan/:look', (req, res) => {
       try {
         const look = this.looks.mustGet(req.params.look)
-        res.json({ ok: true, ...this.engine.plan(look) })
+        const plan = this.engine.plan(look)
+        res.json({ ok: true, ...plan, sim: this.simulate(plan.steps) })
       } catch (e) {
         res.status(400).json({ ok: false, error: e.message })
       }
+    })
+    // Grade every look from the live state in one call (for the tile badges).
+    app.get('/api/plan-all', (_req, res) => {
+      const out = {}
+      for (const look of this.looks.list()) {
+        try {
+          const plan = this.engine.plan(look)
+          const sim = this.simulate(plan.steps)
+          out[look.name] = { grade: sim.grade, counts: sim.counts, approxDurationMs: sim.approxDurationMs, notes: plan.notes }
+        } catch (e) {
+          out[look.name] = { grade: 'error', error: e.message }
+        }
+      }
+      res.json({ ok: true, plans: out })
     })
     app.post('/api/command', async (req, res) => {
       const { address, args } = req.body ?? {}
@@ -189,6 +229,21 @@ export class WebServer {
       const key = `${snap.connected}:${snap.configured}`
       if (key !== ppState) { ppState = key; markDirty() }
     })
+  }
+
+  /** Run a plan through the virtual switcher seeded from live ATEM state. */
+  simulate(steps) {
+    const me = this.atem.getMixEffect()
+    const sim = new Simulator({
+      programInput: me?.programInput,
+      previewInput: me?.previewInput,
+      boxes: this.atem.getBoxes().map((b) => (b ? { ...b } : null)),
+      usk: this.atem.getUskSettings(),
+      art: this.atem.getSsProperties(),
+      mediaPlayers: this.atem.getMediaPlayers(),
+      ssInput: this.engine.ssInput,
+    })
+    return sim.run(steps)
   }
 
   start() {

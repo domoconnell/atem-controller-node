@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { Atem, Enums } from 'atem-connection'
 import { config } from './config.js'
+import { AtemSim } from './atem-sim.js'
 
 const SELECTION_MAP = {
   background: Enums.TransitionSelection.Background,
@@ -31,31 +32,76 @@ const STYLE_MAP = {
 export class AtemController extends EventEmitter {
   constructor() {
     super()
-    this.atem = new Atem()
+    this.real = new Atem()
+    this.sim = null
+    this.atem = this.real          // whichever backend is active
+    this.simulated = false
     this.connected = false
     this.ssrcId = config.supersource.id
     this.me = config.supersource.me
 
-    this.atem.on('connected', () => {
+    this.real.on('connected', () => {
+      if (this.simulated) {
+        console.log('[atem] real ATEM appeared - leaving simulator')
+        this._useReal()
+      }
       this.connected = true
       console.log('[atem] connected to', config.atem.ip)
       this.emit('connected')
       this.emit('stateChanged')
     })
-    this.atem.on('disconnected', () => {
+    this.real.on('disconnected', () => {
+      if (this.simulated) return
       this.connected = false
       console.log('[atem] disconnected')
       this.emit('disconnected')
       this.emit('stateChanged')
+      this._scheduleSimFallback()
     })
-    this.atem.on('stateChanged', (_state, paths) => {
-      this.emit('stateChanged', paths)
+    this.real.on('stateChanged', (_state, paths) => {
+      if (!this.simulated) this.emit('stateChanged', paths)
     })
-    this.atem.on('error', (e) => console.error('[atem] error:', e))
+    this.real.on('error', (e) => console.error('[atem] error:', e))
   }
 
   async connect() {
-    await this.atem.connect(config.atem.ip)
+    this._scheduleSimFallback()
+    await this.real.connect(config.atem.ip)
+  }
+
+  /**
+   * If the real switcher hasn't connected within the grace period, run the
+   * built-in simulator so the whole app is usable (planning, previews,
+   * dry-running transitions). The real one takes over if it turns up.
+   */
+  _scheduleSimFallback() {
+    if (config.atem?.simulate === false) return
+    clearTimeout(this._simTimer)
+    const grace = config.atem?.simFallbackMs ?? 4000
+    this._simTimer = setTimeout(() => {
+      if (this.connected || this.simulated) return
+      this._useSim()
+    }, grace)
+  }
+
+  _useSim() {
+    this.sim = new AtemSim({ videoFps: config.transition?.videoFps ?? 50 })
+    this.atem = this.sim
+    this.simulated = true
+    this.sim.on('stateChanged', (_s, paths) => this.emit('stateChanged', paths))
+    this.sim.on('connected', () => {
+      this.connected = true
+      console.log('[atem] ⚠ no ATEM at', config.atem.ip, '- running the built-in SIMULATOR')
+      this.emit('connected')
+      this.emit('stateChanged')
+    })
+    this.sim.connect()
+  }
+
+  _useReal() {
+    if (this.sim) { this.sim.removeAllListeners(); this.sim = null }
+    this.atem = this.real
+    this.simulated = false
   }
 
   get state() {
@@ -213,6 +259,43 @@ export class AtemController extends EventEmitter {
     return input?.longName || input?.shortName || String(id)
   }
 
+  /**
+   * Media player sources: what still/clip each MP is showing, with the
+   * still's filename (from the media pool) so looks are self-documenting.
+   */
+  getMediaPlayers() {
+    const media = this.state?.media
+    return (media?.players ?? []).map((p, i) => {
+      if (!p) return null
+      const isStill = p.sourceType === 1 // Enums.MediaSourceType.Still
+      const idx = isStill ? p.stillIndex : p.clipIndex
+      const still = isStill ? media.stillPool?.[p.stillIndex] : null
+      const clip = !isStill ? media.clipPool?.[p.clipIndex] : null
+      return {
+        index: i,
+        sourceType: isStill ? 'still' : 'clip',
+        stillIndex: p.stillIndex,
+        clipIndex: p.clipIndex,
+        name: still?.fileName || clip?.name || `${isStill ? 'still' : 'clip'} ${idx + 1}`,
+        playing: p.playing,
+        loop: p.loop,
+      }
+    })
+  }
+
+  async setMediaPlayerSource(player, { sourceType, stillIndex, clipIndex }) {
+    const props = {}
+    if (sourceType) props.sourceType = sourceType === 'still' ? 1 : 2
+    if (stillIndex != null) props.stillIndex = stillIndex
+    if (clipIndex != null) props.clipIndex = clipIndex
+    await this.atem.setMediaPlayerSource(props, player)
+  }
+
+  /** ATEM input numbers for a media player's fill and key: MP1 = 3010/3011. */
+  mediaPlayerInputs(i) {
+    return { fill: 3010 + i * 10, key: 3011 + i * 10 }
+  }
+
   /** SuperSource art/fill settings. */
   getSsProperties() {
     const props = this.state?.video?.superSources?.[this.ssrcId]?.properties
@@ -300,13 +383,22 @@ export class AtemController extends EventEmitter {
         nextStyle: mix.transitionProperties?.nextStyle,
         nextSelection: mix.transitionProperties?.nextSelection,
         mixRate: mix.transitionSettings?.mix?.rate,
-        keyers: (mix.upstreamKeyers ?? []).map((k) => (k ? { onAir: k.onAir } : null)),
+        keyers: (mix.upstreamKeyers ?? []).map((k) => (k ? {
+          onAir: k.onAir,
+          fillSource: k.fillSource,
+          keyType: ({ 0: 'luma', 1: 'chroma', 2: 'pattern', 3: 'dve' })[k.mixEffectKeyType] ?? 'luma',
+          pattern: k.patternSettings ? { style: k.patternSettings.style, size: k.patternSettings.size, symmetry: k.patternSettings.symmetry, positionX: k.patternSettings.positionX, positionY: k.patternSettings.positionY, invert: k.patternSettings.invert } : null,
+        } : null)),
+        nextSelectionNames: (mix.transitionProperties?.nextSelection ?? []).map((v) => SELECTION_NAMES[v] ?? v),
+        transitionSelectionNames: (mix.transitionProperties?.selection ?? []).map((v) => SELECTION_NAMES[v] ?? v),
+        art: this.getSsProperties(),
       }
     })
     const inputs = {}
     for (const [id, input] of Object.entries(this.state?.inputs ?? {})) {
       if (input) inputs[id] = input.longName || input.shortName || String(id)
     }
-    return { connected: this.connected, boxes, mixEffects: mes, inputs }
+    const mediaPlayers = this.getMediaPlayers().map((mp) => (mp ? { index: mp.index, sourceType: mp.sourceType, name: mp.name } : null))
+    return { connected: this.connected, simulated: this.simulated, boxes, mixEffects: mes, inputs, mediaPlayers }
   }
 }

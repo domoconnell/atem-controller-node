@@ -2,15 +2,17 @@
 import type { Look, Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SsMonitor } from './ss-monitor'
+import { lookScene } from '@/lib/scene'
 import { Play, Info } from 'lucide-react'
 
 export function LookTile({
-  look, state, isCurrent, isTarget, locked, onGoto, onSelect, onOpen,
+  look, state, isCurrent, isTarget, grade, locked, onGoto, onSelect, onOpen,
 }: {
   look: Look
   state: Snapshot
   isCurrent: boolean
   isTarget: boolean
+  grade?: string
   locked: boolean
   onGoto: () => void
   onSelect: () => void
@@ -31,13 +33,15 @@ export function LookTile({
         !isCurrent && !isTarget && 'hover:border-foreground/25'
       )}
     >
-      <SsMonitor boxes={look.boxes} inputName={inputName} showLabels={false} showGrid={false} className="p-1 rounded-lg" />
+      <SsMonitor scene={lookScene(look)} inputName={inputName} showLabels showGrid={false} className="p-1 rounded-lg" />
 
       <div className="mt-2 flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[13px] font-semibold truncate">{look.name}</span>
             {isCurrent && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-live">● Live</span>}
+            {!isCurrent && grade === 'has-cuts' && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-pgm" title="the plan to reach this look has a visible cut">▲ cut</span>}
+            {!isCurrent && grade === 'clean' && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-live/60" title="simulator: clean transition">✓</span>}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground truncate">
             <span className="truncate">{pgm}</span>
