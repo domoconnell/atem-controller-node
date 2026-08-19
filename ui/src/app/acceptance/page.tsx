@@ -144,6 +144,8 @@ export default function AcceptancePage() {
                     <div className="flex items-center gap-2 text-[11px]">
                       {plan.sim?.grade === 'clean'
                         ? <span className="inline-flex items-center gap-1 text-live font-bold"><ShieldCheck className="size-3.5" /> simulator: clean</span>
+                        : plan.sim?.grade === 'dip'
+                        ? <span className="inline-flex items-center gap-1 text-busy font-bold"><ShieldAlert className="size-3.5" /> simulator: dips through black</span>
                         : <span className="inline-flex items-center gap-1 text-pgm font-bold"><ShieldAlert className="size-3.5" /> simulator: {plan.sim?.counts.visibleCuts} visible cut(s)</span>}
                       <span className="text-muted-foreground">· {plan.steps.length} steps · ~{((plan.sim?.approxDurationMs ?? 0) / 1000).toFixed(1)}s</span>
                     </div>

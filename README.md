@@ -38,6 +38,55 @@ M/E choreography on the church projection setup:
   in the header with busy lockout, and Record + Settings dialogs. Built
   with Next.js + Tailwind + shadcn/ui, exported to static files.
 
+## Office session runbook (do this in order)
+
+Everything below has been verified against the built-in ATEM simulator;
+the office is where it meets the hardware for the first time. The event
+can't be rehearsed, so treat this session as the rehearsal.
+
+1. **Deploy.** On the Mac, on the same network as the Pi:
+   `npm run deploy` (asks the Pi password once). Pre-flight refuses to
+   ship a missing/stale UI build, a non-parsing server, or an engine audit
+   with visible cuts. Stop any copy running on the Mac (`Ctrl+C`) — the
+   HyperDeck accepts only one controller.
+2. **Confirm real hardware, not the sim.** Open `http://10.10.10.33:3000`.
+   The ATEM LED must be **green "ATEM"**, not amber "ATEM · SIM", and there
+   must be no simulator banner. HyperDeck green. If ATEM is amber, the Pi
+   can't reach 10.10.10.51 — fix the network before anything else.
+3. **Settings → ProPresenter IP**: set the Pro Mac's LAN IP (the shipped
+   config says `127.0.0.1`, which only works if the service runs on the
+   Pro Mac itself). ProPres LED should go green; `/api/timers` lists your
+   real timers.
+4. **Re-record every look** with the current recorder (Record in the
+   header). Existing looks predate media-player capture, so MP safety is
+   dormant on them until re-recorded. Name them the same so Companion
+   buttons keep working. The `dip` grade is a hint while you do this:
+   13 current pairs (ProPresenter looks ↔ `worship-zoom-*`) dip through
+   black because the `-cen` looks have no full-frame carrier — record the
+   display box top-aligned, or plan to route via `-top`, and they go clean.
+5. **Audit from the Mac against the new looks**: `rsync -az
+   pi@10.10.10.33:atem-controller/looks/ looks/ && npm test`. Fix anything
+   red before going on.
+6. **Walk `/acceptance`** on the Pi: every pair, Set up → Run → watch the
+   real output → Clean / Issue / Skip with a note. Watch specifically for
+   the things the sim cannot see: box-animation smoothness, mix timing,
+   whether the "invisible" cuts really are, USK settle latency. The **HW
+   column** is the hardware-truth check — any `◆ diverged` is a finding:
+   copy the detail into the note.
+7. **Companion**: repoint the Generic OSC target to `10.10.10.33`; check
+   the `atemcn_*` variables update (`/companion/test`), try `/arm/<look>`
+   on a button's press and read `atemcn_next_grade`.
+8. **Timer layouts**: open `/designer`, point a ProPresenter web object at
+   `http://10.10.10.33:3000/r/layout.html?id=<layout>` over a moving
+   background, confirm transparency and that the clock ticks on the real
+   output (digit styles too).
+9. **Collect**: `rsync -az pi@10.10.10.33:atem-controller/data/ data/`
+   brings back the acceptance results and any layouts. Send the issues.
+
+If something is badly wrong mid-session: `Ctrl+C` is not available on the
+Pi service — use **STOP** in the header (cuts the sequencer after its
+current step), or `ssh pi@10.10.10.33 sudo systemctl restart atem-controller`.
+
 ## No ATEM? It simulates one
 
 If the real switcher isn't reachable within `atem.simFallbackMs` (4s), the
@@ -197,9 +246,21 @@ Because this event can't be rehearsed, this is the primary quality gate:
   shows a storyboard of the journey (fade USK1 → animate boxes → mix …)
   with a CLEAN / ▲ CUT badge and timing under the monitors when you hover a
   look, and every tile carries a ✓/▲ graded from live state.
-- `npm test` runs `test/audit-looks.mjs` (every look-pair, must be 100%
-  clean) and `test/adversarial.mjs` (engineered nasty combos). Run it after
-  recording new looks or touching the engine. Today: **72/72 pairs clean**.
+- **Three grades**: **clean** (only invisible handoffs, fades, box moves),
+  **dip** (no cuts, but the output fades through black — the engine's last
+  resort when a change can't be hidden; graceful, yet visible enough that
+  you want to know), **cuts** (a visible cut). Green / amber / red across
+  the tile badges (`✓` / `◐ dip` / `▲ cut`), the storyboard, the acceptance
+  runner and Companion's `atemcn_next_grade` (`clean`/`dip`/`cuts`;
+  `/status/nextGrade` 2/1/0).
+- `npm test` runs `test/audit-looks.mjs` (every look-pair; fails only on
+  visible cuts, lists dips) and `test/adversarial.mjs` (engineered nasty
+  combos). Run it after recording new looks or touching the engine.
+  Today: **59 clean · 13 dip · 0 cuts** — every dip is a
+  ProPresenter-look ↔ `worship-zoom-*` pair (a box-4 source swap from a look
+  with no full-frame carrier). A dip is a hint about the *looks*: reach
+  the target via a look that has a carrier (e.g. `worship-zoom-top`), or
+  record the "cen" looks with box 4 top-aligned, and it becomes clean.
 - The simulator has already caught two real defects the code reading
   missed (an on-air box retarget in the leave-SS handoff; a bottom-cropped
   carrier that wasn't truly invisible) — both fixed.
@@ -285,7 +346,7 @@ All commands are also available over HTTP for testing:
    **"Will the next press be clean?"** — send `/arm/<look>` (e.g. on the
    button's *press* with the take on *release*, or from a page-load
    trigger) and the service grades that transition from the live state:
-   `atemcn_next_look`, `atemcn_next_grade` (`clean`/`cuts`),
+   `atemcn_next_look`, `atemcn_next_grade` (`clean`/`dip`/`cuts`),
    `atemcn_next_summary` ("3 fades · 1 move · ~2.1s"). It re-grades
    automatically after every transition. Put a red-if-`cuts` feedback on
    the take button and the operator sees trouble before pressing. After

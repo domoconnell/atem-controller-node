@@ -53,6 +53,7 @@ export class Verifier extends EventEmitter {
       art: this.atem.getSsProperties(),
       mediaPlayers: this.atem.getMediaPlayers(),
       ssInput: this.engine.ssInput,
+      dipInput: this.engine._dipSource(),
     }
   }
 

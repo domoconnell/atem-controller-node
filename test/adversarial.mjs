@@ -13,7 +13,8 @@ const MP = (a, b) => [{index:0,sourceType:'still',stillIndex:a,clipIndex:0,name:
 function test(label, from, to) {
   const { steps, notes } = new TransitionEngine(fakeAtem(from), {}).plan(to)
   const rep = new Simulator(toLive(from)).run(steps)
-  console.log(`${rep.grade === 'clean' ? '✅' : '❌'} ${label}  [${rep.counts.fades} fades, ${rep.counts.animations} anims, ${rep.counts.visibleCuts} cuts, ~${(rep.approxDurationMs/1000).toFixed(1)}s]`)
+  const icon = rep.grade === 'clean' ? '✅' : rep.grade === 'dip' ? '🟡' : '❌'
+  console.log(`${icon} ${label}  [${rep.grade}: ${rep.counts.fades} fades, ${rep.counts.animations} anims, ${rep.counts.dips ?? 0} dips, ${rep.counts.visibleCuts} cuts, ~${(rep.approxDurationMs/1000).toFixed(1)}s]`)
   for (const c of rep.visibleCuts) console.log(`     CUT #${c.step} ${c.type}: ${c.detail}`)
   for (const n of notes) console.log(`     note: ${n}`)
 }

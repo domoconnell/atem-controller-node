@@ -4,6 +4,21 @@ import { cn } from '@/lib/utils'
 import { cmd } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Play, Square, Repeat, Zap, ArrowLeftRight } from 'lucide-react'
+import { sourceColor } from './ss-monitor'
+
+// Compact source names for the keyer tiles.
+function shortSource(n: string): string {
+  const mp = /^Media Player\s*(\d+)(\s*Key)?/i.exec(n); if (mp) return `MP${mp[1]}${mp[2] ? 'K' : ''}`
+  if (/^SuperSource/i.test(n)) return 'SuperSrc'
+  const cam = /^Cam(?:era)?\s*(\d+)/i.exec(n); if (cam) return `Cam ${cam[1]}`
+  return n.length > 9 ? n.slice(0, 8) + '…' : n
+}
+
+// Short pattern names for the keyer tiles (ATEM Pattern enum order).
+const PATTERN_SHORT: Record<number, string> = {
+  0: 'L→R', 1: 'T→B', 2: 'H doors', 3: 'V doors', 4: 'corners', 5: 'rect', 6: 'diamond', 7: 'circle',
+  8: 'TL box', 9: 'TR box', 10: 'BR box', 11: 'BL box', 12: 'T box', 13: 'R box', 14: 'B box', 15: 'L box', 16: 'TL diag', 17: 'TR diag',
+}
 
 function Row({ k, children }: { k: string; children: React.ReactNode }) {
   return (
@@ -48,23 +63,34 @@ export function MePanel({ state, locked }: { state: Snapshot; locked: boolean })
       <div>
         <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">Upstream keyers</div>
         <div className="grid grid-cols-4 gap-1.5">
-          {(me?.keyers?.length ? me.keyers : [null, null, null, null]).map((k, i) => (
-            <button
-              key={i}
-              disabled={locked || !k}
-              onClick={() => cmd('/usk', [i + 1, 'toggle'])}
-              className={cn(
-                'h-11 rounded-md border text-[12px] font-bold tabular transition-all',
-                'disabled:opacity-40 disabled:cursor-not-allowed',
-                k?.onAir
-                  ? 'bg-pgm/20 border-pgm text-pgm shadow-[0_0_14px_-3px_var(--pgm)]'
-                  : 'bg-muted/40 border-border text-muted-foreground hover:border-foreground/30'
-              )}
-            >
-              <div>K{i + 1}</div>
-              <div className="text-[8px] uppercase tracking-[0.18em] font-semibold opacity-80">{k?.onAir ? 'On air' : 'Off'}</div>
-            </button>
-          ))}
+          {(me?.keyers?.length ? me.keyers : [null, null, null, null]).map((k, i) => {
+            const fill = k?.fillSource != null ? name(k.fillSource) : null
+            const type = k?.keyType ?? '—'
+            const pat = k?.keyType === 'pattern' && k.pattern ? PATTERN_SHORT[k.pattern.style] ?? `p${k.pattern.style}` : null
+            return (
+              <button
+                key={i}
+                disabled={locked || !k}
+                onClick={() => cmd('/usk', [i + 1, 'toggle'])}
+                title={k ? `USK${i + 1} · ${type}${pat ? ' · ' + pat : ''} · fill: ${fill}${k.onAir ? ' · ON AIR' : ''}` : undefined}
+                className={cn(
+                  'h-[58px] rounded-md border text-[12px] font-bold tabular transition-all flex flex-col items-center justify-center gap-0.5 px-1 overflow-hidden',
+                  'disabled:opacity-40 disabled:cursor-not-allowed',
+                  k?.onAir
+                    ? 'bg-pgm/20 border-pgm text-pgm shadow-[0_0_14px_-3px_var(--pgm)]'
+                    : 'bg-muted/40 border-border text-muted-foreground hover:border-foreground/30'
+                )}
+              >
+                <div className="leading-none">K{i + 1}</div>
+                <div className={cn('text-[8.5px] uppercase tracking-[0.1em] font-semibold leading-none whitespace-nowrap truncate max-w-full', k?.onAir ? 'text-pgm/90' : 'text-foreground/70')}>
+                  {pat ? pat : type}
+                </div>
+                <div className="text-[8px] leading-none font-medium truncate max-w-full opacity-75 whitespace-nowrap" style={fill && !k?.onAir ? { color: sourceColor(k!.fillSource!) } : undefined}>
+                  {fill ? shortSource(fill) : (k?.onAir ? 'On air' : 'Off')}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 

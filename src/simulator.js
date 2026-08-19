@@ -62,6 +62,9 @@ export class Simulator {
    */
   constructor(live) {
     this.ssInput = live.ssInput ?? SS_INPUT_DEFAULT
+    // Program landing on this input via a mix = a "dip" (graceful, but the
+    // output goes through black/neutral - operators want to know).
+    this.dipInput = live.dipInput === undefined ? 0 : live.dipInput
     this.s = {
       program: live.programInput,
       preview: live.previewInput ?? live.programInput,
@@ -163,13 +166,17 @@ export class Simulator {
       case 'auto': {
         // mix over selection: background swap + toggle selected keys
         const sel = s.nextSelection ?? ['background']
-        if (sel.includes('background')) { const p = s.program; s.program = s.preview; s.preview = p }
+        let landedOnDip = false
+        if (sel.includes('background')) {
+          const p = s.program; s.program = s.preview; s.preview = p
+          landedOnDip = this.dipInput != null && s.program === this.dipInput
+        }
         for (const k of sel) {
           const m = /^key(\d)$/.exec(k)
           if (m && s.usk[+m[1] - 1]) s.usk[+m[1] - 1].onAir = !s.usk[+m[1] - 1].onAir
         }
         this.t += 500
-        return 'fade'
+        return landedOnDip ? 'dip' : 'fade'
       }
       case 'uskOnAir': if (s.usk[step.keyer]) s.usk[step.keyer].onAir = step.onAir; return 'cut'
       case 'uskSettings': {
@@ -235,13 +242,19 @@ export class Simulator {
     // A 'cut' event where the scene actually differs is a visible cut.
     // Cuts where before===after never became events (invisible by construction).
     const visibleCuts = this.events.filter((e) => e.kind === 'cut')
-    const fades = this.events.filter((e) => e.kind === 'fade')
+    const dips = this.events.filter((e) => e.kind === 'dip')
+    const fades = this.events.filter((e) => e.kind === 'fade' || e.kind === 'dip')
     const anims = this.events.filter((e) => e.kind === 'animate')
-    const grade = visibleCuts.length === 0 ? 'clean' : 'has-cuts'
+    // Three grades:
+    //   clean    - only invisible handoffs, fades and animations
+    //   dip      - graceful, but the output goes through the dip source
+    //   has-cuts - at least one visible cut
+    const grade = visibleCuts.length ? 'has-cuts' : dips.length ? 'dip' : 'clean'
     return {
       grade,
-      counts: { visibleCuts: visibleCuts.length, fades: fades.length, animations: anims.length, steps: this.events.length },
+      counts: { visibleCuts: visibleCuts.length, dips: dips.length, fades: fades.length, animations: anims.length, steps: this.events.length },
       visibleCuts,
+      dips,
       events: this.events,
       approxDurationMs: this.t,
       final: clone(this.s),

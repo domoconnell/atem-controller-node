@@ -108,8 +108,8 @@ export interface VerifyResult {
 
 export interface PlanStep { type: string; [k: string]: unknown }
 export interface SimReport {
-  grade: 'clean' | 'has-cuts'
-  counts: { visibleCuts: number; fades: number; animations: number; steps: number }
+  grade: 'clean' | 'dip' | 'has-cuts'
+  counts: { visibleCuts: number; dips?: number; fades: number; animations: number; steps: number }
   visibleCuts: { step: number; type: string; detail: string }[]
   events: { step: number; type: string; kind: 'cut' | 'fade' | 'animate'; detail: string }[]
   approxDurationMs: number

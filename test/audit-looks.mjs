@@ -13,8 +13,8 @@ const fakeAtem = (l) => ({
 })
 const toLive = (l) => ({ programInput: l.me.programInput, boxes: l.boxes, usk: l.me.usk, art: l.ssProperties, mediaPlayers: l.mediaPlayers ?? [] })
 
-let clean = 0, dirty = 0
-const bad = []
+let clean = 0, dip = 0, dirty = 0
+const bad = [], dips = []
 for (const from of looks) for (const to of looks) {
   if (from.name === to.name) continue
   const { steps, notes } = new TransitionEngine(fakeAtem(from), {}).plan(to)
@@ -22,7 +22,10 @@ for (const from of looks) for (const to of looks) {
   // did we end in the target state?
   const endOk = rep.final.program === to.me.programInput
   if (rep.grade === 'clean' && endOk) clean++
+  else if (rep.grade === 'dip' && endOk) { dip++; dips.push(`${from.name} -> ${to.name}`) }
   else { dirty++; bad.push({ from: from.name, to: to.name, cuts: rep.visibleCuts.map(c => `#${c.step} ${c.type}: ${c.detail}`), endOk, notes }) }
 }
-console.log(`pairs: ${clean + dirty}  clean: ${clean}  with-visible-cuts/wrong-end: ${dirty}`)
+console.log(`pairs: ${clean + dip + dirty}  clean: ${clean}  dip-through-black: ${dip}  visible-cuts/wrong-end: ${dirty}`)
+if (dips.length) console.log(`dips (graceful, but goes through black - consider an intermediate look):\n   ${dips.join('\n   ')}`)
 for (const b of bad) console.log(`\n${b.from} -> ${b.to}${b.endOk ? '' : '  [WRONG END STATE]'}\n   ${b.cuts.join('\n   ')}${b.notes.length ? '\n   notes: ' + b.notes.join('; ') : ''}`)
+if (dirty) process.exit(1)

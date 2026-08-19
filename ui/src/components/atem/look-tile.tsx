@@ -41,6 +41,7 @@ export function LookTile({
             <span className="text-[13px] font-semibold truncate">{look.name}</span>
             {isCurrent && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-live">● Live</span>}
             {!isCurrent && grade === 'has-cuts' && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-pgm" title="the plan to reach this look has a visible cut">▲ cut</span>}
+            {!isCurrent && grade === 'dip' && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-busy" title="no cuts, but this transition fades through black to make the change">◐ dip</span>}
             {!isCurrent && grade === 'clean' && <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-live/60" title="simulator: clean transition">✓</span>}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground truncate">

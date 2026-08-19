@@ -14,6 +14,26 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CTRL="/tmp/atemcn-ssh-%r@%h"
 SSH_OPTS=(-o ControlMaster=auto -o "ControlPath=$CTRL" -o ControlPersist=600 -o StrictHostKeyChecking=accept-new)
 
+echo "== 0/5 Pre-flight =="
+# The Pi never builds the UI (npm install --ignore-scripts); we ship the
+# built public/. Refuse to deploy a missing or stale build.
+if [ ! -f "$PROJECT_DIR/public/index.html" ] || [ ! -f "$PROJECT_DIR/public/designer.html" ] || [ ! -f "$PROJECT_DIR/public/acceptance.html" ]; then
+  echo "ERROR: public/ is missing built pages. Run 'npm run build' first (or use 'npm run deploy' which builds)." >&2
+  exit 1
+fi
+newest_src=$(find "$PROJECT_DIR/ui/src" -type f -newer "$PROJECT_DIR/public/index.html" 2>/dev/null | head -1)
+if [ -n "$newest_src" ]; then
+  echo "ERROR: ui/src has changes newer than public/ (e.g. $newest_src). Run 'npm run build' first." >&2
+  exit 1
+fi
+# Server must at least parse, and the engine audit must have no visible cuts.
+for f in "$PROJECT_DIR"/src/*.js; do node --check "$f" || { echo "ERROR: $f does not parse" >&2; exit 1; }; done
+if ! (cd "$PROJECT_DIR" && node test/audit-looks.mjs >/dev/null 2>&1); then
+  echo "ERROR: engine audit reports visible cuts - fix before deploying (run: npm test)" >&2
+  exit 1
+fi
+echo "pre-flight OK (UI built, server parses, engine audit clean)"
+
 echo "== 1/5 Connecting to $PI (password asked once) =="
 ssh "${SSH_OPTS[@]}" "$PI" true
 

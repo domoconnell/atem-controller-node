@@ -83,6 +83,7 @@ export function PlanStoryboard({ look, inputName, className }: { look: string | 
   const items = condense(plan.steps, inputName)
   const sim = plan.sim
   const clean = sim?.grade === 'clean'
+  const dip = sim?.grade === 'dip'
 
   // Fixed two-line layout so the strip never changes height: line 1 =
   // verdict + counts + notes (single line, truncates), line 2 = the chips
@@ -96,10 +97,10 @@ export function PlanStoryboard({ look, inputName, className }: { look: string | 
       <div className="flex items-center gap-2 h-5 min-w-0">
         <span className={cn(
           'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0',
-          clean ? 'bg-live/15 text-live' : 'bg-pgm/15 text-pgm'
-        )}>
+          clean ? 'bg-live/15 text-live' : dip ? 'bg-busy/15 text-busy' : 'bg-pgm/15 text-pgm'
+        )} title={dip ? 'No cuts, but the output fades through black to make the change — consider recording an intermediate look' : undefined}>
           {clean ? <ShieldCheck className="size-3" /> : <ShieldAlert className="size-3" />}
-          {clean ? 'clean' : `${sim?.counts.visibleCuts} visible cut${sim?.counts.visibleCuts === 1 ? '' : 's'}`}
+          {clean ? 'clean' : dip ? 'dips through black' : `${sim?.counts.visibleCuts} visible cut${sim?.counts.visibleCuts === 1 ? '' : 's'}`}
         </span>
         {sim && (
           <span className="text-[10.5px] text-muted-foreground tabular shrink-0">
@@ -107,7 +108,7 @@ export function PlanStoryboard({ look, inputName, className }: { look: string | 
           </span>
         )}
         {extra && (
-          <span className={cn('text-[10.5px] truncate min-w-0', clean ? 'text-busy/90' : 'text-pgm')} title={extra}>
+          <span className={cn('text-[10.5px] truncate min-w-0', clean || dip ? 'text-busy/90' : 'text-pgm')} title={extra}>
             · {extra}
           </span>
         )}

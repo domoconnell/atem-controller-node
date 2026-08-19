@@ -250,6 +250,7 @@ export class WebServer {
       art: this.atem.getSsProperties(),
       mediaPlayers: this.atem.getMediaPlayers(),
       ssInput: this.engine.ssInput,
+      dipInput: this.engine._dipSource(),
     })
     return sim.run(steps)
   }

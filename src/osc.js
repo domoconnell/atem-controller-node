@@ -108,11 +108,12 @@ export class OscServer {
       const target = this.looks.mustGet(look)
       const { steps, notes } = this.verifier.engine.plan(target)
       const rep = new SimulatorRef(this.verifier._liveForSim()).run(steps)
-      const grade = rep.grade === 'clean' ? 'clean' : 'cuts'
+      const grade = rep.grade === 'clean' ? 'clean' : rep.grade === 'dip' ? 'dip' : 'cuts'
       this.sendCompanionVar('next_look', target.name)
       this.sendCompanionVar('next_grade', grade)
-      this.sendCompanionVar('next_summary', `${rep.counts.fades} fade${rep.counts.fades === 1 ? '' : 's'} · ${rep.counts.animations} move${rep.counts.animations === 1 ? '' : 's'} · ~${(rep.approxDurationMs / 1000).toFixed(1)}s${notes.length ? ' · ' + notes[0] : ''}`)
-      this.sendFeedback('/status/nextGrade', [grade === 'clean' ? 1 : 0, target.name])
+      this.sendCompanionVar('next_summary', `${rep.counts.fades} fade${rep.counts.fades === 1 ? '' : 's'} · ${rep.counts.animations} move${rep.counts.animations === 1 ? '' : 's'} · ~${(rep.approxDurationMs / 1000).toFixed(1)}s${grade === 'dip' ? ' · DIPS THROUGH BLACK' : ''}${grade === 'cuts' ? ' · VISIBLE CUT' : ''}${notes.length ? ' · ' + notes[0] : ''}`)
+      // OSC: 2 = clean, 1 = dip, 0 = cuts
+      this.sendFeedback('/status/nextGrade', [grade === 'clean' ? 2 : grade === 'dip' ? 1 : 0, target.name])
     } catch (e) {
       this.sendCompanionVar('next_look', look)
       this.sendCompanionVar('next_grade', '')
