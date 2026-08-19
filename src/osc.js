@@ -2,6 +2,7 @@ import osc from 'osc'
 import { config } from './config.js'
 import { slug } from './looks.js'
 import { Simulator as SimulatorRef } from './simulator.js'
+import { wire, short } from './wire.js'
 
 /**
  * OSC control surface for Companion (or anything else).
@@ -192,6 +193,7 @@ export class OscServer {
   sendFeedback(address, args) {
     for (const target of config.osc.feedback ?? []) {
       try {
+        wire('tx', 'osc', address, `${short(args, 60)} -> udp://${target.host}:${target.port}`)
         this.port.send({ address, args }, target.host, target.port)
       } catch (e) {
         // Feedback is best-effort; never let it break control handling.
@@ -207,7 +209,7 @@ export class OscServer {
     const address = `/custom-variable/${varName}/value`
     const args = [String(value)]
     try {
-      console.log(`[companion] ${varName} = ${JSON.stringify(String(value))}  OSC: ${address} ${JSON.stringify(args)} -> udp://${c.host}:${c.port ?? 12321}`)
+      wire('tx', 'companion', `${varName}=${short(String(value), 40)}`, `${address} ${JSON.stringify(args)} -> udp://${c.host}:${c.port ?? 12321}`)
       this.port.send({ address, args }, c.host, c.port ?? 12321)
     } catch (e) {
       console.error('[companion] send failed:', e.message)
@@ -215,7 +217,7 @@ export class OscServer {
   }
 
   async handle(address, args) {
-    console.log('[osc] rx', address, args)
+    wire('rx', 'osc', address, short(args))
     const parts = address.split('/').filter(Boolean)
 
     switch (parts[0]) {

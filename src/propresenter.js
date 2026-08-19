@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { config } from './config.js'
+import { wire, short } from './wire.js'
 
 /**
  * ProPresenter timer poller.
@@ -95,7 +96,10 @@ export class ProPresenter extends EventEmitter {
       for (const name of [...this.timers.keys()]) {
         if (!seen.has(name)) { this.timers.delete(name); changed = true }
       }
-      if (changed) this.emit('update', this.snapshot())
+      if (changed) {
+        wire('rx', 'propres', 'timers-changed', short([...this.timers.values()].map((t) => `${t.name}=${Math.round(t.remaining)}s/${t.state}`).join(' '), 110))
+        this.emit('update', this.snapshot())
+      }
     } catch (e) {
       if (this.connected) {
         console.error('[propresenter] poll failed:', e.message)
@@ -126,7 +130,10 @@ export class ProPresenter extends EventEmitter {
   }
 
   async _get(url) {
+    const path = url.replace(/^https?:\/\/[^/]+/, '')
+    wire('tx', 'propres', `GET ${path}`)
     const r = await fetch(url, { signal: AbortSignal.timeout(2000) })
+    wire('rx', 'propres', `${r.status} ${path}`)
     if (!r.ok) throw new Error(`HTTP ${r.status} from ${url}`)
     return r.json()
   }

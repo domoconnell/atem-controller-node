@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import net from 'node:net'
 import { config } from './config.js'
+import { wire, short } from './wire.js'
 
 /**
  * Minimal client for the Blackmagic HyperDeck Ethernet protocol (TCP 9993).
@@ -85,6 +86,7 @@ export class HyperDeck extends EventEmitter {
     if (!m) return
     const code = Number(m[1])
     const name = m[2].replace(/:$/, '')
+    wire('rx', 'hyperdeck', `${code} ${name}`)
     const params = {}
     for (const line of lines.slice(1)) {
       const i = line.indexOf(': ')
@@ -119,6 +121,7 @@ export class HyperDeck extends EventEmitter {
         return reject(new Error('HyperDeck not connected'))
       }
       this._queue.push({ resolve, reject })
+      wire('tx', 'hyperdeck', command)
       this.socket.write(command + '\n')
     })
   }

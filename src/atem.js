@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { Atem, Enums } from 'atem-connection'
 import { config } from './config.js'
 import { AtemSim } from './atem-sim.js'
+import { wire, loggedBackend } from './wire.js'
 
 const SELECTION_MAP = {
   background: Enums.TransitionSelection.Background,
@@ -33,8 +34,9 @@ export class AtemController extends EventEmitter {
   constructor() {
     super()
     this.real = new Atem()
+    this._realLogged = loggedBackend(this.real, () => 'atem')
     this.sim = null
-    this.atem = this.real          // whichever backend is active
+    this.atem = this._realLogged   // whichever backend is active (wire-logged)
     this.simulated = false
     this.connected = false
     this.ssrcId = config.supersource.id
@@ -59,7 +61,9 @@ export class AtemController extends EventEmitter {
       this._scheduleSimFallback()
     })
     this.real.on('stateChanged', (_state, paths) => {
-      if (!this.simulated) this.emit('stateChanged', paths)
+      if (this.simulated) return
+      wire('rx', 'atem', pathSig(paths), paths?.length > 1 ? `+${paths.length - 1} more` : '')
+      this.emit('stateChanged', paths)
     })
     this.real.on('error', (e) => console.error('[atem] error:', e))
   }
@@ -86,9 +90,12 @@ export class AtemController extends EventEmitter {
 
   _useSim() {
     this.sim = new AtemSim({ videoFps: config.transition?.videoFps ?? 50 })
-    this.atem = this.sim
+    this.atem = loggedBackend(this.sim, () => 'asim')
     this.simulated = true
-    this.sim.on('stateChanged', (_s, paths) => this.emit('stateChanged', paths))
+    this.sim.on('stateChanged', (_s, paths) => {
+      wire('rx', 'asim', pathSig(paths), paths?.length > 1 ? `+${paths.length - 1} more` : '')
+      this.emit('stateChanged', paths)
+    })
     this.sim.on('connected', () => {
       this.connected = true
       console.log('[atem] ⚠ no ATEM at', config.atem.ip, '- running the built-in SIMULATOR')
@@ -100,7 +107,7 @@ export class AtemController extends EventEmitter {
 
   _useReal() {
     if (this.sim) { this.sim.removeAllListeners(); this.sim = null }
-    this.atem = this.real
+    this.atem = this._realLogged
     this.simulated = false
   }
 
@@ -401,4 +408,11 @@ export class AtemController extends EventEmitter {
     const mediaPlayers = this.getMediaPlayers().map((mp) => (mp ? { index: mp.index, sourceType: mp.sourceType, name: mp.name } : null))
     return { connected: this.connected, simulated: this.simulated, boxes, mixEffects: mes, inputs, mediaPlayers }
   }
+}
+
+/** Compact signature for a state-change path list. */
+function pathSig(paths) {
+  const p = paths?.[0]
+  if (!p) return 'state'
+  return String(p).split('.').slice(0, 4).join('.')
 }

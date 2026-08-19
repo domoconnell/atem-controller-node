@@ -155,6 +155,7 @@ The previous single-file UI is kept in `ui-legacy/index.html` for reference.
 | `transition.mixRateFrames` | If set, pins the M/E mix rate for background fades; `null` = inherit the switcher |
 | `transition.videoFps` | Frame rate used to convert seconds → mix-rate frames (50 — set 60 for 59.94/60p) |
 | `transition.dipInput` | Neutral input for the dip-through fallback (default black `0`; `null` disables) |
+| `wireLog` | Unified device wire log on the console: one line per message to/from ATEM (or sim), HyperDeck, OSC/Companion, ProPresenter — `→`/`←` direction, colour-tagged protocol (colours on TTY only; plain in journalctl), repeats collapsed to `⋮ ×N` per second. Default on; hot-togglable |
 
 ## Workflow: recording looks
 
