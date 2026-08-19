@@ -204,13 +204,11 @@ export class OscServer {
     const c = config.companion
     if (!c?.host) return
     const varName = (c.varPrefix ?? 'atemcn_') + name
+    const address = `/custom-variable/${varName}/value`
+    const args = [String(value)]
     try {
-      console.log(`[companion] ${varName} = ${JSON.stringify(String(value))} -> ${c.host}:${c.port ?? 12321}`)
-      this.port.send(
-        { address: `/custom-variable/${varName}/value`, args: [String(value)] },
-        c.host,
-        c.port ?? 12321
-      )
+      console.log(`[companion] ${varName} = ${JSON.stringify(String(value))}  OSC: ${address} ${JSON.stringify(args)} -> udp://${c.host}:${c.port ?? 12321}`)
+      this.port.send({ address, args }, c.host, c.port ?? 12321)
     } catch (e) {
       console.error('[companion] send failed:', e.message)
     }
