@@ -146,7 +146,8 @@ export class OscServer {
       this.sendCompanionVar('last_error', `${macro}: ${error}`)
     })
     // Richer state: what's on program, which MPs are loaded, connections.
-    let lastRich = ''
+    // Only the variables that actually changed are sent (and logged).
+    const lastRich = {}
     const pushRich = () => {
       const me = this.atem.getMixEffect()
       const mps = this.atem.getMediaPlayers?.() ?? []
@@ -158,10 +159,11 @@ export class OscServer {
         atem: this.atem.connected ? 'true' : 'false',
         hyperdeck: this.hyperdeck.connected ? 'true' : 'false',
       }
-      const key = JSON.stringify(rich)
-      if (key === lastRich) return
-      lastRich = key
-      for (const [k, v] of Object.entries(rich)) this.sendCompanionVar(k, v)
+      for (const [k, v] of Object.entries(rich)) {
+        if (lastRich[k] === v) continue
+        lastRich[k] = v
+        this.sendCompanionVar(k, v)
+      }
     }
     this.atem.on('stateChanged', pushRich)
     this.atem.on('connected', pushRich)
@@ -203,11 +205,7 @@ export class OscServer {
     if (!c?.host) return
     const varName = (c.varPrefix ?? 'atemcn_') + name
     try {
-      this._loggedVars ??= new Set()
-      if (!this._loggedVars.has(varName)) {
-        this._loggedVars.add(varName)
-        console.log(`[companion] pushing ${varName} -> ${c.host}:${c.port ?? 12321} (further updates not logged)`)
-      }
+      console.log(`[companion] ${varName} = ${JSON.stringify(String(value))} -> ${c.host}:${c.port ?? 12321}`)
       this.port.send(
         { address: `/custom-variable/${varName}/value`, args: [String(value)] },
         c.host,
