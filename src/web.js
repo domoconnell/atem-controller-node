@@ -51,7 +51,7 @@ export class WebServer {
         if (err) res.sendFile(path.join(projectRoot, 'public', 'mics', 'index.html'))
       })
     })
-    for (const route of ['atem', 'surfaces', 'settings']) {
+    for (const route of ['atem', 'surfaces', 'settings', 'surface']) {
       app.get(`/${route}`, (_req, res) => {
         res.sendFile(path.join(projectRoot, 'public', `${route}.html`), (err) => {
           if (err) res.sendFile(path.join(projectRoot, 'public', route, 'index.html'))
@@ -63,6 +63,27 @@ export class WebServer {
     // ---- Connector engine (unified backend): instances + catalogue + commands ----
     app.get('/api/connector-types', (_req, res) => res.json({ ok: true, types: this.connectorEngine?.catalogue() ?? [] }))
     app.get('/api/settings', (_req, res) => res.json({ ok: true, settings: this.store?.allSettings() ?? {} }))
+    app.get('/api/surfaces', (_req, res) => res.json({ ok: true, surfaces: this.store?.listSurfaces() ?? [] }))
+    app.get('/api/surfaces/:id', (req, res) => {
+      const one = (this.store?.listSurfaces() ?? []).find((x) => x.id === req.params.id)
+      one ? res.json({ ok: true, surface: one }) : res.status(404).json({ ok: false, error: 'not found' })
+    })
+    app.post('/api/surfaces', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const b = req.body ?? {}
+      const id = b.id || `surf_${Date.now().toString(36)}`
+      const { name, id: _i, ...data } = b
+      this.store.putSurface(id, name || 'Untitled surface', data, !!b.isDefault)
+      res.json({ ok: true, id })
+    })
+    app.put('/api/surfaces/:id', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const b = req.body ?? {}
+      const { name, id: _i, ...data } = b
+      this.store.putSurface(req.params.id, name || 'Untitled surface', data, !!b.isDefault)
+      res.json({ ok: true })
+    })
+    app.delete('/api/surfaces/:id', (req, res) => { this.store?.deleteSurface(req.params.id); res.json({ ok: true }) })
     app.put('/api/settings', (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
       for (const [k, v] of Object.entries(req.body ?? {})) this.store.setSetting(k, v)
