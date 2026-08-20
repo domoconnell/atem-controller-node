@@ -19,6 +19,7 @@ const PROTO_META: Record<string, { tag: string; color: string }> = {
   osc:       { tag: 'OSC',  color: 'text-live' },
   companion: { tag: 'CMPN', color: 'text-[#d77df0]' },
   propres:   { tag: 'PRO',  color: 'text-info' },
+  senn:      { tag: 'SENN', color: 'text-[#2dd4bf]' },
 }
 const meta = (p: string) => PROTO_META[p] ?? { tag: p.slice(0, 4).toUpperCase(), color: 'text-muted-foreground' }
 
@@ -66,7 +67,7 @@ export function WireLog({ lines, version, onClear }: { lines: WireLine[]; versio
     setPaused((p) => !p)
   }
 
-  const protos = ['atem', 'asim', 'hyperdeck', 'osc', 'companion', 'propres']
+  const protos = ['atem', 'asim', 'hyperdeck', 'osc', 'companion', 'propres', 'senn']
   const last = lines[lines.length - 1]
 
   return (

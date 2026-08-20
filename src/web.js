@@ -13,7 +13,7 @@ import { wireBus, wireHistory } from './wire.js'
  * so the UI buttons behave identically to Companion presses.
  */
 export class WebServer {
-  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier }) {
+  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser }) {
     this.atem = atem
     this.animator = animator
     this.looks = looks
@@ -23,6 +23,7 @@ export class WebServer {
     this.engine = engine
     this.propresenter = propresenter
     this.verifier = verifier
+    this.sennheiser = sennheiser
 
     const app = express()
     app.use(express.json())
@@ -43,6 +44,12 @@ export class WebServer {
         if (err) res.sendFile(path.join(projectRoot, 'public', 'designer', 'index.html'))
       })
     })
+    app.get('/mics', (_req, res) => {
+      res.sendFile(path.join(projectRoot, 'public', 'mics.html'), (err) => {
+        if (err) res.sendFile(path.join(projectRoot, 'public', 'mics', 'index.html'))
+      })
+    })
+    app.get('/api/mics', (_req, res) => res.json(this.sennheiser?.snapshot() ?? { enabled: false }))
 
     app.get('/api/status', (_req, res) => res.json(this.snapshot()))
 
@@ -210,6 +217,15 @@ export class WebServer {
     this.wss.on('connection', (ws) => {
       ws.send(JSON.stringify(this.snapshot()))
       ws.send(JSON.stringify({ wireHistory: wireHistory() }))
+      if (this.sennheiser?.enabled) ws.send(JSON.stringify({ senn: this.sennheiser.snapshot() }))
+    })
+    // Mic meters are a high-rate side-channel like the wire log - pushed on
+    // their own so SuperSource snapshots and RF/AF levels don't gate each other.
+    sennheiser?.on('update', () => {
+      const payload = JSON.stringify({ senn: sennheiser.snapshot() })
+      for (const client of this.wss.clients) {
+        if (client.readyState === 1) client.send(payload)
+      }
     })
     // Live wire-log side-channel (tiny messages, not throttled with snapshots).
     wireBus.on('line', (entry) => {
@@ -239,6 +255,7 @@ export class WebServer {
     animator.on('done', markDirty)
     animator.on('cancelled', markDirty)
     verifier?.on('verified', markDirty)
+    sennheiser?.on('presence', markDirty) // header LED state rides the main snapshot
     // Timer values tick every poll; only rebroadcast the main snapshot when
     // the ProPresenter *connection* state changes.
     let ppState = ''
@@ -296,6 +313,7 @@ export class WebServer {
     return {
       atem: this.atem.snapshot(),
       hyperdeck: this.hyperdeck.snapshot(),
+      sennheiser: this.sennheiser ? { enabled: !!this.sennheiser.enabled, simulated: this.sennheiser.simulate, online: this.sennheiser.devices.filter((d) => d.online).length, total: this.sennheiser.devices.length } : { enabled: false },
       currentLook: this.looks.currentLook,
       looks: this.looks.list(),
       macros: this.sequencer.list().map((m) => ({ name: m.name, from: m.from, to: m.to })),

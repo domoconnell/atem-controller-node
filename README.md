@@ -547,3 +547,25 @@ Notes:
 - On this Mac, macOS Local Network permission blocks LAN access for
   processes spawned by the Claude Code extension — run `npm start` from
   Terminal.app during development. Irrelevant on the Pi.
+
+## Wireless Mics (Sennheiser monitor)
+
+`/mics` — live dashboard for the Sennheiser rig, no WSM needed. One card per
+wireless channel: name, frequency, RF level (+ diversity antenna A/B and, on
+EW-DX, RSSI dBm and RSQI quality), live AF meter with peak hold, and
+transmitter battery. Low batteries go amber/red and the worst one surfaces as
+a warning chip in the header.
+
+- **EW-DX EM2** (`type: "ewdx"`): SSC protocol — JSON over UDP 45. Statics are
+  polled; RF/AF meters stream via an SSC subscription (renewed every 5s).
+- **ew G3/G4** (`type: "g3"` receivers, `"iemg4"` IEM sends): ASCII over UDP
+  53212. The rig only answers when our **source port is also 53212**, so don't
+  run WSM on the same machine as this service (bind conflict); WSM elsewhere
+  on the LAN is fine. `Push` keeps a live stream coming.
+- Devices are listed in `config.sennheiser.devices`. `simulate: true` swaps in
+  an animated local fleet (LED shows **MICS · SIM**) for working on the UI
+  away from the rig.
+- G3/G4 meter scales are assumed 0–100 raw (`G3_MAX` in `src/sennheiser.js`);
+  calibrate against the real rig with transmitters ON.
+- Protocol notes + probe scripts: `scratch/SENNHEISER-NOTES.md`,
+  `scratch/sennheiser-probe.sh`.

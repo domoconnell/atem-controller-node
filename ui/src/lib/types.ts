@@ -78,6 +78,7 @@ export interface Look {
 }
 
 export interface Snapshot {
+  sennheiser?: { enabled: boolean; simulated: boolean; online: number; total: number }
   atem: {
     connected: boolean
     simulated?: boolean
@@ -133,4 +134,45 @@ export interface WireLine {
   detail?: string
   repeat?: number   // suppressed-repeat marker: ×N of `kind`
   kind?: string
+}
+
+/** Sennheiser wireless monitor (the Mics app) */
+export interface SennChannel {
+  id: string
+  name?: string
+  frequency?: number // kHz
+  mute?: boolean
+  gain?: number
+  battery?: number | null // % - null: transmitter off / not reporting
+  rssi?: number // ewdx, dBm
+  rsqi?: number // ewdx, 0-100
+  rf?: number | null // normalized 0..1 (ewdx from rssi; g3 raw)
+  ant?: number // active diversity antenna 1|2
+  af?: number | null // normalized 0..1
+  afDb?: number // ewdx, dB
+  afRaw?: number[] // g3: [level, peak, ?]; iem: [L, R, peakL, peakR]
+  rf1?: number
+  rf2?: number
+  squelch?: number
+  afOut?: number
+  sensitivity?: number
+  stereo?: boolean
+  msg?: string
+}
+export interface SennDevice {
+  ip: string
+  type: 'ewdx' | 'g3' | 'iemg4'
+  label?: string
+  online: boolean
+  product?: string
+  version?: string
+  deviceName?: string
+  channels: SennChannel[]
+}
+export interface SennSnapshot {
+  enabled: boolean
+  simulated: boolean
+  online: number
+  total: number
+  devices: SennDevice[]
 }

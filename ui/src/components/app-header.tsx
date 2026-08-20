@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { SlidersHorizontal, Clock, ChevronDown, ClipboardList } from 'lucide-react'
+import { SlidersHorizontal, Clock, ChevronDown, ClipboardList, Mic } from 'lucide-react'
 
 const APPS = [
   {
@@ -15,6 +15,11 @@ const APPS = [
     id: 'timers', href: '/designer', icon: Clock,
     title: 'Timer Designer', tile: 'from-info to-blue-800 shadow-[0_0_18px_-4px_var(--info)]',
     sub: () => 'ProPresenter countdowns',
+  },
+  {
+    id: 'mics', href: '/mics', icon: Mic,
+    title: 'Wireless Mics', tile: 'from-[#2dd4bf] to-teal-800 shadow-[0_0_18px_-4px_#2dd4bf]',
+    sub: (s: Snapshot | null) => s?.sennheiser?.enabled ? `${s.sennheiser.online}/${s.sennheiser.total} units online` : 'Sennheiser rig',
   },
   {
     id: 'acceptance', href: '/acceptance', icon: ClipboardList,
@@ -38,7 +43,7 @@ function Led({ on, label, warn, title }: { on: boolean; label: string; warn?: bo
  * children) and the live-update pulse.
  */
 export function AppHeader({ app, state, wsConnected, tick, children }: {
-  app: 'atem' | 'timers' | 'acceptance'
+  app: 'atem' | 'timers' | 'acceptance' | 'mics'
   state: Snapshot | null
   wsConnected: boolean
   tick: number
@@ -104,6 +109,14 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
           title={state?.atem.simulated ? 'No real ATEM reachable — running the built-in simulator. Everything works, nothing goes to air.' : undefined}
         />
         <Led on={!!state?.hyperdeck.connected} label="HyperDeck" />
+        {state?.sennheiser?.enabled && (
+          <Led
+            on={(state.sennheiser.online ?? 0) > 0 && !state.sennheiser.simulated}
+            warn={(state.sennheiser.online ?? 0) > 0 && !!state.sennheiser.simulated}
+            label={state.sennheiser.simulated ? 'Mics · SIM' : 'Mics'}
+            title={state.sennheiser.simulated ? 'Simulated Sennheiser fleet - not the real rig' : `${state.sennheiser.online}/${state.sennheiser.total} Sennheiser units online`}
+          />
+        )}
         <Led
           on={!!pp?.connected}
           warn={!!pp?.configured && !pp?.connected}

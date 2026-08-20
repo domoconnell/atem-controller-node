@@ -53,5 +53,68 @@
     "comment": "ProPresenter Mac (Preferences > Network). Empty ip = built-in demo timer for designing renderer pages."
   },
   "wireLog": true,
-  "wireConsole": false
+  "wireConsole": false,
+  "sennheiser": {
+    "enabled": true,
+    "simulate": false,
+    "devices": [
+      {
+        "ip": "10.10.10.70",
+        "type": "ewdx"
+      },
+      {
+        "ip": "10.10.10.71",
+        "type": "ewdx"
+      },
+      {
+        "ip": "10.10.10.72",
+        "type": "ewdx"
+      },
+      {
+        "ip": "10.10.10.73",
+        "type": "g3"
+      },
+      {
+        "ip": "10.10.10.74",
+        "type": "g3"
+      },
+      {
+        "ip": "10.10.10.75",
+        "type": "g3"
+      },
+      {
+        "ip": "10.10.10.76",
+        "type": "g3"
+      },
+      {
+        "ip": "10.10.10.77",
+        "type": "g3"
+      },
+      {
+        "ip": "10.10.10.78",
+        "type": "iemg4"
+      },
+      {
+        "ip": "10.10.10.79",
+        "type": "iemg4"
+      },
+      {
+        "ip": "10.10.10.80",
+        "type": "iemg4"
+      },
+      {
+        "ip": "10.10.10.81",
+        "type": "iemg4"
+      },
+      {
+        "ip": "10.10.10.82",
+        "type": "iemg4"
+      },
+      {
+        "ip": "10.10.10.83",
+        "type": "iemg4"
+      }
+    ],
+    "comment": "Wireless mic monitor (the Mics app). types: ewdx (SSC/UDP 45), g3 (ew G3/G4 receiver), iemg4 (IEM transmitter) - both via UDP 53212, which requires source port 53212 (stop WSM first). simulate: run an animated local fleet instead of the real rig."
+  }
 }

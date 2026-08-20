@@ -1,0 +1,1 @@
+Name VOX 1   Frequency 614325 21 1Sensitivity -24Mode 1Mute 0AF 0 0 0 0States 0 0Msg OKConfig 13AF 0 0 0 0States 0 0Msg OKConfig 13AF 0 0 0 0States 0 0Msg OKConfig 13AF 0 0 0 0States 0 0Msg OKConfig 13AF 0 0 0 0States 0 0Msg OKConfig 13AF 0 0 0 0States 0 0Msg OKConfig 13AF 0 0 0 0States 0 0Msg OKConfig 13

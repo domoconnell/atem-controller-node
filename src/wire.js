@@ -37,6 +37,7 @@ const PROTO = {
   osc:       { tag: 'OSC ', color: '32' },  // green
   companion: { tag: 'CMPN', color: '35' },  // magenta
   propres:   { tag: 'PRO ', color: '34' },  // blue
+  senn:      { tag: 'SENN', color: '96' },  // bright cyan (Sennheiser rig)
 }
 
 // Per-signature rate limiting: each (proto, direction, message-kind) prints

@@ -9,6 +9,7 @@ import { OscServer } from './osc.js'
 import { WebServer } from './web.js'
 import { ProPresenter } from './propresenter.js'
 import { Verifier } from './verify.js'
+import { SennheiserMonitor } from './sennheiser.js'
 
 console.log('atem-controller starting')
 console.log(`  ATEM      ${config.atem.ip} (main M/E ${config.supersource.me + 1}, SuperSource ${config.supersource.id + 1})`)
@@ -23,12 +24,14 @@ const sequencer = new Sequencer(atem, animator, looks, hyperdeck, engine)
 const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
 const propresenter = new ProPresenter()
 const verifier = new Verifier(atem, sequencer, engine, looks)
-const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier })
+const sennheiser = new SennheiserMonitor()
+const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser })
 oscServer.attachVerifier(verifier)
 
 oscServer.open()
 web.start()
 propresenter.start()
+sennheiser.start().catch((e) => console.error('[senn] start failed:', e.message))
 hyperdeck.connect()
 atem.connect().catch((e) => console.error('[atem] connect failed:', e.message))
 

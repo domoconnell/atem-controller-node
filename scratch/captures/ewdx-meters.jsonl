@@ -1,0 +1,45 @@
+{"osc":{"state":{"subscribe":[{"#":{"min":0,"max":0,"lifetime":2,"count":0},"m":{"rx2":{"af":null,"divi":null,"rsqi":null,"rssi":null},"rx1":{"af":null,"divi":null,"rsqi":null,"rssi":null}}}]}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx1":{"rsqi":0}}}
+{"m":{"rx1":{"divi":0}}}
+{"m":{"rx1":{"af":-138.5}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx2":{"rsqi":0}}}
+{"m":{"rx2":{"divi":0}}}
+{"m":{"rx2":{"af":-138.5}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"m":{"rx1":{"rssi":-104.0}}}
+{"m":{"rx1":{"rssi":-107.0}}}
+{"m":{"rx2":{"rssi":-104.0}}}
+{"m":{"rx2":{"rssi":-107.0}}}
+{"osc":{"error":[{"m":{"rx1":{"rssi":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx1":{"rsqi":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx1":{"divi":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx1":{"af":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx2":{"rssi":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx2":{"rsqi":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx2":{"divi":[310,{"desc":"subscription terminates"}]}}}]}}
+{"osc":{"error":[{"m":{"rx2":{"af":[310,{"desc":"subscription terminates"}]}}}]}}

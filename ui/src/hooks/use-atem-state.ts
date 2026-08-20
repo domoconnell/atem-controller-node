@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import type { Snapshot, WireLine } from '@/lib/types'
+import type { Snapshot, SennSnapshot, WireLine } from '@/lib/types'
 import { wsUrl } from '@/lib/api'
 
 const WIRE_MAX = 500
@@ -16,6 +16,7 @@ export function useAtemState() {
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Wire log lines live in a ref (they arrive in bursts); a throttled
   // version counter triggers re-renders at most ~4x/sec.
+  const [senn, setSenn] = useState<SennSnapshot | null>(null)
   const wireRef = useRef<WireLine[]>([])
   const [wireVersion, setWireVersion] = useState(0)
   const wireFlush = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -64,6 +65,7 @@ export function useAtemState() {
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data)
+          if (data.senn) { setSenn(data.senn); return }
           if (data.wire) { pushWire([data.wire]); return }
           if (data.wireHistory) { pushWire(data.wireHistory); return }
           setState(data)
@@ -84,5 +86,5 @@ export function useAtemState() {
     }
   }, [])
 
-  return { state, connected, tick, wire: wireRef.current, wireVersion, clearWire }
+  return { state, connected, tick, senn, wire: wireRef.current, wireVersion, clearWire }
 }
