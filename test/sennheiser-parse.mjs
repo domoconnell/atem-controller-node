@@ -55,4 +55,11 @@ const ident = Buffer.from('002512064d6f64656c3d454d333030473320202049443d3030314
 const pi = parseLegacyFrame(ident)
 check('legacy identity beacon', pi?.kind === 'identity' && pi.model === 'EM300G3' && pi.mac === '00:1b:66:7a:8e:db' && pi.ip === '10.10.10.73', JSON.stringify(pi))
 
+// Legacy telemetry decode (calibrated byte offsets, real mic-on frames)
+const loud = parseLegacyFrame(Buffer.from('29f8f7ca00001b667a8edb010400000001e102250000da01fb010001010101000101010101010100', 'hex'))
+const quiet = parseLegacyFrame(Buffer.from('29f8f7ca00001b667a8edb0104000000015e03770200000000000001010101000101010101010100', 'hex'))
+check('legacy telemetry decodes RF+AF', loud?.kind === 'telemetry' && loud.rf > 0 && loud.af > quiet.af,
+  JSON.stringify({loud:{rf:loud?.rf,af:loud?.af}, quiet:{af:quiet?.af}}))
+check('legacy AF drops in silence', quiet.af < 0.2 && loud.af > 0.5, JSON.stringify({loudAf:loud.af, quietAf:quiet.af}))
+
 process.exit(fails ? 1 : 0)

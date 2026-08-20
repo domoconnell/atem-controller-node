@@ -88,9 +88,12 @@ protocol on **UDP 8133**, reverse-engineered from a WSM packet capture
   periodically to keep the stream alive.
 - **Telemetry** (device → controller, 40 bytes): `[0-2 type][3]=0xca magic`
   `[4]=00 [5-10]=MAC [11]=01 … [15] status … [27-39] RF/AF state`. byte[2]=0xf7.
-  With the transmitter OFF the state bytes are near-constant, so the exact
-  RF/AF/battery byte mapping is NOT yet decoded — needs a transmitter-on
-  capture to finish (like G3_MAX). We currently decode presence + MAC.
+  Meter byte mapping (from a mic-ON capture, scratch/captures/
+  g3legacy-micon-calibration.json, 406 telemetry frames talk/silent/talk):
+  byte[19] = RF level (never 0 while TX on; negatively correlated with audio),
+  bytes[24]/[22] = AF level (hit 0 in silence, +0.58 correlated),
+  byte[17] = AF peak-hold. All scaled /255. BATTERY is not exposed by this
+  firmware over the decoded frame (no clear byte tracks it) - shown as n/a.
 - **Identity beacon** (device → controller, 85 bytes, ASCII): e.g.
   `Model=EM300G3   ID=001B667A8EDB   IPA=10.10.10.73`. We parse Model/ID/IPA.
 - **Verified** against the real .73: subscribing from a fresh IP (10.10.10.200

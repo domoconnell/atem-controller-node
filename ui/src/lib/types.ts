@@ -150,6 +150,7 @@ export interface SennChannel {
   ant?: number // active diversity antenna 1|2
   af?: number | null // normalized 0..1
   afDb?: number // ewdx, dB
+  afPeak?: number // legacy G3 peak-hold 0..1
   afRaw?: number[] // g3: [level, peak, ?]; iem: [L, R, peakL, peakR]
   rf1?: number
   rf2?: number

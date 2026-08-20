@@ -163,11 +163,19 @@ class LegacySim {
   _subscribe(rinfo) {
     const key = `${rinfo.address}:${rinfo.port}`
     clearInterval(this.streams.get(key))
-    const frame = Buffer.from('29f8f7ca00001b667a8edb0100000003000000000000000000000001010100000101010101010100', 'hex')
     // stream back to the sender's port (the monitor's 8133 socket)
+    const base = Buffer.from('29f8f7ca00001b667a8edb0100000003000000000000000000000001010100000101010101010100', 'hex')
     const ident = Buffer.from('002512064d6f64656c3d454d333030473320202049443d3030314236363741384544422020204950413d31302e31302e31302e3733000000000000000000000000000000', 'hex')
-    let n = 0
+    let n = 0, peak = 0
     const t = setInterval(() => {
+      const frame = Buffer.from(base)
+      const ph = this.idx * 3
+      const af = Math.round(255 * speech(ph))
+      peak = Math.max(af, peak * 0.9)
+      frame[19] = Math.round(150 + 90 * wob(4000, ph)) // RF: present while TX on
+      frame[24] = af                                   // AF level
+      frame[22] = Math.round(af * 0.85)
+      frame[17] = Math.round(peak)                     // AF peak-hold
       this.sock.send(frame, rinfo.port, rinfo.address)
       if (n++ % 40 === 0) this.sock.send(ident, rinfo.port, rinfo.address) // periodic identity beacon
     }, 80)

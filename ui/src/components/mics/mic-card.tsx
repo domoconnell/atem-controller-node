@@ -58,23 +58,25 @@ function MuteCard({ dev }: { dev: SennDevice }) {
  * reversed, so we show it as live-but-uncalibrated rather than fake numbers.
  */
 function LegacyCard({ dev }: { dev: SennDevice }) {
+  const ch = dev.channels[0] ?? { id: 'ch' }
   return (
     <div className="surface rounded-xl px-3.5 py-3 flex flex-col gap-2.5 border border-[#2dd4bf]/25 bg-[#2dd4bf]/[0.03]">
       <div className="flex items-center gap-2">
         <span className="text-[17px] font-bold tracking-tight leading-none truncate">{dev.label ?? dev.ip}</span>
         <span className="ml-auto shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] rounded px-1.5 py-0.5 border text-[#2dd4bf] border-[#2dd4bf]/30 bg-[#2dd4bf]/5">G3 · legacy</span>
       </div>
-      <div className="flex items-center gap-2 text-[#2dd4bf]">
-        <Waves className="size-3.5 shrink-0" />
-        <span className="text-[12px] font-semibold leading-tight">Telemetry streaming</span>
+      <div className="flex items-baseline gap-2 font-mono">
+        <span className="text-[12px] text-foreground/80">{dev.product ?? 'EM300G3'}</span>
+        <span className="text-[10px] text-muted-foreground/70">firmware &lt; 1.7</span>
       </div>
-      <p className="text-[10.5px] leading-snug text-muted-foreground">
-        {dev.product ? <><span className="text-foreground/80 font-semibold">{dev.product}</span> — </> : null}
-        old firmware (&lt; 1.7), reachable only over the legacy binary protocol. Live and identified; RF / AF / battery decoding pending calibration.
-      </p>
+      <div className="flex flex-col gap-1.5">
+        <MeterRow label="RF" kind="rf" value={ch.rf ?? null} right={ch.rf != null ? `${Math.round(ch.rf * 100)}%` : '—'} />
+        <MeterRow label="AF" kind="af" value={ch.af ?? null} right={ch.af != null ? `${Math.round(ch.af * 100)}%` : '—'} />
+      </div>
       <div className="flex items-center gap-2 pt-0.5 border-t border-border/40">
-        <span className="inline-flex items-center gap-1.5 text-[10px] text-live"><Radio className="size-3" />online</span>
-        {dev.mac && <span className="text-[9.5px] font-mono text-muted-foreground/70">{dev.mac}</span>}
+        <span className="inline-flex items-center gap-1.5 text-[10px] text-live"><Waves className="size-3" />live</span>
+        <span className="text-[9.5px] text-muted-foreground/60" title="This firmware does not expose battery over the decoded protocol">bat n/a</span>
+        {dev.mac && <span className="text-[9.5px] font-mono text-muted-foreground/60">{dev.mac}</span>}
         <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50">{dev.ip.replace('127.0.0.1', 'sim')}</span>
       </div>
     </div>

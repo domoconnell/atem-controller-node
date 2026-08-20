@@ -85,6 +85,10 @@ export function parseG34Line(line, ch) {
  */
 const LEGACY_PORT = 8133
 const LEGACY_TOKEN = Buffer.from('4f1ff1ca', 'hex') // observed WSM subscribe opcode
+// Telemetry byte offsets, mapped from a mic-on capture (scratch/captures/
+// g3legacy-micon-calibration.json): byte[19] RF (never zero while TX on),
+// bytes[24]/[22] AF level (zero in silence), byte[17] AF peak-hold. Scaled /255.
+const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17 }
 
 export function buildLegacySubscribe(ip) {
   const oct = Buffer.from(ip.split('.').map(Number))
@@ -101,9 +105,15 @@ export function parseLegacyFrame(buf) {
     return { kind: 'identity', model: g('Model'), mac, ip: g('IPA') }
   }
   // 40-byte binary telemetry/control frame: [3]=0xca magic, [5-10]=MAC
-  if (buf.length < 16 || buf[3] !== 0xca) return null
+  if (buf.length < 40 || buf[3] !== 0xca) return null
   const mac = [...buf.subarray(5, 11)].map((b) => b.toString(16).padStart(2, '0')).join(':')
-  return { mac, kind: buf[2] === 0xf7 ? 'telemetry' : 'control', raw: buf.toString('hex') }
+  if (buf[2] !== 0xf7) return { mac, kind: 'control', raw: buf.toString('hex') }
+  return {
+    mac, kind: 'telemetry', raw: buf.toString('hex'),
+    rf: buf[LEG.rf] / 255,
+    af: Math.max(buf[LEG.af], buf[LEG.af2]) / 255,
+    afPeak: buf[LEG.afPeak] / 255,
+  }
 }
 
 /** Best LAN IPv4 on the same /24 as `deviceIp` (what the device streams back to). */
@@ -280,8 +290,10 @@ export class SennheiserMonitor extends EventEmitter {
     if (f.kind === 'identity') {
       if (f.model && d.product !== f.model) { d.product = f.model; changed = true }
       ch.legacy = true
-    } else if (f.kind === 'telemetry' && ch.legacyRaw !== f.raw) {
-      ch.legacyRaw = f.raw; ch.legacy = true; changed = true
+    } else if (f.kind === 'telemetry') {
+      ch.legacy = true; ch.legacyRaw = f.raw
+      ch.rf = f.rf; ch.af = f.af; ch.afPeak = f.afPeak
+      changed = true
     }
     if (changed) this._markDirty()
   }
