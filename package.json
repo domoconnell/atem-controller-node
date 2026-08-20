@@ -11,15 +11,24 @@
     "build": "npm run ui:build",
     "deploy": "npm run ui:build && ./deploy/deploy.sh",
     "postinstall": "cd ui && npm install --no-audit --no-fund",
-    "test": "node test/audit-looks.mjs && node test/adversarial.mjs && node test/sennheiser-parse.mjs"
+    "test": "node test/audit-looks.mjs && node test/adversarial.mjs && node test/sennheiser-parse.mjs && npx tsx server/db/migrate.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "atem-connection": "^3.5.0",
+    "better-sqlite3": "^13.0.3",
     "express": "^4.19.0",
     "osc": "^2.4.5",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
   }
 }

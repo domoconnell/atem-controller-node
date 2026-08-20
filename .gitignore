@@ -179,3 +179,9 @@ dist
 /public/
 ui/.next/
 ui/node_modules/
+
+# SQLite store
+*.db
+*.db-wal
+*.db-shm
+.dev-data/
