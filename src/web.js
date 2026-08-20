@@ -62,6 +62,12 @@ export class WebServer {
 
     // ---- Connector engine (unified backend): instances + catalogue + commands ----
     app.get('/api/connector-types', (_req, res) => res.json({ ok: true, types: this.connectorEngine?.catalogue() ?? [] }))
+    app.get('/api/settings', (_req, res) => res.json({ ok: true, settings: this.store?.allSettings() ?? {} }))
+    app.put('/api/settings', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      for (const [k, v] of Object.entries(req.body ?? {})) this.store.setSetting(k, v)
+      res.json({ ok: true, settings: this.store.allSettings() })
+    })
     app.get('/api/instances', (_req, res) => res.json({ ok: true, instances: this.connectorEngine?.listInstances() ?? [] }))
     app.post('/api/instances', async (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })
