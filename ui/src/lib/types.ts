@@ -161,6 +161,7 @@ export interface SennChannel {
   msg?: string
   legacy?: boolean
   legacyRaw?: string // undecoded 40-byte telemetry frame (hex)
+  batteryPending?: boolean // reached via a protocol whose battery field isn't decoded yet
 }
 export interface SennDevice {
   ip: string

@@ -2,7 +2,7 @@
 import type { SennChannel, SennDevice } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SegMeter, Battery, Antenna } from './meters'
-import { MicOff, Radio, AlertTriangle, Waves } from 'lucide-react'
+import { MicOff, Radio, AlertTriangle } from 'lucide-react'
 
 const FAMILY = {
   ewdx: { label: 'EW-DX', accent: 'text-[#2dd4bf] border-[#2dd4bf]/30 bg-[#2dd4bf]/5' },
@@ -52,47 +52,17 @@ function MuteCard({ dev }: { dev: SennDevice }) {
   )
 }
 
-/**
- * Legacy G3 (firmware < 1.7) on the binary 8133 protocol. We decode presence
- * + MAC from its telemetry stream; the RF/AF/battery byte mapping is not yet
- * reversed, so we show it as live-but-uncalibrated rather than fake numbers.
- */
-function LegacyCard({ dev }: { dev: SennDevice }) {
-  const ch = dev.channels[0] ?? { id: 'ch' }
-  return (
-    <div className="surface rounded-xl px-3.5 py-3 flex flex-col gap-2.5 border border-[#2dd4bf]/25 bg-[#2dd4bf]/[0.03]">
-      <div className="flex items-center gap-2">
-        <span className="text-[17px] font-bold tracking-tight leading-none truncate">{dev.label ?? dev.ip}</span>
-        <span className="ml-auto shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] rounded px-1.5 py-0.5 border text-[#2dd4bf] border-[#2dd4bf]/30 bg-[#2dd4bf]/5">G3 · legacy</span>
-      </div>
-      <div className="flex items-baseline gap-2 font-mono">
-        <span className="text-[12px] text-foreground/80">{dev.product ?? 'EM300G3'}</span>
-        <span className="text-[10px] text-muted-foreground/70">firmware &lt; 1.7</span>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <MeterRow label="RF" kind="rf" value={ch.rf ?? null} right={ch.rf != null ? `${Math.round(ch.rf * 100)}%` : '—'} />
-        <MeterRow label="AF" kind="af" value={ch.af ?? null} right={ch.af != null ? `${Math.round(ch.af * 100)}%` : '—'} />
-      </div>
-      <div className="flex items-center gap-2 pt-0.5 border-t border-border/40">
-        <span className="inline-flex items-center gap-1.5 text-[10px] text-live"><Waves className="size-3" />live</span>
-        <span className="text-[9.5px] text-muted-foreground/60" title="This firmware does not expose battery over the decoded protocol">bat n/a</span>
-        {dev.mac && <span className="text-[9.5px] font-mono text-muted-foreground/60">{dev.mac}</span>}
-        <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50">{dev.ip.replace('127.0.0.1', 'sim')}</span>
-      </div>
-    </div>
-  )
-}
-
 /** One card per wireless channel (an EW-DX EM2 yields two). */
 export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
   const hasTelemetry = dev.online
-  if (dev.legacy && hasTelemetry) return <LegacyCard dev={dev} />
-  // Reachable via ping but silent on the protocol -> present-but-mute card.
+  // Reachable via ping but silent on every protocol -> present-but-mute card.
   if (!hasTelemetry && dev.reachable) return <MuteCard dev={dev} />
 
-  const fam = FAMILY[dev.type]
+  // A receiver reached over the legacy protocol is just a G3 to the user.
+  const dtype = dev.type === 'g3legacy' ? 'g3' : dev.type
+  const fam = FAMILY[dtype]
   const offline = !hasTelemetry
-  const isIem = dev.type === 'iemg4'
+  const isIem = dtype === 'iemg4'
   const name = (ch.name ?? dev.label ?? dev.ip).trim()
   return (
     <div className={cn(
@@ -112,8 +82,8 @@ export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
       <div className="flex items-baseline gap-2 font-mono">
         <span className="text-[13px] text-foreground/90 tabular-nums">{offline ? '— offline —' : mhz(ch.frequency)}</span>
         <span className="text-[10px] text-muted-foreground/70 truncate">
-          {dev.type === 'ewdx' && ch.gain != null && `gain ${ch.gain} dB`}
-          {dev.type === 'g3' && ch.squelch != null && `squelch ${ch.squelch} dB · out ${ch.afOut} dB`}
+          {dtype === 'ewdx' && ch.gain != null && `gain ${ch.gain} dB`}
+          {dtype === 'g3' && ch.squelch != null && `squelch ${ch.squelch} dB · out ${ch.afOut} dB`}
           {isIem && ch.sensitivity != null && `sens ${ch.sensitivity} dB · ${ch.stereo ? 'stereo' : 'mono'}`}
         </span>
       </div>
@@ -122,7 +92,7 @@ export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
       <div className="flex flex-col gap-1.5">
         {!isIem && (
           <MeterRow label="RF" kind="rf" value={ch.rf ?? null}
-            right={dev.type === 'ewdx'
+            right={dtype === 'ewdx'
               ? (ch.rssi != null ? `${ch.rssi} dBm` : '—')
               : (ch.rf1 != null ? `${Math.max(ch.rf1 ?? 0, ch.rf2 ?? 0)}` : '—')}
           />
@@ -134,7 +104,7 @@ export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
           </>
         ) : (
           <MeterRow label="AF" kind="af" value={ch.af ?? null}
-            right={dev.type === 'ewdx' && ch.afDb != null ? `${ch.afDb} dB` : undefined} />
+            right={dtype === 'ewdx' && ch.afDb != null ? `${ch.afDb} dB` : undefined} />
         )}
       </div>
 
@@ -142,13 +112,13 @@ export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
       <div className="flex items-center gap-2 pt-0.5 border-t border-border/40">
         {isIem
           ? <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground"><Radio className="size-3" />rack send</span>
-          : <Battery pct={offline ? null : ch.battery} />}
-        {dev.type === 'ewdx' && ch.rsqi != null && !offline && (
+          : <Battery pct={offline ? null : ch.battery} pending={!offline && ch.batteryPending} />}
+        {dtype === 'ewdx' && ch.rsqi != null && !offline && (
           <span className="text-[10px] tabular-nums text-muted-foreground" title="RF signal quality">Q {ch.rsqi}%</span>
         )}
         {!isIem && <Antenna active={offline ? undefined : ch.ant} />}
         <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50" title={dev.version ? `firmware ${dev.version}` : undefined}>
-          {offline ? 'OFFLINE' : dev.ip.replace('127.0.0.1', 'sim')}{dev.type === 'ewdx' ? ` · ${ch.id}` : ''}{dev.version && !offline ? ` · fw ${dev.version}` : ''}
+          {offline ? 'OFFLINE' : dev.ip.replace('127.0.0.1', 'sim')}{dtype === 'ewdx' ? ` · ${ch.id}` : ''}{dev.version && !offline ? ` · fw ${dev.version}` : ''}
         </span>
       </div>
     </div>

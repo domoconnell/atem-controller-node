@@ -14,7 +14,7 @@ const FLEET = [
   { type: 'g3', name: 'VOX 5', freq: 638025 },
   { type: 'g3', name: 'VOX 6', freq: 643175 },
   { type: 'g3', name: 'SPARE', freq: 606000, dead: true }, // tx off: no RF/battery
-  { type: 'g3legacy', name: 'RX .73 (old fw)', freq: 606000 }, // pre-1.7 binary 8133 protocol
+  { type: 'g3legacy', name: 'RX .73', freq: 606000 }, // pre-1.7 binary 8133 protocol
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ type: 'iemg4', name: `VOX ${n}`, freq: 614325 + n * 700 })),
 ]
 
@@ -176,6 +176,7 @@ class LegacySim {
       frame[24] = af                                   // AF level
       frame[22] = Math.round(af * 0.85)
       frame[17] = Math.round(peak)                     // AF peak-hold
+      frame[16] = wob(6000, ph) > 0.5 ? 2 : 1          // diversity antenna A/B
       this.sock.send(frame, rinfo.port, rinfo.address)
       if (n++ % 40 === 0) this.sock.send(ident, rinfo.port, rinfo.address) // periodic identity beacon
     }, 80)

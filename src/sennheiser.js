@@ -88,7 +88,7 @@ const LEGACY_TOKEN = Buffer.from('4f1ff1ca', 'hex') // observed WSM subscribe op
 // Telemetry byte offsets, mapped from a mic-on capture (scratch/captures/
 // g3legacy-micon-calibration.json): byte[19] RF (never zero while TX on),
 // bytes[24]/[22] AF level (zero in silence), byte[17] AF peak-hold. Scaled /255.
-const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17 }
+const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17, ant: 16 }
 
 export function buildLegacySubscribe(ip) {
   const oct = Buffer.from(ip.split('.').map(Number))
@@ -113,6 +113,7 @@ export function parseLegacyFrame(buf) {
     rf: buf[LEG.rf] / 255,
     af: Math.max(buf[LEG.af], buf[LEG.af2]) / 255,
     afPeak: buf[LEG.afPeak] / 255,
+    ant: buf[LEG.ant] === 2 ? 2 : buf[LEG.ant] === 1 ? 1 : undefined,
   }
 }
 
@@ -194,6 +195,7 @@ export class SennheiserMonitor extends EventEmitter {
     this.simulate = !!cfg.simulate
     this.devices = (cfg.devices ?? []).map((d) => ({
       ip: d.ip, port: d.port, type: d.type, label: d.label,
+      cfgName: d.name, cfgFreq: d.frequency, // optional static overrides for protocols that don't report them
       online: false, reachable: null, pingMs: null, lastRx: 0, channels: [],
     }))
     this._sscSocks = new Map() // device -> socket (devices can share an IP in sim mode)
@@ -283,7 +285,7 @@ export class SennheiserMonitor extends EventEmitter {
     const f = parseLegacyFrame(msg)
     if (!f) return
     this._sawDevice(d)
-    if (!d.channels.length) d.channels.push({ id: 'ch', name: d.label })
+    if (!d.channels.length) d.channels.push({ id: 'ch', name: d.cfgName ?? d.label, frequency: d.cfgFreq })
     const ch = d.channels[0]
     let changed = false
     if (f.mac && d.mac !== f.mac) { d.mac = f.mac; changed = true }
@@ -293,6 +295,9 @@ export class SennheiserMonitor extends EventEmitter {
     } else if (f.kind === 'telemetry') {
       ch.legacy = true; ch.legacyRaw = f.raw
       ch.rf = f.rf; ch.af = f.af; ch.afPeak = f.afPeak
+      ch.rf1 = Math.round(f.rf * 100); ch.rf2 = 0 // so the card's RF read-out renders like the other G3s
+      if (f.ant) ch.ant = f.ant
+      ch.batteryPending = true // battery byte not yet identified (see todo.md)
       changed = true
     }
     if (changed) this._markDirty()

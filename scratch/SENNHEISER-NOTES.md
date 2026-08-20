@@ -92,8 +92,10 @@ protocol on **UDP 8133**, reverse-engineered from a WSM packet capture
   g3legacy-micon-calibration.json, 406 telemetry frames talk/silent/talk):
   byte[19] = RF level (never 0 while TX on; negatively correlated with audio),
   bytes[24]/[22] = AF level (hit 0 in silence, +0.58 correlated),
-  byte[17] = AF peak-hold. All scaled /255. BATTERY is not exposed by this
-  firmware over the decoded frame (no clear byte tracks it) - shown as n/a.
+  byte[17] = AF peak-hold, byte[16] = antenna A/B (1/2). All scaled /255.
+  BATTERY: not yet pinned - it doesn't vary in a 40s capture so there's no
+  ground truth; leading candidate byte[12] (0 when TX off -> stable 4 when on).
+  Frequency is NOT in the frame. See todo.md for the office capture to finish.
 - **Identity beacon** (device → controller, 85 bytes, ASCII): e.g.
   `Model=EM300G3   ID=001B667A8EDB   IPA=10.10.10.73`. We parse Model/ID/IPA.
 - **Verified** against the real .73: subscribing from a fresh IP (10.10.10.200

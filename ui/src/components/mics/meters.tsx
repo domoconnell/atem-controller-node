@@ -41,7 +41,15 @@ export function SegMeter({ value, kind = 'af', className }: { value: number | nu
 }
 
 /** Battery pill: filled bars + %, colour-coded; null = transmitter off. */
-export function Battery({ pct }: { pct: number | null | undefined }) {
+export function Battery({ pct, pending }: { pct: number | null | undefined; pending?: boolean }) {
+  if (pct == null && pending) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-muted-foreground/70" title="Battery reading not available for this receiver yet">
+        <BatteryGlyph fill={0} />
+        <span className="text-[11px]">—</span>
+      </span>
+    )
+  }
   if (pct == null) {
     return (
       <span className="inline-flex items-center gap-1.5 text-muted-foreground/60" title="No battery data - transmitter off?">
