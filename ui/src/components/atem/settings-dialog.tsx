@@ -21,11 +21,6 @@ interface Field {
 interface Group { title: string; desc?: string; fields: Field[] }
 
 const GROUPS: Group[] = [
-  { title: 'Hardware', desc: 'Network addresses of the devices. Changing these requires a restart.', fields: [
-    { path: 'atem.ip', label: 'ATEM IP' },
-    { path: 'hyperdeck.ip', label: 'HyperDeck IP' },
-    { path: 'hyperdeck.port', label: 'HyperDeck port', type: 'number', hint: 'Ethernet protocol, normally 9993' },
-  ]},
   { title: 'SuperSource / M/E', fields: [
     { path: 'supersource.id', label: 'SuperSource', type: 'number', hint: '0 = SuperSource 1' },
     { path: 'supersource.me', label: 'Main M/E', type: 'number', hint: 'zero-indexed: 1 = M/E 2' },
@@ -40,22 +35,6 @@ const GROUPS: Group[] = [
     { path: 'transition.keyFadeMs', label: 'Border key fade (ms)', type: 'number', hot: true },
     { path: 'transition.mixRateFrames', label: 'Pinned mix rate (frames)', type: 'number', hint: 'blank = inherit the switcher', hot: true },
     { path: 'transition.videoFps', label: 'Video fps', type: 'number', hint: 'for seconds → frames (50, or 60 for 59.94/60p)', hot: true },
-  ]},
-  { title: 'Companion / OSC', fields: [
-    { path: 'osc.listenPort', label: 'OSC command port', type: 'number', hint: 'Companion sends here (9000)' },
-    { path: 'companion.host', label: 'Companion IP', hot: true },
-    { path: 'companion.port', label: 'Companion OSC API port', type: 'number', hint: 'built-in OSC listener, 12321', hot: true },
-    { path: 'companion.varPrefix', label: 'Variable prefix', hot: true },
-    { path: 'osc.feedback.0.host', label: 'Feedback target IP', hint: '/status/... stream (usually Companion)', hot: true },
-    { path: 'osc.feedback.0.port', label: 'Feedback port', type: 'number', hint: 'Companion Generic OSC listen port (9001)', hot: true },
-  ]},
-  { title: 'ProPresenter', desc: 'For the countdown renderer (/r/). Applied live. Blank IP = built-in demo timer.', fields: [
-    { path: 'propresenter.ip', label: 'ProPresenter IP', hot: true, hint: 'the Mac running Pro — enable Preferences → Network' },
-    { path: 'propresenter.port', label: 'API port', type: 'number', hot: true, hint: 'shown in Pro Preferences → Network' },
-    { path: 'propresenter.pollMs', label: 'Poll interval (ms)', type: 'number', hot: true },
-  ]},
-  { title: 'Web', fields: [
-    { path: 'web.port', label: 'Web UI port', type: 'number' },
   ]},
 ]
 
@@ -77,6 +56,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const [error, setError] = useState<string | null>(null)
   const [restartRequired, setRestartRequired] = useState<string[]>([])
   const [restarting, setRestarting] = useState(false)
+  const [instances, setInstances] = useState<{ id: string; typeId: string; name: string }[]>([])
+  const [sel, setSel] = useState<{ atemInstanceId?: string; propresenterInstanceId?: string }>({})
 
   useEffect(() => {
     if (!open) return
@@ -84,9 +65,17 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     fetch('/api/config').then((r) => r.json()).then((b) => {
       setCfg(structuredClone(b.config)); setOrig(structuredClone(b.config))
     }).catch((e) => setError(e.message))
+    fetch('/api/instances').then((r) => r.json()).then((b) => setInstances(b.instances ?? [])).catch(() => {})
+    fetch('/api/settings').then((r) => r.json()).then((b) => setSel(b.settings?.atemTransitions ?? {})).catch(() => {})
   }, [open])
 
   const dirty = cfg && orig && JSON.stringify(cfg) !== JSON.stringify(orig)
+  const saveSel = (next: typeof sel) => {
+    setSel(next)
+    fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atemTransitions: next }) }).catch(() => {})
+  }
+  const atems = instances.filter((i) => i.typeId === 'atem')
+  const propres = instances.filter((i) => i.typeId === 'propresenter')
 
   const save = async () => {
     if (!cfg) return
@@ -113,13 +102,35 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       <DialogContent className="sm:max-w-[640px] bg-background border-border p-0 gap-0">
         <DialogHeader className="p-5 pb-3">
           <DialogTitle className="flex items-center gap-2"><Settings className="size-4" /> Settings</DialogTitle>
-          <DialogDescription>Edits <code className="text-[11px]">config.json</code> on the controller. Timing and Companion changes apply live; hardware and ports need a restart.</DialogDescription>
+          <DialogDescription>ATEM Transitions engine settings. Device connections live under Settings → Connections.</DialogDescription>
         </DialogHeader>
         <Separator />
 
         <ScrollArea className="max-h-[60vh]">
           <div className="p-5 space-y-6">
             {!cfg && !error && <div className="text-muted-foreground text-sm flex items-center gap-2"><Loader2 className="size-4 animate-spin" /> Loading…</div>}
+            <section>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-0.5">Instances</div>
+              <div className="text-[11px] text-muted-foreground/80 mb-2">Which connections this app drives. Add or configure them under Settings → Connections.</div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-2">
+                <label className="block">
+                  <div className="text-[11.5px] mb-1">ATEM</div>
+                  <select value={sel.atemInstanceId ?? ''} onChange={(e) => saveSel({ ...sel, atemInstanceId: e.target.value })}
+                    className="h-9 w-full rounded-md border border-input bg-muted/40 px-2.5 text-[13px]">
+                    <option value="">— select —</option>
+                    {atems.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <div className="text-[11.5px] mb-1">ProPresenter</div>
+                  <select value={sel.propresenterInstanceId ?? ''} onChange={(e) => saveSel({ ...sel, propresenterInstanceId: e.target.value })}
+                    className="h-9 w-full rounded-md border border-input bg-muted/40 px-2.5 text-[13px]">
+                    <option value="">— select —</option>
+                    {propres.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  </select>
+                </label>
+              </div>
+            </section>
             {cfg && GROUPS.map((g) => (
               <section key={g.title}>
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-0.5">{g.title}</div>

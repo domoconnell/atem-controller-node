@@ -3,12 +3,13 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2 } from 'lucide-react'
+import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2, Server, Disc3, MonitorPlay, Circle } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const APPS = [
   {
     id: 'home', href: '/', icon: House,
-    title: 'Stage It Live', tile: 'from-primary to-amber-700 shadow-[0_0_18px_-4px_var(--primary)]',
+    title: 'Stage It Live', tile: 'from-[#fb7185] to-rose-800 shadow-[0_0_18px_-4px_#fb7185]',
     sub: () => 'Home',
   },
   {
@@ -62,12 +63,8 @@ function connGroups(state: Snapshot | null, wsConnected: boolean): ConnGroup[] {
   return g
 }
 
-const DOT: Record<ConnState, string> = {
-  live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/40',
-}
-function Dot({ state, className }: { state: ConnState; className?: string }) {
-  return <span className={cn('size-2 rounded-full shrink-0', DOT[state], state === 'live' && 'shadow-[0_0_6px_-1px_var(--live)]', className)} />
-}
+const CONN_ICON: Record<string, React.ElementType> = { server: Server, atem: SlidersHorizontal, hyperdeck: Disc3, mics: Mic, propres: MonitorPlay }
+const CONN_TEXT: Record<ConnState, string> = { live: 'text-live', sim: 'text-busy', partial: 'text-busy', offline: 'text-destructive', empty: 'text-muted-foreground/40' }
 
 /**
  * Shared header: app icon + title as an app-switcher dropdown, the four
@@ -82,7 +79,6 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
   children?: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [connOpen, setConnOpen] = useState(false)
   const [pulse, setPulse] = useState(false)
   useEffect(() => {
     setPulse(true)
@@ -92,10 +88,6 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
 
   const cur = APPS.find((a) => a.id === app) ?? APPS[0]
   const groups = connGroups(state, wsConnected)
-  const connOnline = groups.reduce((n, g) => n + g.online, 0)
-  const connTotal = groups.reduce((n, g) => n + g.total, 0)
-  const worst: ConnState = groups.some((g) => g.state === 'offline') ? 'offline'
-    : groups.some((g) => g.state === 'sim' || g.state === 'partial') ? 'partial' : 'live' 
 
   return (
     <header className="shrink-0 flex items-center gap-5 px-5 h-14 border-b border-border/70 bg-background/80 z-30">
@@ -137,32 +129,28 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
 
       <div className="h-6 w-px bg-border" />
 
-      {/* Connections summary — scales to many types & multi-instance counts */}
-      <div className="relative">
-        <button onClick={() => setConnOpen((o) => !o)}
-          className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent outline-none">
-          <Dot state={worst} />
-          <span className="text-[11px] tabular-nums text-foreground/80">{connOnline}<span className="text-muted-foreground">/{connTotal}</span></span>
-          <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hidden md:inline">connected</span>
-          <ChevronDown className={cn('size-3 text-muted-foreground transition-transform', connOpen && 'rotate-180')} />
-        </button>
-        {connOpen && (
-          <div className="absolute left-0 top-full mt-2 z-50 w-64 rounded-lg border border-border bg-popover shadow-2xl p-1.5"
-            onMouseLeave={() => setConnOpen(false)}>
-            <div className="px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Connections</div>
-            {groups.map((g) => (
-              <div key={g.key} className="flex items-center gap-2.5 rounded-md px-2 py-1.5">
-                <Dot state={g.state} />
-                <span className="text-[12.5px] text-foreground/90">{g.label}</span>
-                <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
-                  {g.total > 1
-                    ? `${g.online}/${g.total}${g.state === 'sim' ? ' · sim' : ''}`
-                    : g.state === 'offline' ? 'offline' : g.state === 'sim' ? 'sim' : g.online ? 'online' : 'off'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Connections — one icon per type, coloured by state (hover for detail) */}
+      <div className="flex items-center gap-0.5">
+        {groups.map((g) => {
+          const Icon = CONN_ICON[g.key] ?? Circle
+          return (
+            <Tooltip key={g.key}>
+              <TooltipTrigger asChild>
+                <div className="relative size-8 rounded-md grid place-items-center hover:bg-accent">
+                  <Icon className={cn('size-[16px]', CONN_TEXT[g.state])} />
+                  {g.total > 1 && (
+                    <span className={cn('absolute -bottom-0 -right-0 text-[8px] leading-none font-bold tabular-nums px-[2px] py-[1px] rounded bg-background border border-border/60', CONN_TEXT[g.state])}>{g.online}</span>
+                  )}
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {g.label} — {g.total > 1
+                  ? `${g.online}/${g.total} online${g.state === 'sim' ? ' · sim' : ''}`
+                  : g.state === 'offline' ? 'offline' : g.state === 'sim' ? 'sim' : g.online ? 'online' : 'off'}
+              </TooltipContent>
+            </Tooltip>
+          )
+        })}
       </div>
 
       {children}
