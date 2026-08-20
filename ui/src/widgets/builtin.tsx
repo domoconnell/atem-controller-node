@@ -73,11 +73,16 @@ function CommsTranscript({ instanceId, title }: WidgetProps) {
   const data = useStream(instanceId, 'feed') as { messages?: FeedMsg[] } | null
   const msgs = data?.messages ?? []
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight }, [msgs.length])
+  const stick = useRef(true)
+  // Stick to the bottom whenever we're already near it — runs every render so
+  // content changes (not just new lines) keep it pinned; the user scrolling up
+  // releases the pin until they return to the bottom.
+  useEffect(() => { const el = ref.current; if (el && stick.current) el.scrollTop = el.scrollHeight })
+  const onScroll = () => { const el = ref.current; if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24 }
   return (
     <div className="h-full flex flex-col">
       <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1">{title}</div>
-      <div ref={ref} className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-1">
+      <div ref={ref} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-1">
         {msgs.length === 0 && <div className="text-muted-foreground/40 text-[11px]">No traffic yet…</div>}
         {msgs.map((m) => (
           <div key={m.id} className={cn('text-[12px] leading-snug', m.live && 'opacity-55 italic')}>
