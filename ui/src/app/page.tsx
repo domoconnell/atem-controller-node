@@ -63,7 +63,7 @@ export default function Page() {
             </div>
           </div>
         ) : (
-          <main className="relative flex-1 min-h-0 p-4 grid gap-4 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <main className="relative flex-1 min-h-0 overflow-hidden p-4 grid gap-4 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
             {state.atem.simulated && (
               <div className="absolute top-0 left-1/2 -translate-x-1/2 z-40 rounded-b-md bg-busy text-black text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1 shadow-[0_0_16px_-4px_var(--busy)]">
                 Simulator — no ATEM connected

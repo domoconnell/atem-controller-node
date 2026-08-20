@@ -124,6 +124,8 @@ export const PATTERN_NAMES = [
 ]
 
 export interface WireLine {
+  /** cluster size: how many identical sequential messages this line stands for */
+  count?: number
   t: number
   dir: 'tx' | 'rx'
   proto: string

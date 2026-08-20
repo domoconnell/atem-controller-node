@@ -6,9 +6,11 @@ import { ChevronUp, ChevronDown, Pause, Play, Trash2, ArrowDownToLine } from 'lu
 
 /**
  * Live device wire log: one compact monospace line per message to/from the
- * ATEM (or sim), HyperDeck, OSC/Companion and ProPresenter. Collapsed by
- * default to a one-line ticker; expands to a scrollable drawer with
- * per-protocol filters, pause and clear. Fixed heights - no layout shift.
+ * ATEM (or sim), HyperDeck, OSC/Companion and ProPresenter. Sequential
+ * identical messages cluster into one line with a [N] counter and a rolling
+ * timestamp. Collapsed by default to a one-line ticker; expands to a
+ * scrollable drawer with per-protocol filters, pause and clear.
+ * Fixed heights - no layout shift.
  */
 const PROTO_META: Record<string, { tag: string; color: string }> = {
   atem:      { tag: 'ATEM', color: 'text-primary' },
@@ -26,19 +28,12 @@ function ts(t: number) {
 
 function Row({ l }: { l: WireLine }) {
   const m = meta(l.proto)
-  if (l.repeat) {
-    return (
-      <div className="flex gap-2 text-muted-foreground/60 leading-[1.5]">
-        <span className="w-[86px] shrink-0" />
-        <span className="shrink-0">⋮</span>
-        <span className={cn('shrink-0 font-bold', m.color, 'opacity-60')}>{l.dir === 'tx' ? '→' : '←'} {m.tag}</span>
-        <span className="truncate">{l.kind} ×{l.repeat} more</span>
-      </div>
-    )
-  }
   return (
-    <div className={cn('flex gap-2 leading-[1.5]', l.dir === 'rx' && 'opacity-80')}>
+    <div className={cn('flex gap-2 leading-[1.5] whitespace-nowrap', l.dir === 'rx' && 'opacity-80')}>
       <span className="w-[86px] shrink-0 text-muted-foreground/50">{ts(l.t)}</span>
+      <span className="w-[44px] shrink-0 text-right text-busy/90 tabular-nums">
+        {(l.count ?? 1) > 1 ? `[${l.count}]` : ''}
+      </span>
       <span className={cn('shrink-0 font-bold w-[52px]', m.color)}>{l.dir === 'tx' ? '→' : '←'} {m.tag}</span>
       <span className="shrink-0 text-foreground/90 whitespace-pre">{l.summary}</span>
       {l.detail && <span className="truncate text-muted-foreground/60">{l.detail}</span>}
@@ -54,31 +49,35 @@ export function WireLog({ lines, version, onClear }: { lines: WireLine[]; versio
   const frozen = useRef<WireLine[]>([])
   const scroller = useRef<HTMLDivElement>(null)
 
-  if (!paused) frozen.current = lines
   const shown = useMemo(
-    () => frozen.current.filter((l) => filters[l.proto] !== false),
+    () => (paused ? frozen.current : lines).filter((l) => filters[l.proto] !== false),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [version, paused, filters]
   )
 
   useEffect(() => {
-    if (open && follow && scroller.current) {
+    if (open && follow && !paused && scroller.current) {
       scroller.current.scrollTop = scroller.current.scrollHeight
     }
   }, [version, open, follow, paused, filters])
+
+  const togglePause = () => {
+    if (!paused) frozen.current = lines.map((l) => ({ ...l })) // freeze a real copy
+    setPaused((p) => !p)
+  }
 
   const protos = ['atem', 'asim', 'hyperdeck', 'osc', 'companion', 'propres']
   const last = lines[lines.length - 1]
 
   return (
-    <div className="shrink-0 border-t border-border/70 bg-background/90 font-mono text-[10.5px]">
+    <div className="relative z-30 shrink-0 border-t border-border/70 bg-background font-mono text-[10.5px]">
       {/* ticker / header bar - fixed height */}
-      <div className="h-8 flex items-center gap-3 px-4 select-none">
-        <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1.5 text-[10px] font-sans font-bold uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground">
+      <div className="h-8 flex items-center gap-3 px-4 select-none overflow-hidden">
+        <button onClick={() => setOpen((o) => !o)} className="shrink-0 flex items-center gap-1.5 text-[10px] font-sans font-bold uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground">
           {open ? <ChevronDown className="size-3.5" /> : <ChevronUp className="size-3.5" />} Wire log
         </button>
-        {!open && last && !last.repeat && (
-          <div className="flex-1 min-w-0 flex gap-2 items-center opacity-70">
+        {!open && last && (
+          <div className="flex-1 min-w-0 overflow-hidden opacity-70">
             <Row l={last} />
           </div>
         )}
@@ -103,7 +102,7 @@ export function WireLog({ lines, version, onClear }: { lines: WireLine[]; versio
                 className={cn('p-1 rounded hover:bg-accent', follow ? 'text-live' : 'text-muted-foreground')}>
                 <ArrowDownToLine className="size-3.5" />
               </button>
-              <button onClick={() => setPaused((p) => !p)} title={paused ? 'resume' : 'pause'}
+              <button onClick={togglePause} title={paused ? 'resume' : 'pause'}
                 className={cn('p-1 rounded hover:bg-accent', paused ? 'text-busy' : 'text-muted-foreground')}>
                 {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
               </button>
@@ -120,7 +119,7 @@ export function WireLog({ lines, version, onClear }: { lines: WireLine[]; versio
         <div
           ref={scroller}
           onWheel={() => setFollow(false)}
-          className="h-[228px] overflow-y-auto overflow-x-hidden px-4 pb-2 border-t border-border/40"
+          className="h-[228px] overflow-y-auto overflow-x-hidden px-4 pb-2 border-t border-border/40 bg-background"
         >
           {shown.length === 0 && <div className="text-muted-foreground/50 pt-2">no traffic yet</div>}
           {shown.map((l, i) => <Row key={i} l={l} />)}
