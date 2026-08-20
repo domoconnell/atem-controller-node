@@ -9,6 +9,7 @@ import '@/widgets/connectors'
 import '@/widgets/strips'
 import { widgetsForType, getWidget } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
+import { Pullouts } from '@/components/surfaces/pullouts'
 import { useMeasure } from '@/components/surfaces/use-measure'
 import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
 import type { Instance, ConnectorType } from '@/lib/types'
@@ -142,21 +143,13 @@ function Canvas({ surface, edit, sel, instances, onSelect, onRemove, onLayout }:
   // letterbox the aspect box inside the available area
   let bw = w, bh = w / disp.aspect
   if (bh > h) { bh = h; bw = h * disp.aspect }
-  const P = surface.pullouts
   return (
     <div ref={ref} className="w-full h-full grid place-items-center" onClick={(e) => e.stopPropagation()}>
       <div className="relative rounded-lg overflow-hidden border border-border/60 bg-background shadow-2xl flex flex-col" style={{ width: bw || '100%', height: bh || '100%' }}>
-        {P.top.enabled && <RegionStrip region="top" horizontal {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
-        <div className="flex flex-1 min-h-0">
-          {P.left.enabled && <RegionStrip region="left" {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
-          <div className="flex flex-col flex-1 min-w-0">
-            {surface.header.enabled && <RegionStrip region="header" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
-            <MainGrid surface={surface} edit={edit} sel={sel} instances={instances} onSelect={onSelect} onRemove={onRemove} onLayout={onLayout} />
-            {surface.footer.enabled && <RegionStrip region="footer" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
-          </div>
-          {P.right.enabled && <RegionStrip region="right" {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
-        </div>
-        {P.bottom.enabled && <RegionStrip region="bottom" horizontal {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
+        {surface.header.enabled && <RegionStrip region="header" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
+        <MainGrid surface={surface} edit={edit} sel={sel} instances={instances} onSelect={onSelect} onRemove={onRemove} onLayout={onLayout} />
+        {surface.footer.enabled && <RegionStrip region="footer" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
+        <Pullouts surface={surface} instances={instances} edit={edit} sel={sel} onSelect={(e, i) => onSelect(e, i)} onRemove={(e, i) => onRemove(e, i)} />
       </div>
     </div>
   )
@@ -317,16 +310,21 @@ function F({ label, children }: { label: string; children: React.ReactNode }) { 
 function ConfigPanel({ placement, instances, types, onChange, onClose }: {
   placement: Placement; instances: Instance[]; types: CType[]; onChange: (patch: Partial<Placement>) => void; onClose: () => void
 }) {
-  const inst = instances.find((i) => i.id === placement.instanceId)
-  const type = types.find((t) => t.typeId === (inst?.typeId ?? placement.config.typeId))
-  const streams = type?.streams ?? []
   const def = getWidget(placement.widgetType)
+  const inst = instances.find((i) => i.id === placement.instanceId)
+  const typeId = inst?.typeId ?? (placement.config.typeId as string | undefined)
+  const type = types.find((t) => t.typeId === typeId)
+  const streams = type?.streams ?? []
+  const sameType = instances.filter((i) => i.typeId === typeId)
   const curStream = streams.find((s) => s.id === placement.config.stream)
   const set = (k: string, v: unknown) => onChange({ config: { [k]: v } })
   return (
-    <aside className="w-64 shrink-0 border-l border-border/70 overflow-y-auto p-4 space-y-3">
+    <aside className="w-64 shrink-0 border-l border-border/70 overflow-y-auto p-4 space-y-3 bg-background relative z-20">
       <div className="flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider">{def?.label}</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">done</button></div>
       <F label="Title"><input value={placement.title ?? ''} placeholder={def?.label} onChange={(e) => onChange({ title: e.target.value })} className={sc} /></F>
+      {!def?.multi && sameType.length > 0 && (
+        <F label="Instance"><select value={placement.instanceId ?? ''} onChange={(e) => onChange({ instanceId: e.target.value })} className={sc}>{sameType.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></F>
+      )}
       {def?.configFields?.map((f) => {
         if (f.kind === 'stream') return <F key={f.key} label="Stream"><select value={String(placement.config.stream ?? '')} onChange={(e) => set('stream', e.target.value)} className={sc}>{streams.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></F>
         if (f.kind === 'field') return <F key={f.key} label="Field"><select value={String(placement.config.field ?? '')} onChange={(e) => set('field', e.target.value)} className={sc}>{(curStream?.fields ?? []).map((x) => <option key={x.id} value={x.id}>{x.label ?? x.id}</option>)}</select></F>
