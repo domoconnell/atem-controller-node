@@ -10,22 +10,12 @@ import { Hub } from './hub.js'
  *  engine lists them but does not run a second connection to them. */
 const LEGACY = new Set(['atem', 'hyperdeck', 'propresenter', 'sennheiser'])
 
-const EASINGS = ['linear', 'easeInQuad', 'easeOutQuad', 'easeInOutQuad', 'easeInCubic', 'easeOutCubic', 'easeInOutCubic', 'easeInOutSine']
 /** Config schemas for the connectors still on the legacy stack, so Settings
  *  renders a proper form for them (not a raw JSON box) ahead of the full port. */
 const LEGACY_SCHEMAS: Record<string, unknown> = {
   atem: { type: 'object', properties: {
     ip: { type: 'string', default: '10.10.10.51', description: 'ATEM switcher IP address' },
-    ssInput: { type: 'integer', default: 6000, description: 'SuperSource input number' },
-    mainMe: { type: 'integer', default: 1, description: 'Main M/E, zero-indexed (1 = M/E 2)' },
-    displayBox: { type: 'integer', default: 3, description: 'Box carrying the main display, zero-indexed (3 = box 4)' },
     simFallbackMs: { type: 'integer', default: 4000, description: 'Wait this long for the real switcher before the simulator takes over' },
-    boxMoveMs: { type: 'integer', default: 500, description: 'Default SuperSource box move duration' },
-    animationFps: { type: 'integer', default: 30 },
-    easing: { type: 'string', enum: EASINGS, default: 'easeInOutQuad' },
-    keyFadeMs: { type: 'integer', default: 150, description: 'Border-key (USK) fade time' },
-    mixRateFrames: { type: 'integer', description: 'Pinned mix rate in frames; blank = inherit the switcher' },
-    videoFps: { type: 'integer', default: 50, description: 'For seconds -> frames (50, or 60 for 59.94/60p)' },
   } },
   hyperdeck: { type: 'object', properties: {
     ip: { type: 'string', default: '10.10.10.55', description: 'HyperDeck IP address' },

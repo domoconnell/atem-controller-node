@@ -28,15 +28,11 @@ export function migrateJson(store: Store, projectRoot: string): { migrated: bool
     }
     // ATEM connection (engine params fold into its config)
     if (c.atem) {
-      const ss = c.supersource ?? {}, an = c.animation ?? {}, tr = c.transition ?? {}
+      // Connection settings only. The SuperSource/timing behaviour lives with
+      // the ATEM Transitions app (config.json today), not the connection.
       store.createInstance({
         id: 'atem-1', typeId: 'atem', name: 'ATEM', simulate: !!c.atem.simulate, allowControl: true,
-        config: {
-          ip: c.atem.ip, simFallbackMs: c.atem.simFallbackMs,
-          ssInput: ss.ssInput, mainMe: ss.me, displayBox: ss.displayBox,
-          boxMoveMs: an.defaultDurationMs, animationFps: an.fps, easing: an.defaultEasing,
-          keyFadeMs: tr.keyFadeMs, mixRateFrames: tr.mixRateFrames, videoFps: tr.videoFps,
-        },
+        config: { ip: c.atem.ip, simFallbackMs: c.atem.simFallbackMs },
       }); summary.instances++
     }
     if (c.hyperdeck) { store.createInstance({ id: 'hyperdeck-1', typeId: 'hyperdeck', name: 'HyperDeck', config: { ip: c.hyperdeck.ip, port: c.hyperdeck.port }, allowControl: true }); summary.instances++ }
