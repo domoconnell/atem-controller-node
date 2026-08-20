@@ -8,6 +8,8 @@ export const DISPLAYS: DisplayDef[] = [
   { id: '9:16', label: '9:16 portrait', aspect: 9 / 16, cols: 6 },
 ]
 export const displayDef = (d: Display) => DISPLAYS.find((x) => x.id === d) ?? DISPLAYS[0]
+/** cols x rows for a display — rows derived so cells stay roughly square. */
+export function gridDims(d: Display) { const def = displayDef(d); return { cols: def.cols, rows: Math.max(1, Math.round(def.cols / def.aspect)) } }
 
 export type Layout = { i: string; x: number; y: number; w: number; h: number }
 export interface Region { enabled: boolean; widgets: Placement[] }

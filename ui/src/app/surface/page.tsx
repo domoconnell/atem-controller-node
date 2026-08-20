@@ -5,7 +5,7 @@ import '@/widgets/builtin'
 import '@/widgets/connectors'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
-import { displayDef, normaliseSurface, type Surface, type Edge, type Layout } from '@/components/surfaces/model'
+import { displayDef, gridDims, normaliseSurface, type Surface, type Edge, type Layout } from '@/components/surfaces/model'
 import { cn } from '@/lib/utils'
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from 'lucide-react'
 
@@ -25,13 +25,13 @@ function Strip({ widgets, instances, vertical }: { widgets: Placement[]; instanc
 }
 
 function MainGrid({ surface, instances }: { surface: Surface; instances: IRef[] }) {
-  const [ref, { w }] = useMeasure<HTMLDivElement>()
-  const disp = displayDef(surface.display)
-  const rowH = w > 0 ? Math.max(24, w / disp.cols) : 44
+  const [ref, { w, h }] = useMeasure<HTMLDivElement>()
+  const { cols, rows } = gridDims(surface.display)
+  const rowH = h > 0 ? h / rows : 44
   return (
-    <div ref={ref} className="flex-1 min-h-0 min-w-0 overflow-auto">
-      {w > 0 && (
-        <Grid className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: disp.cols }} rowHeight={rowH} margin={[6, 6]} compactType={null} isDraggable={false} isResizable={false}>
+    <div ref={ref} className="flex-1 min-h-0 min-w-0 overflow-hidden">
+      {w > 0 && h > 0 && (
+        <Grid className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }} rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} isDraggable={false} isResizable={false}>
           {surface.main.widgets.map((p) => (<div key={p.i}><WidgetView p={p} instances={instances} /></div>))}
         </Grid>
       )}

@@ -9,7 +9,7 @@ import '@/widgets/connectors'
 import { widgetsForType, getWidget } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
-import { DISPLAYS, displayDef, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
+import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Plus, Pencil, Save, Eye, Trash2, ChevronDown, ExternalLink, X } from 'lucide-react'
@@ -70,7 +70,7 @@ export default function SurfacesPage() {
     const placement: Placement = { i, widgetType, instanceId: def.multi ? null : instanceId, config, title: '' }
     if (target === 'main') {
       const y = surface.main.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0)
-      setSurface((s) => ({ ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, x: 0, y, w: Math.min(def.defaultSize.w, displayDef(s.display).cols), h: def.defaultSize.h }] } }))
+      setSurface((s) => { const g = gridDims(s.display); return { ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, x: 0, y: Math.min(y, Math.max(0, g.rows - Math.min(def.defaultSize.h, g.rows))), w: Math.min(def.defaultSize.w, g.cols), h: Math.min(def.defaultSize.h, g.rows) }] } } })
     } else setRegion(target, (w) => [...w, placement])
     setAdding(false); setSel({ region: target, i })
   }
@@ -189,18 +189,19 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
   instances: { id: string; typeId: string; name: string }[]
   onSelect: (r: Target, i: string) => void; onRemove: (r: Target, i: string) => void; onLayout: (l: Layout[]) => void
 }) {
-  const [ref, { w }] = useMeasure<HTMLDivElement>()
-  const disp = displayDef(surface.display)
-  const cell = w > 0 ? Math.floor(w / disp.cols) : 44
+  const [ref, { w, h }] = useMeasure<HTMLDivElement>()
+  const { cols, rows } = gridDims(surface.display)
+  const rowH = h > 0 ? h / rows : 44
+  const cellW = w > 0 ? w / cols : 44
   return (
-    <div ref={ref} className="flex-1 min-h-0 overflow-auto relative">
-      {edit && w > 0 && (
+    <div ref={ref} className="flex-1 min-h-0 overflow-hidden relative">
+      {edit && w > 0 && h > 0 && (
         <div className="absolute inset-0 pointer-events-none z-0"
-          style={{ backgroundSize: `${cell}px ${cell}px`, backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)', opacity: 0.5 }} />
+          style={{ backgroundSize: `${cellW}px ${rowH}px`, backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)', opacity: 0.5 }} />
       )}
-      {w > 0 && (
-        <Grid className="layout relative z-10" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: disp.cols }}
-          rowHeight={cell} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded
+      {w > 0 && h > 0 && (
+        <Grid className="layout relative z-10" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }}
+          rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded
           isDraggable={edit} isResizable={edit} draggableHandle=".widget-drag-handle" draggableCancel=".widget-no-drag"
           onLayoutChange={(l: Layout[]) => onLayout(l)}>
           {surface.main.widgets.map((p) => (
