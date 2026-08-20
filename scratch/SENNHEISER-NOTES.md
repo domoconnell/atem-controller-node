@@ -95,7 +95,9 @@ protocol on **UDP 8133**, reverse-engineered from a WSM packet capture
   byte[17] = AF peak-hold, byte[16] = antenna A/B (1/2). All scaled /255.
   BATTERY: not yet pinned - it doesn't vary in a 40s capture so there's no
   ground truth; leading candidate byte[12] (0 when TX off -> stable 4 when on).
-  Frequency is NOT in the frame. See todo.md for the office capture to finish.
+  Frequency is NOT in the telemetry/identity frames we captured, but WSM reads
+  AND writes it, so a config read/set exchange exists that we haven't captured
+  yet (our subscribe only elicits the telemetry stream). See todo.md.
 - **Identity beacon** (device → controller, 85 bytes, ASCII): e.g.
   `Model=EM300G3   ID=001B667A8EDB   IPA=10.10.10.73`. We parse Model/ID/IPA.
 - **Verified** against the real .73: subscribing from a fresh IP (10.10.10.200
