@@ -202,7 +202,7 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
           style={{ backgroundSize: `${cellW}px ${rowH}px`, backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)', opacity: 0.5 }} />
       )}
       {w > 0 && h > 0 && (
-        <Grid key={surface.id || 'new'} className="layout relative z-10" breakpoints={{ lg: 0 }} cols={{ lg: cols }}
+        <Grid key={surface.id || 'new'} className="layout relative z-10" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }}
           rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded
           isDraggable={edit} isResizable={edit} draggableHandle=".widget-drag-handle" draggableCancel=".widget-no-drag"
           onLayoutChange={(l: Layout[]) => onLayout(l)}>
