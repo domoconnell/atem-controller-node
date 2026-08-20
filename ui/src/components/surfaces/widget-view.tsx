@@ -14,6 +14,12 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
   const def = getWidget(p.widgetType)
   const title = p.title || def?.label || p.widgetType
   const boundType = (p.config.typeId as string | undefined) ?? instances.find((x) => x.id === p.instanceId)?.typeId
+  if (def?.strip && !edit) return <div className="h-full w-full" style={{ containerType: 'size' } as React.CSSProperties}><def.Component config={p.config} instanceId={p.instanceId} instances={def.multi === 'all' ? instances : def.multi === 'type' ? instances.filter((x) => x.typeId === boundType) : undefined} title={title} /></div>
+  if (def?.strip) return (
+    <div className={cn('h-full w-full rounded-lg overflow-hidden', selected && 'ring-1 ring-primary')} style={{ containerType: 'size' } as React.CSSProperties}>
+      <def.Component config={p.config} instanceId={p.instanceId} instances={def.multi === 'all' ? instances : def.multi === 'type' ? instances.filter((x) => x.typeId === boundType) : undefined} title={title} />
+    </div>
+  )
   const multiInstances = def?.multi === 'all' ? instances
     : def?.multi === 'type' ? instances.filter((x) => x.typeId === boundType)
     : undefined

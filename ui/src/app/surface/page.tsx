@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import '@/widgets/builtin'
 import '@/widgets/connectors'
+import '@/widgets/strips'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
 import { displayDef, gridDims, normaliseSurface, type Surface, type Edge, type Layout } from '@/components/surfaces/model'
@@ -14,12 +15,10 @@ type IRef = { id: string; typeId: string; name: string }
 const EDGES: Edge[] = ['top', 'bottom', 'left', 'right']
 const TAB_ICON = { left: ChevronRight, right: ChevronLeft, top: ChevronDown, bottom: ChevronUp }
 
-function Strip({ widgets, instances, vertical }: { widgets: Placement[]; instances: IRef[]; vertical?: boolean }) {
+function Strip({ widgets, instances }: { widgets: Placement[]; instances: IRef[] }) {
   return (
-    <div className={cn('bg-muted/20 flex gap-1 p-1 overflow-auto shrink-0', vertical ? 'w-44 flex-col border-x' : 'h-16 border-y', 'border-border/40')}>
-      {widgets.map((p) => (
-        <div key={p.i} className={cn('shrink-0', vertical ? 'w-full h-24' : 'w-52 h-full')}><WidgetView p={p} instances={instances} /></div>
-      ))}
+    <div className="bg-muted/20 flex gap-1 p-1 h-14 overflow-hidden shrink-0 border-y border-border/40">
+      {widgets.map((p) => (<div key={p.i} className="flex-1 min-w-0 h-full"><WidgetView p={p} instances={instances} /></div>))}
     </div>
   )
 }
@@ -28,11 +27,12 @@ function MainGrid({ surface, instances }: { surface: Surface; instances: IRef[] 
   const [ref, { w, h }] = useMeasure<HTMLDivElement>()
   const { cols, rows } = gridDims(surface.display)
   const rowH = h > 0 ? h / rows : 44
+  const lmap = Object.fromEntries(surface.main.layout.map((l) => [l.i, l]))
   return (
     <div ref={ref} className="flex-1 min-h-0 min-w-0 overflow-hidden">
       {w > 0 && h > 0 && (
-        <Grid className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }} rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} isDraggable={false} isResizable={false}>
-          {surface.main.widgets.map((p) => (<div key={p.i}><WidgetView p={p} instances={instances} /></div>))}
+        <Grid className="layout" breakpoints={{ lg: 0 }} cols={{ lg: cols }} rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} isDraggable={false} isResizable={false}>
+          {surface.main.widgets.map((p) => (<div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }}><WidgetView p={p} instances={instances} /></div>))}
         </Grid>
       )}
     </div>

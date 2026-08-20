@@ -17,6 +17,8 @@ export interface WidgetDef {
   multi?: 'type' | 'all'
   /** Applies to every connector type (generic field/overview widgets). */
   anyType?: boolean
+  /** Designed for the thin header/footer strips (long, thin, icon+pill). */
+  strip?: boolean
   defaultSize: { w: number; h: number }
   configFields?: ConfigField[]
   Component: ComponentType<WidgetProps>

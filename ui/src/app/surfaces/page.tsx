@@ -6,13 +6,14 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import '@/widgets/builtin'
 import '@/widgets/connectors'
+import '@/widgets/strips'
 import { widgetsForType, getWidget } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
 import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Pencil, Save, Eye, Trash2, ChevronDown, ExternalLink, X } from 'lucide-react'
+import { Plus, Pencil, Save, Eye, Trash2, ChevronDown, ExternalLink, X, Loader2, Check } from 'lucide-react'
 
 const Grid = dynamic(() => import('@/components/surfaces/grid'), { ssr: false })
 type CType = ConnectorType & { streams?: { id: string; label: string; fields?: { id: string; label?: string }[] }[] }
@@ -28,6 +29,7 @@ export default function SurfacesPage() {
   const [edit, setEdit] = useState(true)
   const [sel, setSel] = useState<{ region: Target; i: string } | null>(null)
   const [adding, setAdding] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   useEffect(() => {
     fetch('/api/instances').then((r) => r.json()).then((b) => setInstances(b.instances ?? [])).catch(() => {})
@@ -39,12 +41,16 @@ export default function SurfacesPage() {
     if (b?.surface) setSurface(normaliseSurface({ ...b.surface, id }))
   }, [])
   const save = async () => {
-    const r = await fetch(surface.id ? `/api/surfaces/${surface.id}` : '/api/surfaces', {
-      method: surface.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(surface),
-    }).then((x) => x.json())
-    const id = surface.id || r.id
-    setSurface((s) => ({ ...s, id }))
-    fetch('/api/surfaces').then((x) => x.json()).then((b) => setList(b.surfaces ?? []))
+    setSaveState('saving')
+    try {
+      const r = await fetch(surface.id ? `/api/surfaces/${surface.id}` : '/api/surfaces', {
+        method: surface.id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(surface),
+      }).then((x) => x.json())
+      const id = surface.id || r.id
+      setSurface((s) => ({ ...s, id }))
+      await fetch('/api/surfaces').then((x) => x.json()).then((b) => setList(b.surfaces ?? []))
+      setSaveState('saved'); setTimeout(() => setSaveState('idle'), 1600)
+    } catch { setSaveState('idle') }
   }
 
   const instRefs = instances.map((x) => ({ id: x.id, typeId: x.typeId, name: x.name }))
@@ -90,7 +96,9 @@ export default function SurfacesPage() {
             {edit && <select value={surface.display} onChange={(e) => setSurface({ ...surface, display: e.target.value as Display })} className="bg-input/40 border border-border rounded-md px-2 py-1.5 text-[12px]">{DISPLAYS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}</select>}
             <button onClick={() => setAdding(true)} disabled={!edit} className="inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 hover:bg-accent disabled:opacity-40"><Plus className="size-3.5" /> Widget</button>
             <button onClick={() => setEdit((e) => !e)} className={cn('inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5', edit ? 'bg-primary text-primary-foreground' : 'hover:bg-accent')}>{edit ? <><Eye className="size-3.5" /> View</> : <><Pencil className="size-3.5" /> Edit</>}</button>
-            <button onClick={save} className="inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 bg-live text-black font-medium hover:opacity-90"><Save className="size-3.5" /> Save</button>
+            <button onClick={save} disabled={saveState === 'saving'} className={cn('inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 font-medium transition-colors', saveState === 'saved' ? 'bg-live/20 text-live' : 'bg-live text-black hover:opacity-90', saveState === 'saving' && 'opacity-70')}>
+              {saveState === 'saving' ? <><Loader2 className="size-3.5 animate-spin" /> Saving…</> : saveState === 'saved' ? <><Check className="size-3.5" /> Saved</> : <><Save className="size-3.5" /> Save</>}
+            </button>
             {surface.id && <a href={`/surface?s=${surface.id}`} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground"><ExternalLink className="size-3.5" /></a>}
           </div>
         </AppHeader>
@@ -142,9 +150,9 @@ function Canvas({ surface, edit, sel, instances, onSelect, onRemove, onLayout }:
         <div className="flex flex-1 min-h-0">
           {P.left.enabled && <RegionStrip region="left" {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
           <div className="flex flex-col flex-1 min-w-0">
-            {surface.header.enabled && <RegionStrip region="header" horizontal small {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
+            {surface.header.enabled && <RegionStrip region="header" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
             <MainGrid surface={surface} edit={edit} sel={sel} instances={instances} onSelect={onSelect} onRemove={onRemove} onLayout={onLayout} />
-            {surface.footer.enabled && <RegionStrip region="footer" horizontal small {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
+            {surface.footer.enabled && <RegionStrip region="footer" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
           </div>
           {P.right.enabled && <RegionStrip region="right" {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
         </div>
@@ -161,23 +169,23 @@ function regionWidgets(surface: Surface, region: Target): Placement[] {
   return surface.pullouts[region].widgets
 }
 
-function RegionStrip({ region, surface, edit, sel, instances, onSelect, onRemove, horizontal, small }: {
+function RegionStrip({ region, surface, edit, sel, instances, onSelect, onRemove, horizontal, strip }: {
   region: Exclude<Target, 'main'>; surface: Surface; edit: boolean; sel: { region: Target; i: string } | null
   instances: { id: string; typeId: string; name: string }[]
-  onSelect: (r: Target, i: string) => void; onRemove: (r: Target, i: string) => void; horizontal?: boolean; small?: boolean
+  onSelect: (r: Target, i: string) => void; onRemove: (r: Target, i: string) => void; horizontal?: boolean; strip?: boolean
 }) {
   const widgets = regionWidgets(surface, region)
+  // strip = header/footer: thin, widgets share the width (flex-1) and condense, no scroll.
   return (
-    <div className={cn('shrink-0 bg-muted/20 flex gap-1 p-1 overflow-auto',
-      horizontal ? (small ? 'h-14' : 'h-24') : 'w-40 flex-col',
-      'border-border/50', horizontal ? 'border-y' : 'border-x')}>
+    <div className={cn('shrink-0 bg-muted/20 flex gap-1 p-1 border-border/50',
+      strip ? 'h-14 overflow-hidden border-y' : horizontal ? 'h-24 overflow-auto border-y' : 'w-44 flex-col overflow-auto border-x')}>
       {widgets.length === 0 && <div className="text-[10px] text-muted-foreground/40 grid place-items-center w-full uppercase tracking-wider">{region}</div>}
       {widgets.map((p) => (
         <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) onSelect(region, p.i) }}
-          className={cn('relative shrink-0', horizontal ? (small ? 'w-40 h-full' : 'w-52 h-full') : 'w-full h-24',
+          className={cn('relative', strip ? 'flex-1 min-w-0 h-full' : horizontal ? 'w-52 h-full shrink-0' : 'w-full h-24 shrink-0',
             edit && sel?.i === p.i && 'ring-1 ring-primary rounded-lg')}>
           <WidgetView p={p} instances={instances} />
-          {edit && <button onClick={(e) => { e.stopPropagation(); onRemove(region, p.i) }} className="absolute top-0.5 right-0.5 p-0.5 rounded bg-background/80 hover:text-destructive"><X className="size-3" /></button>}
+          {edit && <button onClick={(e) => { e.stopPropagation(); onRemove(region, p.i) }} className="absolute top-0.5 right-0.5 p-0.5 rounded bg-background/80 hover:text-destructive z-10"><X className="size-3" /></button>}
         </div>
       ))}
     </div>
@@ -193,6 +201,7 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
   const { cols, rows } = gridDims(surface.display)
   const rowH = h > 0 ? h / rows : 44
   const cellW = w > 0 ? w / cols : 44
+  const lmap = Object.fromEntries(surface.main.layout.map((l) => [l.i, l]))
   return (
     <div ref={ref} className="flex-1 min-h-0 overflow-hidden relative">
       {edit && w > 0 && h > 0 && (
@@ -200,12 +209,12 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
           style={{ backgroundSize: `${cellW}px ${rowH}px`, backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)', opacity: 0.5 }} />
       )}
       {w > 0 && h > 0 && (
-        <Grid className="layout relative z-10" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }}
+        <Grid key={surface.id || 'new'} className="layout relative z-10" breakpoints={{ lg: 0 }} cols={{ lg: cols }}
           rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded
           isDraggable={edit} isResizable={edit} draggableHandle=".widget-drag-handle" draggableCancel=".widget-no-drag"
           onLayoutChange={(l: Layout[]) => onLayout(l)}>
           {surface.main.widgets.map((p) => (
-            <div key={p.i} className="p-[3px]" onClick={(e) => { e.stopPropagation(); if (edit) onSelect('main', p.i) }}>
+            <div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }} className="p-[3px]" onClick={(e) => { e.stopPropagation(); if (edit) onSelect('main', p.i) }}>
               <WidgetView p={p} instances={instances} edit={edit} selected={sel?.region === 'main' && sel.i === p.i}
                 onSelect={() => onSelect('main', p.i)} onRemove={() => onRemove('main', p.i)} />
             </div>
@@ -241,14 +250,21 @@ function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Sur
   const all = platform ? widgetsForType(null) : widgetsForType(typeId)
   const overviewW = all.filter((w) => w.multi)
   const instanceW = all.filter((w) => !w.multi)
-  const widgets = platform || mode === 'overview' ? (platform ? all : overviewW) : instanceW
+  const isStrip = target === 'header' || target === 'footer'
+  const basePool = platform || mode === 'overview' ? (platform ? all : overviewW) : instanceW
+  const widgets = basePool.filter((w) => isStrip ? w.strip : !w.strip)
   const [widgetType, setWidgetType] = useState(widgets[0]?.type ?? '')
   useEffect(() => {
     const n = instances.filter((i) => i.typeId === typeId); setInstanceId(n[0]?.id ?? '')
     const w = typeId === '__platform__' ? widgetsForType(null) : widgetsForType(typeId)
     if (typeId !== '__platform__' && w.filter((x) => !x.multi).length === 0) setMode('overview')
   }, [typeId])
-  useEffect(() => { const w = platform ? all : (mode === 'overview' ? overviewW : instanceW); setWidgetType(w[0]?.type ?? '') }, [typeId, mode, platform])
+  useEffect(() => {
+    const strip = target === 'header' || target === 'footer'
+    const base = platform || mode === 'overview' ? (platform ? all : overviewW) : instanceW
+    const w = base.filter((x) => strip ? x.strip : !x.strip)
+    setWidgetType(w[0]?.type ?? '')
+  }, [typeId, mode, platform, target])
   const needInstance = !platform && mode === 'instance'
   return (
     <div className="fixed inset-0 z-[100] bg-black/50 grid place-items-center" onClick={onClose}>
