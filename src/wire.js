@@ -10,8 +10,10 @@ import { config } from './config.js'
  *
  * Consecutive messages of the same kind (e.g. 30fps animation frames,
  * ProPresenter polls) collapse into "⋮ ×N more <kind>" so the log stays
- * readable. Disable entirely with config.wireLog = false (hot).
- * Colours only when stdout is a TTY (journalctl gets plain text).
+ * readable. The primary consumer is the UI wire-log drawer (via wireBus);
+ * console printing is opt-in with config.wireConsole = true (hot) for
+ * headless debugging (journalctl gets plain text - colours are TTY-only).
+ * config.wireLog = false (hot) disables capture entirely, UI included.
  */
 /** Live feed of wire lines for the UI (web.js forwards over WebSocket). */
 export const wireBus = new EventEmitter()
@@ -46,7 +48,7 @@ let sweeper = null
 
 function printSuppressed(sig, e) {
   if (e.suppressed > 0) {
-    console.log(paint('2', `             ⋮ ${paint(e.color, `${e.arrow} ${e.tag}`)}${paint('2', ` ${e.kind} ×${e.suppressed} more`)}`))
+    if (config.wireConsole) console.log(paint('2', `             ⋮ ${paint(e.color, `${e.arrow} ${e.tag}`)}${paint('2', ` ${e.kind} ×${e.suppressed} more`)}`))
     record({ t: Date.now(), dir: e.dir, proto: e.proto, repeat: e.suppressed, kind: e.kind })
     e.suppressed = 0
   }
@@ -74,11 +76,13 @@ export function wire(dir, proto, summary, detail = '') {
 
   const arrow = dir === 'tx' ? '→' : '←'
   seen.set(sig, { lastPrint: now, suppressed: 0, arrow, tag: p.tag, color: p.color, kind, dir, proto })
-  const ts = new Date().toISOString().slice(11, 23)
-  console.log(
-    `${paint('2', ts)} ${paint(p.color, `${arrow} ${p.tag}`)} ${summary}` +
-    (detail ? ` ${paint('2', detail)}` : '')
-  )
+  if (config.wireConsole) {
+    const ts = new Date().toISOString().slice(11, 23)
+    console.log(
+      `${paint('2', ts)} ${paint(p.color, `${arrow} ${p.tag}`)} ${summary}` +
+      (detail ? ` ${paint('2', detail)}` : '')
+    )
+  }
   record({ t: now, dir, proto, summary: String(summary), detail: String(detail || '') })
 }
 

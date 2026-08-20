@@ -24,6 +24,7 @@ const HOT_KEYS = new Set([
   'propresenter.ip', 'propresenter.port', 'propresenter.pollMs',
   'atem.simulate', 'atem.simFallbackMs',
   'wireLog',
+  'wireConsole',
 ])
 
 function flatten(obj, prefix = '', out = {}) {

@@ -52,5 +52,6 @@
     "pollMs": 500,
     "comment": "ProPresenter Mac (Preferences > Network). Empty ip = built-in demo timer for designing renderer pages."
   },
-  "wireLog": true
+  "wireLog": true,
+  "wireConsole": false
 }
