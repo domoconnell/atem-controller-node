@@ -5,6 +5,7 @@ import { WebSocketServer } from 'ws'
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { config, projectRoot, configPath, applyConfigUpdate } from './config.js'
 import { Simulator } from './simulator.js'
+import { wireBus, wireHistory } from './wire.js'
 
 /**
  * Status web UI: express serves public/, a WebSocket pushes the full status
@@ -208,6 +209,14 @@ export class WebServer {
     this.wss = new WebSocketServer({ server: this.server })
     this.wss.on('connection', (ws) => {
       ws.send(JSON.stringify(this.snapshot()))
+      ws.send(JSON.stringify({ wireHistory: wireHistory() }))
+    })
+    // Live wire-log side-channel (tiny messages, not throttled with snapshots).
+    wireBus.on('line', (entry) => {
+      const payload = JSON.stringify({ wire: entry })
+      for (const client of this.wss.clients) {
+        if (client.readyState === 1) client.send(payload)
+      }
     })
 
     // Broadcast on any interesting change, throttled to ~10Hz so SuperSource

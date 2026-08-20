@@ -122,3 +122,13 @@ export const PATTERN_NAMES = [
   'Diamond iris', 'Circle iris', 'TL box', 'TR box', 'BR box', 'BL box',
   'Top box', 'Right box', 'Bottom box', 'Left box', 'TL diagonal', 'TR diagonal',
 ]
+
+export interface WireLine {
+  t: number
+  dir: 'tx' | 'rx'
+  proto: string
+  summary?: string
+  detail?: string
+  repeat?: number   // suppressed-repeat marker: ×N of `kind`
+  kind?: string
+}

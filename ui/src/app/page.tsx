@@ -15,12 +15,13 @@ import { fetchPlanGrades } from '@/lib/api'
 import type { PlanGrades } from '@/lib/types'
 import { RecordDialog } from '@/components/atem/record-dialog'
 import { SettingsDialog } from '@/components/atem/settings-dialog'
+import { WireLog } from '@/components/atem/wire-log'
 import { Button } from '@/components/ui/button'
 import { Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function Page() {
-  const { state, connected, tick } = useAtemState()
+  const { state, connected, tick, wire, wireVersion, clearWire } = useAtemState()
   const [targetName, setTargetName] = useState<string | null>(null)
   const [openLook, setOpenLook] = useState<Look | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -168,6 +169,8 @@ export default function Page() {
 
         {state && <RecordDialog open={recordOpen} onOpenChange={setRecordOpen} state={state} locked={locked} />}
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+        <WireLog lines={wire} version={wireVersion} onClear={clearWire} />
 
         <LookSheet
           look={openLook ? state?.looks.find((l) => l.name === openLook.name) ?? openLook : null}

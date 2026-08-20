@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { config } from './config.js'
 
 /**
@@ -12,6 +13,18 @@ import { config } from './config.js'
  * readable. Disable entirely with config.wireLog = false (hot).
  * Colours only when stdout is a TTY (journalctl gets plain text).
  */
+/** Live feed of wire lines for the UI (web.js forwards over WebSocket). */
+export const wireBus = new EventEmitter()
+wireBus.setMaxListeners(50)
+const HISTORY_MAX = 400
+const history = []
+export function wireHistory() { return history }
+function record(entry) {
+  history.push(entry)
+  if (history.length > HISTORY_MAX) history.splice(0, history.length - HISTORY_MAX)
+  wireBus.emit('line', entry)
+}
+
 const TTY = !!process.stdout.isTTY
 const paint = (code, s) => (TTY ? `\x1b[${code}m${s}\x1b[0m` : s)
 
@@ -34,6 +47,7 @@ let sweeper = null
 function printSuppressed(sig, e) {
   if (e.suppressed > 0) {
     console.log(paint('2', `             ⋮ ${paint(e.color, `${e.arrow} ${e.tag}`)}${paint('2', ` ${e.kind} ×${e.suppressed} more`)}`))
+    record({ t: Date.now(), dir: e.dir, proto: e.proto, repeat: e.suppressed, kind: e.kind })
     e.suppressed = 0
   }
   if (Date.now() - e.lastPrint > WINDOW * 4) seen.delete(sig)
@@ -59,12 +73,13 @@ export function wire(dir, proto, summary, detail = '') {
   if (e) printSuppressed(sig, e)
 
   const arrow = dir === 'tx' ? '→' : '←'
-  seen.set(sig, { lastPrint: now, suppressed: 0, arrow, tag: p.tag, color: p.color, kind })
+  seen.set(sig, { lastPrint: now, suppressed: 0, arrow, tag: p.tag, color: p.color, kind, dir, proto })
   const ts = new Date().toISOString().slice(11, 23)
   console.log(
     `${paint('2', ts)} ${paint(p.color, `${arrow} ${p.tag}`)} ${summary}` +
     (detail ? ` ${paint('2', detail)}` : '')
   )
+  record({ t: now, dir, proto, summary: String(summary), detail: String(detail || '') })
 }
 
 /** Compact one-line rendering of a value for log details. */
