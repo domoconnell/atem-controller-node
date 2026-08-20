@@ -1,4 +1,5 @@
-import { config } from './config.js'
+import path from 'node:path'
+import { config, projectRoot } from './config.js'
 import { AtemController } from './atem.js'
 import { Animator } from './animator.js'
 import { LookStore } from './looks.js'
@@ -25,11 +26,27 @@ const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
 const propresenter = new ProPresenter()
 const verifier = new Verifier(atem, sequencer, engine, looks)
 const sennheiser = new SennheiserMonitor()
-const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser })
+// Connector engine (the new unified backend): SQLite store + the vendored
+// connector library. Runs alongside the ATEM stack during the migration.
+let store = null, connectorEngine = null
+try {
+  const { Store } = await import('../server/db/store.ts')
+  const { migrateJson } = await import('../server/db/migrate.ts')
+  const { Engine } = await import('../server/runtime/engine.ts')
+  store = new Store(process.env.SIL_DB || path.join(projectRoot, 'data', 'stageit.db'))
+  const { summary } = migrateJson(store, projectRoot)
+  if (Object.values(summary).some((n) => n > 0)) console.log('[store] migrated JSON ->', JSON.stringify(summary))
+  connectorEngine = new Engine(store)
+} catch (e) {
+  console.error('[engine] failed to initialise connector engine:', e.message)
+}
+
+const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser, connectorEngine, store })
 oscServer.attachVerifier(verifier)
 
 oscServer.open()
 web.start()
+connectorEngine?.start().catch((e) => console.error('[engine] start failed:', e.message))
 propresenter.start()
 sennheiser.start().catch((e) => console.error('[senn] start failed:', e.message))
 hyperdeck.connect()

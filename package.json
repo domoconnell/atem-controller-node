@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "tsx src/index.js",
     "ui:dev": "cd ui && npm run dev -- --port 3001",
     "ui:build": "cd ui && npm run build",
     "build": "npm run ui:build",

@@ -184,3 +184,25 @@ export interface SennSnapshot {
   total: number
   devices: SennDevice[]
 }
+
+/** Connector engine — a configured device connection (multi-instance) */
+export interface InstanceStatusLite { state: 'configuring'|'connecting'|'online'|'degraded'|'offline'|'error'|'stopped'; detail?: string | null }
+export interface Instance {
+  id: string
+  typeId: string
+  name: string
+  config: Record<string, unknown>
+  enabled: boolean
+  allowControl: boolean
+  simulate: boolean
+  sortOrder: number
+  engineRun?: boolean
+  status?: InstanceStatusLite | null
+}
+export interface ConnectorType {
+  typeId: string
+  displayName: string
+  description: string
+  capabilities?: { control: boolean }
+  tier?: string
+}

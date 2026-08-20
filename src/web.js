@@ -13,7 +13,7 @@ import { wireBus, wireHistory } from './wire.js'
  * so the UI buttons behave identically to Companion presses.
  */
 export class WebServer {
-  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser }) {
+  constructor({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser, connectorEngine, store }) {
     this.atem = atem
     this.animator = animator
     this.looks = looks
@@ -24,6 +24,8 @@ export class WebServer {
     this.propresenter = propresenter
     this.verifier = verifier
     this.sennheiser = sennheiser
+    this.connectorEngine = connectorEngine
+    this.store = store
 
     const app = express()
     app.use(express.json())
@@ -57,6 +59,35 @@ export class WebServer {
       })
     }
     app.get('/api/mics', (_req, res) => res.json(this.sennheiser?.snapshot() ?? { enabled: false }))
+
+    // ---- Connector engine (unified backend): instances + catalogue + commands ----
+    app.get('/api/connector-types', (_req, res) => res.json({ ok: true, types: this.connectorEngine?.catalogue() ?? [] }))
+    app.get('/api/instances', (_req, res) => res.json({ ok: true, instances: this.connectorEngine?.listInstances() ?? [] }))
+    app.post('/api/instances', async (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })
+      const b = req.body ?? {}
+      if (!b.typeId || !b.name) return res.status(400).json({ ok: false, error: 'typeId and name required' })
+      const inst = this.store.createInstance({ typeId: b.typeId, name: b.name, config: b.config ?? {}, enabled: b.enabled !== false, allowControl: !!b.allowControl, simulate: !!b.simulate })
+      await this.connectorEngine?.reconcile(inst.id)
+      res.json({ ok: true, instance: inst })
+    })
+    app.patch('/api/instances/:id', async (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })
+      this.store.updateInstance(req.params.id, req.body ?? {})
+      await this.connectorEngine?.reconcile(req.params.id)
+      res.json({ ok: true, instance: this.store.getInstance(req.params.id) })
+    })
+    app.delete('/api/instances/:id', async (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })
+      this.store.deleteInstance(req.params.id)
+      await this.connectorEngine?.reconcile(req.params.id)
+      res.json({ ok: true })
+    })
+    app.post('/api/instances/:id/commands/:command', async (req, res) => {
+      if (!this.connectorEngine) return res.status(503).json({ ok: false, error: 'engine unavailable' })
+      const result = await this.connectorEngine.command(req.params.id, req.params.command, req.body?.input)
+      res.status(result.ok ? 200 : 400).json(result)
+    })
 
     app.get('/api/status', (_req, res) => res.json(this.snapshot()))
 
@@ -225,6 +256,19 @@ export class WebServer {
       ws.send(JSON.stringify(this.snapshot()))
       ws.send(JSON.stringify({ wireHistory: wireHistory() }))
       if (this.sennheiser?.enabled) ws.send(JSON.stringify({ senn: this.sennheiser.snapshot() }))
+      // Connector-engine topic channel: sub/unsub to mi:/sys:/usr: topics + commands.
+      if (this.connectorEngine) {
+        const sub = { topics: new Set(), send: (m) => { if (ws.readyState === 1) ws.send(m) } }
+        this.connectorEngine.hub.addSubscriber(sub)
+        ws.on('message', (raw) => {
+          let msg
+          try { msg = JSON.parse(raw.toString()) } catch { return }
+          if (msg.t === 'sub' && Array.isArray(msg.topics)) this.connectorEngine.hub.subscribe(sub, msg.topics)
+          else if (msg.t === 'unsub' && Array.isArray(msg.topics)) this.connectorEngine.hub.unsubscribe(sub, msg.topics)
+          else if (msg.t === 'cmd') this.connectorEngine.command(msg.instanceId, msg.command, msg.input).then((r) => ws.send(JSON.stringify({ t: 'ack', id: msg.id, ...r }))).catch(() => {})
+        })
+        ws.on('close', () => this.connectorEngine.hub.removeSubscriber(sub))
+      }
     })
     // Mic meters are a high-rate side-channel like the wire log - pushed on
     // their own so SuperSource snapshots and RF/AF levels don't gate each other.
