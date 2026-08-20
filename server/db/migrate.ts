@@ -28,11 +28,14 @@ export function migrateJson(store: Store, projectRoot: string): { migrated: bool
     }
     // ATEM connection (engine params fold into its config)
     if (c.atem) {
+      const ss = c.supersource ?? {}, an = c.animation ?? {}, tr = c.transition ?? {}
       store.createInstance({
         id: 'atem-1', typeId: 'atem', name: 'ATEM', simulate: !!c.atem.simulate, allowControl: true,
         config: {
           ip: c.atem.ip, simFallbackMs: c.atem.simFallbackMs,
-          supersource: c.supersource, animation: c.animation, transition: c.transition,
+          ssInput: ss.ssInput, mainMe: ss.me, displayBox: ss.displayBox,
+          boxMoveMs: an.defaultDurationMs, animationFps: an.fps, easing: an.defaultEasing,
+          keyFadeMs: tr.keyFadeMs, mixRateFrames: tr.mixRateFrames, videoFps: tr.videoFps,
         },
       }); summary.instances++
     }

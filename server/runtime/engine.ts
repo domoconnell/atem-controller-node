@@ -10,6 +10,43 @@ import { Hub } from './hub.js'
  *  engine lists them but does not run a second connection to them. */
 const LEGACY = new Set(['atem', 'hyperdeck', 'propresenter', 'sennheiser'])
 
+const EASINGS = ['linear', 'easeInQuad', 'easeOutQuad', 'easeInOutQuad', 'easeInCubic', 'easeOutCubic', 'easeInOutCubic', 'easeInOutSine']
+/** Config schemas for the connectors still on the legacy stack, so Settings
+ *  renders a proper form for them (not a raw JSON box) ahead of the full port. */
+const LEGACY_SCHEMAS: Record<string, unknown> = {
+  atem: { type: 'object', properties: {
+    ip: { type: 'string', default: '10.10.10.51', description: 'ATEM switcher IP address' },
+    ssInput: { type: 'integer', default: 6000, description: 'SuperSource input number' },
+    mainMe: { type: 'integer', default: 1, description: 'Main M/E, zero-indexed (1 = M/E 2)' },
+    displayBox: { type: 'integer', default: 3, description: 'Box carrying the main display, zero-indexed (3 = box 4)' },
+    simFallbackMs: { type: 'integer', default: 4000, description: 'Wait this long for the real switcher before the simulator takes over' },
+    boxMoveMs: { type: 'integer', default: 500, description: 'Default SuperSource box move duration' },
+    animationFps: { type: 'integer', default: 30 },
+    easing: { type: 'string', enum: EASINGS, default: 'easeInOutQuad' },
+    keyFadeMs: { type: 'integer', default: 150, description: 'Border-key (USK) fade time' },
+    mixRateFrames: { type: 'integer', description: 'Pinned mix rate in frames; blank = inherit the switcher' },
+    videoFps: { type: 'integer', default: 50, description: 'For seconds -> frames (50, or 60 for 59.94/60p)' },
+  } },
+  hyperdeck: { type: 'object', properties: {
+    ip: { type: 'string', default: '10.10.10.55', description: 'HyperDeck IP address' },
+    port: { type: 'integer', default: 9993, description: 'Ethernet protocol port' },
+  } },
+  propresenter: { type: 'object', properties: {
+    ip: { type: 'string', default: '127.0.0.1', description: 'The Mac running ProPresenter (Preferences -> Network)' },
+    port: { type: 'integer', default: 49773, description: 'ProPresenter API port' },
+    pollMs: { type: 'integer', default: 500, description: 'Poll interval' },
+  } },
+  sennheiser: { type: 'object', properties: {
+    ip: { type: 'string', description: 'Receiver IP address' },
+    kind: { type: 'string', enum: ['ewdx', 'g3', 'g3legacy', 'iemg4'], default: 'ewdx', description: 'EW-DX (SSC), ew G3 (UDP 53212), G3 legacy (fw <1.7, UDP 8133), or IEM G4' },
+    port: { type: 'integer', description: 'Override the default port for the protocol' },
+    label: { type: 'string', description: 'Display name for this receiver' },
+  } },
+}
+const LEGACY_META: Record<string, { displayName: string; description: string }> = {
+  atem: { displayName: 'ATEM', description: 'Blackmagic ATEM switcher — SuperSource looks and the transition engine.' },
+}
+
 /**
  * The connector runtime: reads instances from the store, runs each through a
  * Supervisor, and pumps their publishes/status into the Hub as topics.
@@ -80,7 +117,17 @@ export class Engine {
       status: this.statuses.get(i.id) ?? null,
     }))
   }
-  catalogue() { return this.registry.catalogue() }
+  catalogue() {
+    const base = this.registry.catalogue().map((t) =>
+      LEGACY_SCHEMAS[t.typeId] ? { ...t, configJsonSchema: LEGACY_SCHEMAS[t.typeId] } : t)
+    // ATEM has no connector module yet; surface it in the catalogue so Settings
+    // renders its form (it still runs on the legacy stack for now).
+    if (!base.some((t) => t.typeId === 'atem')) {
+      base.unshift({ typeId: 'atem', displayName: LEGACY_META.atem.displayName, description: LEGACY_META.atem.description,
+        configJsonSchema: LEGACY_SCHEMAS.atem, streams: [], commands: [], capabilities: { control: true, discovery: false }, tier: 'official', vendorNotes: null } as never)
+    }
+    return base
+  }
 
   /** First-boot dev convenience: one simulator-backed instance per connector
    *  type we don't already have, so Settings/Surfaces have something to show. */

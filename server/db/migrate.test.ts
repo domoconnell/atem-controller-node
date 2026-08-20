@@ -19,7 +19,7 @@ check('global settings imported (web/osc/companion)', 'web' in settings && 'osc'
 const insts = store.listInstances()
 const atem = insts.filter((i) => i.typeId === 'atem')
 const senn = insts.filter((i) => i.typeId === 'sennheiser')
-check('one ATEM instance with folded engine config', atem.length === 1 && !!(atem[0].config as any).supersource, JSON.stringify(atem[0]?.config))
+check('one ATEM instance with flat engine config', atem.length === 1 && (atem[0].config as any).ssInput === 6000 && (atem[0].config as any).ip, JSON.stringify(atem[0]?.config))
 check('a HyperDeck + ProPresenter instance', insts.some((i) => i.typeId === 'hyperdeck') && insts.some((i) => i.typeId === 'propresenter'))
 check('sennheiser multi-instance (one per receiver)', senn.length >= 10, `got ${senn.length}`)
 check('sennheiser instance carries ip + kind', senn.length > 0 && !!(senn[0].config as any).ip && !!(senn[0].config as any).kind, JSON.stringify(senn[0]?.config))
