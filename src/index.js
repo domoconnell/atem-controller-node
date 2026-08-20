@@ -47,6 +47,28 @@ oscServer.attachVerifier(verifier)
 oscServer.open()
 web.start()
 connectorEngine?.start().catch((e) => console.error('[engine] start failed:', e.message))
+
+// Bridge the legacy Sennheiser fleet monitor onto the connector hub, so its
+// per-receiver data is available to Surface widgets on mi:<instance>:channels
+// (until the full connector port). Instance ids match the migration:
+// sennheiser-<last-octet>.
+if (connectorEngine) {
+  const publishSenn = () => {
+    const snap = sennheiser.snapshot()
+    // Zip the fleet monitor's devices to the store's sennheiser instances in
+    // order (both follow config/device order), so ids line up whether we're on
+    // real IPs or the simulator's localhost fleet.
+    const sennInstances = (store?.listInstances() ?? []).filter((i) => i.typeId === 'sennheiser').sort((a, b) => a.sortOrder - b.sortOrder)
+    ;(snap.devices ?? []).forEach((dev, idx) => {
+      const inst = sennInstances[idx]
+      if (!inst) return
+      connectorEngine.hub.publish(`mi:${inst.id}:channels`, { channels: dev.channels ?? [], deviceName: dev.deviceName, product: dev.product, online: dev.online })
+      connectorEngine.hub.publish(`mi:${inst.id}:$status`, { instanceId: inst.id, state: dev.online ? 'online' : (dev.reachable ? 'degraded' : 'offline'), detail: null, since: Date.now(), attempt: 0, lastError: null, pollIntervalMs: null })
+    })
+  }
+  sennheiser.on('update', publishSenn)
+  sennheiser.on('presence', publishSenn)
+}
 propresenter.start()
 sennheiser.start().catch((e) => console.error('[senn] start failed:', e.message))
 hyperdeck.connect()

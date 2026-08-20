@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useRef } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
 import { useStream } from '@/hooks/use-topic'
 import { cn } from '@/lib/utils'
@@ -61,3 +62,60 @@ function StateWidget({ config, instanceId, title }: WidgetProps) {
 registerWidget({ type: 'state', label: 'State', defaultSize: { w: 3, h: 2 },
   configFields: [{ key: 'stream', label: 'Stream', kind: 'stream' }, { key: 'field', label: 'Field', kind: 'field' }],
   Component: StateWidget })
+
+
+// ---- ProdCom comms widgets ----
+interface FeedMsg { id: string; text: string; at: number; channel: string; colour: string | null; live?: boolean; redacted?: boolean; flags?: { keyword: string; colour?: string | null }[] }
+const fmtTime = (at: number) => { try { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) } catch { return '' } }
+
+/** Live talkback transcript from a ProdCom instance. */
+function CommsTranscript({ instanceId, title }: WidgetProps) {
+  const data = useStream(instanceId, 'feed') as { messages?: FeedMsg[] } | null
+  const msgs = data?.messages ?? []
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight }, [msgs.length])
+  return (
+    <div className="h-full flex flex-col">
+      <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1">{title}</div>
+      <div ref={ref} className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-1">
+        {msgs.length === 0 && <div className="text-muted-foreground/40 text-[11px]">No traffic yet…</div>}
+        {msgs.map((m) => (
+          <div key={m.id} className={cn('text-[12px] leading-snug', m.live && 'opacity-55 italic')}>
+            <span className="font-semibold" style={{ color: m.colour ?? undefined }}>{m.channel}</span>
+            <span className="text-muted-foreground/40 text-[10px] ml-1.5 tabular-nums">{fmtTime(m.at)}</span>
+            <span className="ml-2 text-foreground/90">{m.redacted ? '████████' : m.text}</span>
+            {m.flags?.map((f, i) => (
+              <span key={i} className="ml-1.5 text-[9px] font-bold uppercase rounded px-1 py-px align-middle"
+                style={{ background: (f.colour ?? '#888') + '33', color: f.colour ?? undefined }}>{f.keyword}</span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+registerWidget({ type: 'comms-transcript', label: 'Comms transcript', supportedTypeIds: ['prodcom'], defaultSize: { w: 5, h: 5 }, Component: CommsTranscript })
+
+/** Just the flagged call-outs (mentions) from a ProdCom instance. */
+function CommsCallouts({ instanceId, title }: WidgetProps) {
+  const data = useStream(instanceId, 'feed') as { messages?: FeedMsg[] } | null
+  const flagged = (data?.messages ?? []).filter((m) => (m.flags?.length ?? 0) > 0)
+  return (
+    <div className="h-full flex flex-col">
+      <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1">{title}</div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-1.5">
+        {flagged.length === 0 && <div className="text-muted-foreground/40 text-[11px]">No call-outs.</div>}
+        {flagged.slice(-12).reverse().map((m) => (
+          <div key={m.id} className="text-[12px] leading-snug">
+            <div className="flex items-center gap-1.5">
+              {m.flags?.map((f, i) => <span key={i} className="text-[9px] font-bold uppercase rounded px-1 py-px" style={{ background: (f.colour ?? '#888') + '33', color: f.colour ?? undefined }}>{f.keyword}</span>)}
+              <span className="text-muted-foreground/40 text-[10px] ml-auto tabular-nums">{fmtTime(m.at)}</span>
+            </div>
+            <div className="text-foreground/90 mt-0.5"><span className="font-semibold" style={{ color: m.colour ?? undefined }}>{m.channel}:</span> {m.redacted ? '████' : m.text}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+registerWidget({ type: 'comms-callouts', label: 'Comms call-outs', supportedTypeIds: ['prodcom'], defaultSize: { w: 4, h: 4 }, Component: CommsCallouts })

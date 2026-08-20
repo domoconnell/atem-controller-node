@@ -5,6 +5,7 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import dynamic from 'next/dynamic'
 import '@/widgets/builtin'
+import '@/widgets/connectors'
 import { widgetsForType, getWidget, listWidgets } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import type { Instance, ConnectorType } from '@/lib/types'
@@ -53,12 +54,15 @@ export default function SurfacesPage() {
 
   const addWidget = (typeId: string, instanceId: string, widgetType: string) => {
     const def = getWidget(widgetType); if (!def || !surface) return
-    const t = types.find((x) => x.typeId === typeId)
-    const firstStream = t?.streams?.[0]
-    const firstField = firstStream?.fields?.[0]
+    let config: Record<string, unknown> = {}
+    if (def.multi === 'type') config = { typeId }
+    else if (!def.multi) {
+      const t = types.find((x) => x.typeId === typeId)
+      const firstStream = t?.streams?.[0]
+      config = { stream: firstStream?.id, field: firstStream?.fields?.[0]?.id }
+    }
     const i = `w${Date.now().toString(36)}`
-    const placement: Placement = { i, widgetType, instanceId,
-      config: { stream: firstStream?.id, field: firstField?.id }, title: '' }
+    const placement: Placement = { i, widgetType, instanceId: def.multi ? null : instanceId, config, title: '' }
     const y = surface.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0)
     setSurface({ ...surface, widgets: [...surface.widgets, placement], layout: [...surface.layout, { i, x: 0, y, w: def.defaultSize.w, h: def.defaultSize.h }] })
     setAdding(false); setSel(i)
@@ -94,7 +98,7 @@ export default function SurfacesPage() {
                 onLayoutChange={(l: Layout[]) => setSurface((s) => s && ({ ...s, layout: l as Layout[] }))}>
                 {surface.widgets.map((p) => (
                   <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) setSel(p.i) }}>
-                    <WidgetView p={p} edit={edit} selected={sel === p.i} onSelect={() => setSel(p.i)} onRemove={() => removeWidget(p.i)} />
+                    <WidgetView p={p} instances={instances.map((x) => ({ id: x.id, typeId: x.typeId, name: x.name }))} edit={edit} selected={sel === p.i} onSelect={() => setSel(p.i)} onRemove={() => removeWidget(p.i)} />
                   </div>
                 ))}
               </Grid>
@@ -134,23 +138,28 @@ function SurfacePicker({ surfaces, current, onPick, onNew }: { surfaces: { id: s
 }
 
 function AddWidgetDialog({ instances, types, onAdd, onClose }: { instances: Instance[]; types: ConnectorType[]; onAdd: (typeId: string, instanceId: string, widgetType: string) => void; onClose: () => void }) {
-  const withInstances = types.filter((t) => instances.some((i) => i.typeId === t.typeId))
-  const [typeId, setTypeId] = useState(withInstances[0]?.typeId ?? '')
+  const sources = [...types.filter((t) => instances.some((i) => i.typeId === t.typeId)), { typeId: '__platform__', displayName: 'Platform' } as ConnectorType]
+  const [typeId, setTypeId] = useState(sources[0]?.typeId ?? '')
+  const platform = typeId === '__platform__'
   const insts = instances.filter((i) => i.typeId === typeId)
   const [instanceId, setInstanceId] = useState(insts[0]?.id ?? '')
-  const widgets = widgetsForType(typeId)
-  const [widgetType, setWidgetType] = useState(widgets[0]?.type ?? 'stat')
-  useEffect(() => { const n = instances.filter((i) => i.typeId === typeId); setInstanceId(n[0]?.id ?? ''); const w = widgetsForType(typeId); setWidgetType(w[0]?.type ?? 'stat') }, [typeId])
+  const widgets = platform ? widgetsForType(null) : widgetsForType(typeId)
+  const [widgetType, setWidgetType] = useState(widgets[0]?.type ?? '')
+  useEffect(() => {
+    const n = instances.filter((i) => i.typeId === typeId); setInstanceId(n[0]?.id ?? '')
+    const w = typeId === '__platform__' ? widgetsForType(null) : widgetsForType(typeId); setWidgetType(w[0]?.type ?? '')
+  }, [typeId])
+  const needsInstance = !platform && !getWidget(widgetType)?.multi
   return (
     <div className="fixed inset-0 z-[100] bg-black/50 grid place-items-center" onClick={onClose}>
       <div className="w-[420px] rounded-xl border border-border bg-background p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-[15px] font-bold">Add widget</h2>
-        <Field label="Connector"><select value={typeId} onChange={(e) => setTypeId(e.target.value)} className="w-full bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]">{withInstances.map((t) => <option key={t.typeId} value={t.typeId}>{t.displayName}</option>)}</select></Field>
-        <Field label="Instance"><select value={instanceId} onChange={(e) => setInstanceId(e.target.value)} className="w-full bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]">{insts.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></Field>
+        <Field label="Source"><select value={typeId} onChange={(e) => setTypeId(e.target.value)} className="w-full bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]">{sources.map((t) => <option key={t.typeId} value={t.typeId}>{t.displayName}</option>)}</select></Field>
+        {needsInstance && <Field label="Instance"><select value={instanceId} onChange={(e) => setInstanceId(e.target.value)} className="w-full bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]">{insts.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></Field>}
         <Field label="Widget"><select value={widgetType} onChange={(e) => setWidgetType(e.target.value)} className="w-full bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]">{widgets.map((w) => <option key={w.type} value={w.type}>{w.label}</option>)}</select></Field>
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="text-[12px] px-3 py-1.5 rounded-md hover:bg-accent">Cancel</button>
-          <button onClick={() => onAdd(typeId, instanceId, widgetType)} disabled={!instanceId} className="text-[12px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-40">Add</button>
+          <button onClick={() => onAdd(typeId, instanceId, widgetType)} disabled={(needsInstance && !instanceId) || !widgetType} className="text-[12px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-40">Add</button>
         </div>
       </div>
     </div>

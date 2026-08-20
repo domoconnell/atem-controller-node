@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import '@/widgets/builtin'
+import '@/widgets/connectors'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 
 const Grid = dynamic(() => import('@/components/surfaces/grid'), { ssr: false })
@@ -11,7 +12,9 @@ interface Surface { name: string; widgets: Placement[]; layout: { i: string; x: 
 export default function SurfaceViewer() {
   const [surface, setSurface] = useState<Surface | null>(null)
   const [missing, setMissing] = useState(false)
+  const [instances, setInstances] = useState<{ id: string; typeId: string; name: string }[]>([])
   useEffect(() => {
+    fetch('/api/instances').then((r) => r.json()).then((b) => setInstances((b.instances ?? []).map((i: { id: string; typeId: string; name: string }) => ({ id: i.id, typeId: i.typeId, name: i.name })))).catch(() => {})
     const id = new URLSearchParams(window.location.search).get('s')
     if (!id) { setMissing(true); return }
     const load = () => fetch(`/api/surfaces/${id}`).then((r) => r.json())
@@ -23,7 +26,7 @@ export default function SurfaceViewer() {
   return (
     <div className="min-h-screen bg-background p-2">
       <Grid layouts={{ lg: surface.layout }} breakpoints={{ lg: 0 }} cols={{ lg: 12 }} rowHeight={44} margin={[10, 10]} isDraggable={false} isResizable={false}>
-        {surface.widgets.map((p) => <div key={p.i}><WidgetView p={p} /></div>)}
+        {surface.widgets.map((p) => <div key={p.i}><WidgetView p={p} instances={instances} /></div>)}
       </Grid>
     </div>
   )

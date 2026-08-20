@@ -4,14 +4,19 @@ import { cn } from '@/lib/utils'
 import { Settings2, X } from 'lucide-react'
 
 export interface Placement { i: string; widgetType: string; instanceId: string | null; config: Record<string, unknown>; title?: string }
+export interface InstanceRef { id: string; typeId: string; name: string }
 
 /** Frames one widget: header (title) + body. In edit mode, config/remove. */
-export function WidgetView({ p, edit, selected, onSelect, onRemove }: {
-  p: Placement; edit?: boolean; selected?: boolean
+export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemove }: {
+  p: Placement; instances?: InstanceRef[]; edit?: boolean; selected?: boolean
   onSelect?: () => void; onRemove?: () => void
 }) {
   const def = getWidget(p.widgetType)
   const title = p.title || def?.label || p.widgetType
+  const boundType = (p.config.typeId as string | undefined) ?? instances.find((x) => x.id === p.instanceId)?.typeId
+  const multiInstances = def?.multi === 'all' ? instances
+    : def?.multi === 'type' ? instances.filter((x) => x.typeId === boundType)
+    : undefined
   return (
     <div className={cn('h-full w-full rounded-xl border bg-card overflow-hidden flex flex-col',
       selected ? 'border-primary' : 'border-border/60')}
@@ -24,7 +29,7 @@ export function WidgetView({ p, edit, selected, onSelect, onRemove }: {
         </div>
       )}
       <div className="flex-1 min-h-0">
-        {def ? <def.Component config={p.config} instanceId={p.instanceId} title={title} /> : <div className="grid place-items-center h-full text-[11px] text-muted-foreground">unknown widget</div>}
+        {def ? <def.Component config={p.config} instanceId={p.instanceId} instances={multiInstances} title={title} /> : <div className="grid place-items-center h-full text-[11px] text-muted-foreground">unknown widget</div>}
       </div>
     </div>
   )
