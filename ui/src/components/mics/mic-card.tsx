@@ -82,8 +82,8 @@ export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
           <span className="text-[10px] tabular-nums text-muted-foreground" title="RF signal quality">Q {ch.rsqi}%</span>
         )}
         {dev.type === 'ewdx' && <Antenna active={offline ? undefined : ch.ant} />}
-        <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50">
-          {offline ? 'OFFLINE' : dev.ip.replace('127.0.0.1', 'sim')}{dev.type === 'ewdx' ? ` · ${ch.id}` : ''}
+        <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50" title={dev.version ? `firmware ${dev.version}` : undefined}>
+          {offline ? 'OFFLINE' : dev.ip.replace('127.0.0.1', 'sim')}{dev.type === 'ewdx' ? ` · ${ch.id}` : ''}{dev.version && !offline ? ` · fw ${dev.version}` : ''}
         </span>
       </div>
     </div>

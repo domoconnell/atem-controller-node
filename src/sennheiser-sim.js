@@ -49,7 +49,7 @@ class SscSim {
     const reply = {}
     if (req.device) {
       reply.device = { name: this.p.name }
-      if (req.device.identity) reply.device.identity = { product: 'EWDX2CH', version: 'sim' }
+      if (req.device.identity) reply.device.identity = { product: 'EWDX2CH', version: `3.0.${this.idx}` }
     }
     this.p.chans.forEach(([name, freq], i) => {
       const rx = `rx${i + 1}`
@@ -109,6 +109,7 @@ class G34Sim {
     if (cmd === 'Sensitivity') return this._send(rinfo, 'Sensitivity -24')
     if (cmd === 'Mode') return this._send(rinfo, 'Mode 1')
     if (cmd === 'Mute') return this._send(rinfo, 'Mute 0')
+    if (cmd === 'FirmwareRevision') return this._send(rinfo, `FirmwareRevision ${p.type === 'g3' ? '1.8.0' : '1.2.0'}`)
     if (cmd.startsWith('Push')) {
       clearInterval(this.push?.timer)
       const timer = setInterval(() => this._pushTick(rinfo), 300)

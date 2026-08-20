@@ -34,6 +34,7 @@ export function parseG34Line(line, ch) {
   const nums = rest.map(Number)
   switch (key) {
     case 'Name': ch.name = line.slice(5).trim(); return true
+    case 'FirmwareRevision': ch.firmware = rest[0]; return true
     case 'Frequency': ch.frequency = nums[0]; return true // kHz
     case 'Squelch': ch.squelch = nums[0]; return true
     case 'AfOut': ch.afOut = nums[0]; return true
@@ -101,8 +102,8 @@ export function mergeSsc(dev, obj) {
 const SSC_STATICS = '{"device":{"identity":{"product":null,"version":null},"name":null},"rx1":{"name":null,"frequency":null,"mute":null,"gain":null},"rx2":{"name":null,"frequency":null,"mute":null,"gain":null}}'
 const SSC_BATTERY = '{"mates":{"tx1":{"battery":{"gauge":null}},"tx2":{"battery":{"gauge":null}}}}'
 const SSC_SUBSCRIBE = '{"osc":{"state":{"subscribe":[{"#":{"lifetime":15},"m":{"rx1":{"rssi":null,"rsqi":null,"divi":null,"af":null},"rx2":{"rssi":null,"rsqi":null,"divi":null,"af":null}}}]}}}'
-const G3_STATICS = ['Name', 'Frequency', 'Squelch', 'AfOut', 'Mute']
-const IEM_STATICS = ['Name', 'Frequency', 'Sensitivity', 'Mode', 'Mute']
+const G3_STATICS = ['Name', 'Frequency', 'Squelch', 'AfOut', 'Mute', 'FirmwareRevision']
+const IEM_STATICS = ['Name', 'Frequency', 'Sensitivity', 'Mode', 'Mute', 'FirmwareRevision']
 const G34_PUSH = 'Push 60 300 1'
 
 const OFFLINE_MS = 12000
@@ -200,6 +201,7 @@ export class SennheiserMonitor extends EventEmitter {
     for (const line of msg.toString('utf8').split('\r')) {
       if (line.trim() && parseG34Line(line, ch)) changed = true
     }
+    if (ch.firmware && d.version !== ch.firmware) { d.version = ch.firmware; changed = true }
     if (changed) this._markDirty()
   }
 

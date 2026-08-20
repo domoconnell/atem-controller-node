@@ -56,8 +56,9 @@ warnings, version, type, trim, name, mute, lowcut, lock, led, capsule…
 # IEM G4 (SR300): Name, Frequency, Sensitivity, Mode (1=stereo), Equalizer, Mute
 ```
 
-Valid on G3 RX: Name Frequency Squelch AfOut Equalizer Mute (not: Sensitivity Mode Config Firmware).
-Valid on IEM: Name Frequency Sensitivity Mode Equalizer Mute (not: Squelch AfOut Config Firmware).
+Valid on G3 RX: Name Frequency Squelch AfOut Equalizer Mute FirmwareRevision (not: Sensitivity Mode Config Firmware Version).
+Valid on IEM: Name Frequency Sensitivity Mode Equalizer Mute FirmwareRevision (not: Squelch AfOut Config Firmware Version).
+FirmwareRevision replies e.g. `FirmwareRevision 1.8.0` (G3 RX) / `1.2.0` (IEM G4).
 Frequency reply: `Frequency 639100 21 1` — kHz, then bank/channel-ish extras (unconfirmed).
 
 ## Gotchas on this Mac

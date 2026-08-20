@@ -29,10 +29,16 @@ check('g3 statics', g3.name === 'VOX 4' && g3.frequency === 639100 && g3.squelch
 check('g3 live', g3.rf1 === 0 && g3.rf2 === 0 && Array.isArray(g3.afRaw) && g3.battery === null && g3.msg === 'RF_Mute', JSON.stringify(g3))
 check('g3 active antenna', g3.ant === 2, `ant=${g3.ant}`) // capture ends RF1 ..0 / RF2 ..1
 
+for (const line of cap('g3-firmware.txt').split('\n').filter((l) => l.trim())) parseG34Line(line, g3)
+check('g3 firmware', g3.firmware === '1.8.0', JSON.stringify(g3.firmware))
+
 // IEM
 const iem = {}
 for (const line of cap('iem-mixed.txt').split('\r').filter((l) => l.trim())) parseG34Line(line, iem)
 check('iem statics', iem.name === 'VOX 1' && iem.frequency === 614325 && iem.sensitivity === -24 && iem.stereo === true && iem.mute === false, JSON.stringify(iem))
 check('iem live af', iem.af === 0 && iem.afRaw.length === 4 && iem.msg === 'OK', JSON.stringify(iem))
+
+for (const line of cap('iem-firmware.txt').split('\n').filter((l) => l.trim())) parseG34Line(line, iem)
+check('iem firmware', iem.firmware === '1.2.0', JSON.stringify(iem.firmware))
 
 process.exit(fails ? 1 : 0)
