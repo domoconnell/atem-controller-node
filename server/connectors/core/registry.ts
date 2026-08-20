@@ -83,8 +83,8 @@ export class ConnectorRegistry {
   }
 
   /** The catalogue the admin UI renders forms from. */
-  catalogue(): TypeCatalogueEntry[] {
-    return this.list().map((module) => {
+  catalogue(modules: ConnectorModule<unknown>[] = this.list()): TypeCatalogueEntry[] {
+    return modules.map((module) => {
       const { meta } = module
       return typeCatalogueEntrySchema.parse({
         typeId: meta.typeId,

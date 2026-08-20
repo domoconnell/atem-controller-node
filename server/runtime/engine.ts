@@ -9,6 +9,8 @@ import { Hub } from './hub.js'
 /** Connector types still owned by the legacy JS stack (ported later). The
  *  engine lists them but does not run a second connection to them. */
 const LEGACY = new Set(['atem', 'hyperdeck', 'propresenter', 'sennheiser'])
+/** Connector types we never want as user connections (Dave's reference device). */
+const EXCLUDED = new Set(['demo'])
 
 /** Config schemas for the connectors still on the legacy stack, so Settings
  *  renders a proper form for them (not a raw JSON box) ahead of the full port. */
@@ -69,6 +71,9 @@ export class Engine {
   }
 
   async start(): Promise<void> {
+    // Remove any connections of excluded types left in the store (e.g. a
+    // previously-seeded demo device).
+    for (const row of this.store.listInstances()) if (EXCLUDED.has(row.typeId)) this.store.deleteInstance(row.id)
     this.seedSimConnectors()
     for (const row of this.store.listInstances()) {
       if (row.enabled && !LEGACY.has(row.typeId)) this.startInstance(row)
@@ -108,8 +113,9 @@ export class Engine {
     }))
   }
   catalogue() {
-    const base = this.registry.catalogue().map((t) =>
-      LEGACY_SCHEMAS[t.typeId] ? { ...t, configJsonSchema: LEGACY_SCHEMAS[t.typeId] } : t)
+    const base = this.registry.catalogue(this.registry.all())
+      .filter((t) => !EXCLUDED.has(t.typeId))
+      .map((t) => LEGACY_SCHEMAS[t.typeId] ? { ...t, configJsonSchema: LEGACY_SCHEMAS[t.typeId] } : t)
     // ATEM has no connector module yet; surface it in the catalogue so Settings
     // renders its form (it still runs on the legacy stack for now).
     if (!base.some((t) => t.typeId === 'atem')) {
@@ -127,7 +133,7 @@ export class Engine {
     const have = new Set(this.store.listInstances().map((i) => i.typeId))
     for (const module of this.registry.all()) {
       const typeId = module.meta.typeId
-      if (have.has(typeId) || LEGACY.has(typeId)) continue
+      if (have.has(typeId) || LEGACY.has(typeId) || EXCLUDED.has(typeId)) continue
       this.store.createInstance({ typeId, name: `${module.meta.displayName} (sim)`, simulate: true })
     }
     this.store.db.prepare("INSERT OR REPLACE INTO _meta(key,value) VALUES ('sim_seeded', ?)").run(String(Date.now()))
