@@ -1,6 +1,6 @@
 // Feed REAL captured device output (scratch/captures/) through the parsers.
 import { readFileSync } from 'node:fs'
-import { mergeSsc, parseG34Line } from '../src/sennheiser.js'
+import { mergeSsc, parseG34Line, parseLegacyFrame, buildLegacySubscribe } from '../src/sennheiser.js'
 
 let fails = 0
 const check = (name, cond, detail) => {
@@ -40,5 +40,19 @@ check('iem live af', iem.af === 0 && iem.afRaw.length === 4 && iem.msg === 'OK',
 
 for (const line of cap('iem-firmware.txt').split('\n').filter((l) => l.trim())) parseG34Line(line, iem)
 check('iem firmware', iem.firmware === '1.2.0', JSON.stringify(iem.firmware))
+
+// Legacy 8133 binary protocol - real frames captured from the .73 receiver
+const tele = Buffer.from('29f8f7ca00001b667a8edb0100000003000000000000000000000001010100000101010101010100', 'hex')
+const ctl  = Buffer.from('8823f1ca00001b667a8edb0100000000000000000000000000000000000a0a0aa20101010101010101', 'hex')
+const pt = parseLegacyFrame(tele)
+check('legacy telemetry frame MAC', pt?.mac === '00:1b:66:7a:8e:db' && pt.kind === 'telemetry', JSON.stringify(pt))
+check('legacy control frame kind', parseLegacyFrame(ctl)?.kind === 'control', JSON.stringify(parseLegacyFrame(ctl)))
+check('legacy subscribe builder', buildLegacySubscribe('10.10.10.162').toString('hex') === '4f1ff1ca0a0a0aa20a0a0aa2010001010101',
+  buildLegacySubscribe('10.10.10.162').toString('hex'))
+
+// Real 85-byte ASCII identity beacon captured from the .73 receiver
+const ident = Buffer.from('002512064d6f64656c3d454d333030473320202049443d3030314236363741384544422020204950413d31302e31302e31302e3733000000000000000000000000000000', 'hex')
+const pi = parseLegacyFrame(ident)
+check('legacy identity beacon', pi?.kind === 'identity' && pi.model === 'EM300G3' && pi.mac === '00:1b:66:7a:8e:db' && pi.ip === '10.10.10.73', JSON.stringify(pi))
 
 process.exit(fails ? 1 : 0)

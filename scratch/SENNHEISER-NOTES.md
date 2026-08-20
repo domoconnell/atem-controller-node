@@ -74,3 +74,31 @@ node for running on the Pi.
   rolling `Push` re-subscribes + one SSC socket per EW-DX with meter
   subscription renewals; expose `/api/mics` + WS, render battery/RF/AF tiles
   in the UI (wire log already has the plumbing for a `senn` proto tag).
+
+## Legacy ew G3 binary protocol (firmware < ~1.7) — UDP 8133
+
+The EM300G3 at .73 (fw 1.4.4) does NOT speak the 53212 ASCII protocol at all —
+it predates the "better UDP networking" of fw 1.7. It uses an older binary
+protocol on **UDP 8133**, reverse-engineered from a WSM packet capture
+(`scratch/captures/g3legacy-8133.txt`, decoded via tcpdump).
+
+- **Subscribe** (controller → device, 18 bytes): `4f1ff1ca` + `<reqIP 4B>` +
+  `<reqIP 4B>` + `010001010101`. The device then streams to `<reqIP>:8133`
+  (fixed port, taken from the payload — NOT the packet source port). Re-send
+  periodically to keep the stream alive.
+- **Telemetry** (device → controller, 40 bytes): `[0-2 type][3]=0xca magic`
+  `[4]=00 [5-10]=MAC [11]=01 … [15] status … [27-39] RF/AF state`. byte[2]=0xf7.
+  With the transmitter OFF the state bytes are near-constant, so the exact
+  RF/AF/battery byte mapping is NOT yet decoded — needs a transmitter-on
+  capture to finish (like G3_MAX). We currently decode presence + MAC.
+- **Identity beacon** (device → controller, 85 bytes, ASCII): e.g.
+  `Model=EM300G3   ID=001B667A8EDB   IPA=10.10.10.73`. We parse Model/ID/IPA.
+- **Verified** against the real .73: subscribing from a fresh IP (10.10.10.200
+  alias) made the device stream 40-byte frames — the replayed token is accepted.
+  NB: an IP that WSM recently used sits in a cooldown and won't re-subscribe for
+  a while; use a never-before-seen controller IP (the Pi is fine).
+- **Port 8133 is single-owner per host**: don't run WSM on the same machine as
+  this service (both bind 8133). WSM elsewhere on the LAN is fine.
+- config: `{"ip":"10.10.10.73","type":"g3legacy","label":"..."}`. If the
+  subscribe yields nothing (e.g. token differs on another firmware), the unit
+  falls back to the ICMP present-but-mute card.

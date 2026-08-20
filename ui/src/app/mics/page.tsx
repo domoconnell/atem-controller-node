@@ -60,7 +60,7 @@ export default function MicsPage() {
           ) : (
             <div className="max-w-[1500px] mx-auto space-y-6">
               {SECTIONS.map(({ type, title, sub }) => {
-                const devs = (senn?.devices ?? []).filter((d) => d.type === type)
+                const devs = (senn?.devices ?? []).filter((d) => d.type === type || (type === 'g3' && d.type === 'g3legacy'))
                 if (!devs.length) return null
                 const cards = devs.flatMap((d) =>
                   (d.channels.length ? d.channels : [{ id: 'ch' }]).map((ch) => ({ d, ch }))

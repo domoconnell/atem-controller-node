@@ -72,7 +72,8 @@
       },
       {
         "ip": "10.10.10.73",
-        "type": "g3"
+        "type": "g3legacy",
+        "label": "RX .73 (old fw)"
       },
       {
         "ip": "10.10.10.74",
@@ -115,6 +116,6 @@
         "type": "iemg4"
       }
     ],
-    "comment": "Wireless mic monitor (the Mics app). types: ewdx (SSC/UDP 45), g3 (ew G3/G4 receiver), iemg4 (IEM transmitter) - both via UDP 53212, which requires source port 53212 (stop WSM first). simulate: run an animated local fleet instead of the real rig."
+    "comment": "Wireless mic monitor (the Mics app). types: ewdx (SSC/UDP 45), g3 (ew G3/G4 receiver), iemg4 (IEM transmitter), g3legacy (pre-1.7 G3 binary protocol on UDP 8133) - both via UDP 53212, which requires source port 53212 (stop WSM first). simulate: run an animated local fleet instead of the real rig."
   }
 }

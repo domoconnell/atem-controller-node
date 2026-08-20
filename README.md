@@ -567,5 +567,14 @@ a warning chip in the header.
   away from the rig.
 - G3/G4 meter scales are assumed 0–100 raw (`G3_MAX` in `src/sennheiser.js`);
   calibrate against the real rig with transmitters ON.
+- **Legacy G3** (`type: "g3legacy"`): pre-1.7 firmware (e.g. the EM300G3 at
+  .73 on fw 1.4.4) can't speak the 53212 protocol — it uses an older binary
+  protocol on **UDP 8133**, reverse-engineered from a WSM capture. We decode
+  presence, MAC and model; RF/AF/battery byte-mapping is pending a
+  transmitter-on calibration. Don't run WSM on the same host (both bind 8133).
+- Units that answer ICMP ping but not their control protocol (old firmware,
+  or a G3 whose subscribe token differs) show as **present — no telemetry**
+  rather than vanishing, so you can still see they're powered and linked.
+
 - Protocol notes + probe scripts: `scratch/SENNHEISER-NOTES.md`,
   `scratch/sennheiser-probe.sh`.

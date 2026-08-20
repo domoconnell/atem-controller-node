@@ -2,12 +2,13 @@
 import type { SennChannel, SennDevice } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SegMeter, Battery, Antenna } from './meters'
-import { MicOff, Radio } from 'lucide-react'
+import { MicOff, Radio, AlertTriangle, Waves } from 'lucide-react'
 
 const FAMILY = {
   ewdx: { label: 'EW-DX', accent: 'text-[#2dd4bf] border-[#2dd4bf]/30 bg-[#2dd4bf]/5' },
   g3: { label: 'G3', accent: 'text-primary border-primary/30 bg-primary/5' },
   iemg4: { label: 'IEM G4', accent: 'text-[#d77df0] border-[#d77df0]/30 bg-[#d77df0]/5' },
+  g3legacy: { label: 'G3', accent: 'text-primary border-primary/30 bg-primary/5' },
 }
 
 const mhz = (khz?: number) => khz == null ? '—' : `${(khz / 1000).toFixed(3)} MHz`
@@ -22,10 +23,73 @@ function MeterRow({ label, value, kind, right }: { label: string; value: number 
   )
 }
 
+/**
+ * "Present but mute" card: the unit answers ping but not the telemetry
+ * protocol (e.g. an ew G3 on firmware < 1.7). We can only show that it's
+ * powered and linked - honest about the rest.
+ */
+function MuteCard({ dev }: { dev: SennDevice }) {
+  const fam = FAMILY[dev.type]
+  return (
+    <div className="surface rounded-xl px-3.5 py-3 flex flex-col gap-2.5 border border-busy/40 bg-busy/[0.04]">
+      <div className="flex items-center gap-2">
+        <span className="text-[17px] font-bold tracking-tight leading-none truncate">{(dev.label ?? dev.ip).replace('127.0.0.1', 'sim')}</span>
+        <span className={cn('ml-auto shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] rounded px-1.5 py-0.5 border', fam.accent)}>{fam.label}</span>
+      </div>
+      <div className="flex items-center gap-2 text-busy">
+        <AlertTriangle className="size-3.5 shrink-0" />
+        <span className="text-[12px] font-semibold leading-tight">Present — no telemetry</span>
+      </div>
+      <p className="text-[10.5px] leading-snug text-muted-foreground">
+        Reachable on the network but not answering the control protocol. Firmware likely predates v1.7 — update to expose RF / AF / battery.
+      </p>
+      <div className="flex items-center gap-2 pt-0.5 border-t border-border/40">
+        <span className="inline-flex items-center gap-1.5 text-[10px] text-live"><Radio className="size-3" />link up</span>
+        {dev.pingMs != null && <span className="text-[10px] tabular-nums text-muted-foreground">ping {dev.pingMs} ms</span>}
+        <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50">{dev.ip.replace('127.0.0.1', 'sim')}</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Legacy G3 (firmware < 1.7) on the binary 8133 protocol. We decode presence
+ * + MAC from its telemetry stream; the RF/AF/battery byte mapping is not yet
+ * reversed, so we show it as live-but-uncalibrated rather than fake numbers.
+ */
+function LegacyCard({ dev }: { dev: SennDevice }) {
+  return (
+    <div className="surface rounded-xl px-3.5 py-3 flex flex-col gap-2.5 border border-[#2dd4bf]/25 bg-[#2dd4bf]/[0.03]">
+      <div className="flex items-center gap-2">
+        <span className="text-[17px] font-bold tracking-tight leading-none truncate">{dev.label ?? dev.ip}</span>
+        <span className="ml-auto shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] rounded px-1.5 py-0.5 border text-[#2dd4bf] border-[#2dd4bf]/30 bg-[#2dd4bf]/5">G3 · legacy</span>
+      </div>
+      <div className="flex items-center gap-2 text-[#2dd4bf]">
+        <Waves className="size-3.5 shrink-0" />
+        <span className="text-[12px] font-semibold leading-tight">Telemetry streaming</span>
+      </div>
+      <p className="text-[10.5px] leading-snug text-muted-foreground">
+        {dev.product ? <><span className="text-foreground/80 font-semibold">{dev.product}</span> — </> : null}
+        old firmware (&lt; 1.7), reachable only over the legacy binary protocol. Live and identified; RF / AF / battery decoding pending calibration.
+      </p>
+      <div className="flex items-center gap-2 pt-0.5 border-t border-border/40">
+        <span className="inline-flex items-center gap-1.5 text-[10px] text-live"><Radio className="size-3" />online</span>
+        {dev.mac && <span className="text-[9.5px] font-mono text-muted-foreground/70">{dev.mac}</span>}
+        <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50">{dev.ip.replace('127.0.0.1', 'sim')}</span>
+      </div>
+    </div>
+  )
+}
+
 /** One card per wireless channel (an EW-DX EM2 yields two). */
 export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
+  const hasTelemetry = dev.online
+  if (dev.legacy && hasTelemetry) return <LegacyCard dev={dev} />
+  // Reachable via ping but silent on the protocol -> present-but-mute card.
+  if (!hasTelemetry && dev.reachable) return <MuteCard dev={dev} />
+
   const fam = FAMILY[dev.type]
-  const offline = !dev.online
+  const offline = !hasTelemetry
   const isIem = dev.type === 'iemg4'
   const name = (ch.name ?? dev.label ?? dev.ip).trim()
   return (
@@ -77,11 +141,10 @@ export function MicCard({ dev, ch }: { dev: SennDevice; ch: SennChannel }) {
         {isIem
           ? <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground"><Radio className="size-3" />rack send</span>
           : <Battery pct={offline ? null : ch.battery} />}
-        {!isIem && dev.type !== 'ewdx' && <Antenna active={offline ? undefined : ch.ant} />}
         {dev.type === 'ewdx' && ch.rsqi != null && !offline && (
           <span className="text-[10px] tabular-nums text-muted-foreground" title="RF signal quality">Q {ch.rsqi}%</span>
         )}
-        {dev.type === 'ewdx' && <Antenna active={offline ? undefined : ch.ant} />}
+        {!isIem && <Antenna active={offline ? undefined : ch.ant} />}
         <span className="ml-auto text-[9.5px] font-mono text-muted-foreground/50" title={dev.version ? `firmware ${dev.version}` : undefined}>
           {offline ? 'OFFLINE' : dev.ip.replace('127.0.0.1', 'sim')}{dev.type === 'ewdx' ? ` · ${ch.id}` : ''}{dev.version && !offline ? ` · fw ${dev.version}` : ''}
         </span>

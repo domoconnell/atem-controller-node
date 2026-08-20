@@ -158,12 +158,18 @@ export interface SennChannel {
   sensitivity?: number
   stereo?: boolean
   msg?: string
+  legacy?: boolean
+  legacyRaw?: string // undecoded 40-byte telemetry frame (hex)
 }
 export interface SennDevice {
   ip: string
-  type: 'ewdx' | 'g3' | 'iemg4'
+  type: 'ewdx' | 'g3' | 'iemg4' | 'g3legacy'
   label?: string
   online: boolean
+  mac?: string
+  legacy?: boolean // pre-1.7 G3 on the binary 8133 protocol
+  reachable?: boolean | null // ICMP ping (for units that don't answer the protocol)
+  pingMs?: number | null
   product?: string
   version?: string
   deviceName?: string

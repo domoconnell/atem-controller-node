@@ -14,6 +14,7 @@ const FLEET = [
   { type: 'g3', name: 'VOX 5', freq: 638025 },
   { type: 'g3', name: 'VOX 6', freq: 643175 },
   { type: 'g3', name: 'SPARE', freq: 606000, dead: true }, // tx off: no RF/battery
+  { type: 'g3legacy', name: 'RX .73 (old fw)', freq: 606000 }, // pre-1.7 binary 8133 protocol
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ type: 'iemg4', name: `VOX ${n}`, freq: 614325 + n * 700 })),
 ]
 
@@ -149,6 +150,32 @@ class G34Sim {
   }
 }
 
+class LegacySim {
+  // Speaks the pre-1.7 G3 binary protocol on UDP 8133: on any subscribe,
+  // stream the real captured 40-byte telemetry frame back to the sender.
+  constructor(profile, idx) { this.p = profile; this.idx = idx; this.streams = new Map() }
+  start() {
+    this.sock = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+    this.sock.on('message', (_m, rinfo) => this._subscribe(rinfo))
+    return new Promise((res) => this.sock.bind(0, '127.0.0.1', () => res(this.sock.address().port)))
+  }
+  stop() { for (const t of this.streams.values()) clearInterval(t); try { this.sock.close() } catch {} }
+  _subscribe(rinfo) {
+    const key = `${rinfo.address}:${rinfo.port}`
+    clearInterval(this.streams.get(key))
+    const frame = Buffer.from('29f8f7ca00001b667a8edb0100000003000000000000000000000001010100000101010101010100', 'hex')
+    // stream back to the sender's port (the monitor's 8133 socket)
+    const ident = Buffer.from('002512064d6f64656c3d454d333030473320202049443d3030314236363741384544422020204950413d31302e31302e31302e3733000000000000000000000000000000', 'hex')
+    let n = 0
+    const t = setInterval(() => {
+      this.sock.send(frame, rinfo.port, rinfo.address)
+      if (n++ % 40 === 0) this.sock.send(ident, rinfo.port, rinfo.address) // periodic identity beacon
+    }, 80)
+    this.streams.set(key, t)
+    setTimeout(() => { clearInterval(t); this.streams.delete(key) }, 20000)
+  }
+}
+
 export class SennheiserSimFleet {
   constructor() { this.sims = [] }
   /** Boot every sim server; returns monitor-ready device entries. */
@@ -156,7 +183,7 @@ export class SennheiserSimFleet {
     t0 = Date.now()
     const devices = []
     for (const [i, p] of FLEET.entries()) {
-      const sim = p.type === 'ewdx' ? new SscSim(p, i) : new G34Sim(p, i)
+      const sim = p.type === 'ewdx' ? new SscSim(p, i) : p.type === 'g3legacy' ? new LegacySim(p, i) : new G34Sim(p, i)
       this.sims.push(sim)
       const port = await sim.start()
       devices.push({
