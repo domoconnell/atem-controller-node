@@ -21,6 +21,18 @@ type CType = ConnectorType & { streams?: { id: string; label: string; fields?: {
 const EDGES: Edge[] = ['top', 'bottom', 'left', 'right']
 type Target = 'main' | 'header' | 'footer' | Edge
 
+/** Monotonic suffix so two widgets added in the same millisecond never collide. */
+let widgetSeq = 0
+
+/** First w×h cell (row-major) in a cols×rows grid that no existing item covers,
+ *  so a newly added widget lands in empty space instead of overlapping. Falls
+ *  back to 0,0 when the grid is full (nothing free) — still visible + movable. */
+function firstFreeCell(layout: Layout[], cols: number, rows: number, w: number, h: number): { x: number; y: number } {
+  const hits = (x: number, y: number) => layout.some((l) => x < l.x + l.w && x + w > l.x && y < l.y + l.h && y + h > l.y)
+  for (let y = 0; y + h <= rows; y++) for (let x = 0; x + w <= cols; x++) if (!hits(x, y)) return { x, y }
+  return { x: 0, y: 0 }
+}
+
 export default function SurfacesPage() {
   const { state, connected, tick } = useAtemState()
   const [instances, setInstances] = useState<Instance[]>([])
@@ -73,11 +85,15 @@ export default function SurfacesPage() {
     let config: Record<string, unknown> = {}
     if (def.multi === 'type') config = { typeId }
     else if (!def.multi) { const t = types.find((x) => x.typeId === typeId); const fs = t?.streams?.[0]; config = { stream: fs?.id, field: fs?.fields?.[0]?.id } }
-    const i = `w${Date.now().toString(36)}`
+    const i = `w${(widgetSeq++).toString(36)}${Date.now().toString(36)}`
     const placement: Placement = { i, widgetType, instanceId: def.multi ? null : instanceId, config, title: '' }
     if (target === 'main') {
-      const y = surface.main.layout.reduce((m, l) => Math.max(m, l.y + l.h), 0)
-      setSurface((s) => { const g = gridDims(s.display); return { ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, x: 0, y: Math.min(y, Math.max(0, g.rows - Math.min(def.defaultSize.h, g.rows))), w: Math.min(def.defaultSize.w, g.cols), h: Math.min(def.defaultSize.h, g.rows) }] } } })
+      setSurface((s) => {
+        const g = gridDims(s.display)
+        const w = Math.min(def.defaultSize.w, g.cols), h = Math.min(def.defaultSize.h, g.rows)
+        const { x, y } = firstFreeCell(s.main.layout, g.cols, g.rows, w, h)
+        return { ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, x, y, w, h }] } }
+      })
     } else setRegion(target, (w) => [...w, placement])
     setAdding(false); setSel({ region: target, i })
   }
