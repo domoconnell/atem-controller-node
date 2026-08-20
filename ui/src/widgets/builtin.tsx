@@ -21,7 +21,7 @@ function StatWidget({ config, instanceId, title }: WidgetProps) {
     </div>
   )
 }
-registerWidget({ type: 'stat', label: 'Stat', defaultSize: { w: 3, h: 2 },
+registerWidget({ type: 'stat', label: 'Stat', anyType: true, defaultSize: { w: 3, h: 2 },
   configFields: [{ key: 'stream', label: 'Stream', kind: 'stream' }, { key: 'field', label: 'Field', kind: 'field' }, { key: 'unit', label: 'Unit', kind: 'text' }],
   Component: StatWidget })
 
@@ -44,7 +44,7 @@ function MeterWidget({ config, instanceId, title }: WidgetProps) {
     </div>
   )
 }
-registerWidget({ type: 'meter', label: 'Level meter', defaultSize: { w: 4, h: 2 },
+registerWidget({ type: 'meter', label: 'Level meter', anyType: true, defaultSize: { w: 4, h: 2 },
   configFields: [{ key: 'stream', label: 'Stream', kind: 'stream' }, { key: 'field', label: 'Field', kind: 'field' }, { key: 'unit', label: 'Unit', kind: 'text' }, { key: 'min', label: 'Min', kind: 'number' }, { key: 'max', label: 'Max', kind: 'number' }],
   Component: MeterWidget })
 
@@ -59,7 +59,7 @@ function StateWidget({ config, instanceId, title }: WidgetProps) {
     </div>
   )
 }
-registerWidget({ type: 'state', label: 'State', defaultSize: { w: 3, h: 2 },
+registerWidget({ type: 'state', label: 'State', anyType: true, defaultSize: { w: 3, h: 2 },
   configFields: [{ key: 'stream', label: 'Stream', kind: 'stream' }, { key: 'field', label: 'Field', kind: 'field' }],
   Component: StateWidget })
 

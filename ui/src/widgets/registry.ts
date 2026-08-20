@@ -15,6 +15,8 @@ export interface WidgetDef {
   supportedTypeIds?: readonly string[]
   /** 'type' = all instances of the bound connector type; 'all' = every connection. */
   multi?: 'type' | 'all'
+  /** Applies to every connector type (generic field/overview widgets). */
+  anyType?: boolean
   defaultSize: { w: number; h: number }
   configFields?: ConfigField[]
   Component: ComponentType<WidgetProps>
@@ -25,6 +27,6 @@ export function registerWidget(def: WidgetDef) { REGISTRY.set(def.type, def) }
 export function getWidget(type: string) { return REGISTRY.get(type) }
 export function listWidgets() { return [...REGISTRY.values()] }
 export function widgetsForType(typeId: string | null) {
-  if (typeId == null) return listWidgets().filter((w) => !w.supportedTypeIds)  // platform widgets
-  return listWidgets().filter((w) => w.supportedTypeIds?.includes(typeId))
+  if (typeId == null) return listWidgets().filter((w) => !w.supportedTypeIds && !w.anyType)  // pure platform
+  return listWidgets().filter((w) => w.anyType || w.supportedTypeIds?.includes(typeId))
 }

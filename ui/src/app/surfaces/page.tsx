@@ -191,16 +191,20 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
 }) {
   const [ref, { w }] = useMeasure<HTMLDivElement>()
   const disp = displayDef(surface.display)
-  const rowH = w > 0 ? Math.max(24, w / disp.cols) : 44
+  const cell = w > 0 ? Math.floor(w / disp.cols) : 44
   return (
-    <div ref={ref} className="flex-1 min-h-0 overflow-auto">
+    <div ref={ref} className="flex-1 min-h-0 overflow-auto relative">
+      {edit && w > 0 && (
+        <div className="absolute inset-0 pointer-events-none z-0"
+          style={{ backgroundSize: `${cell}px ${cell}px`, backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)', opacity: 0.5 }} />
+      )}
       {w > 0 && (
-        <Grid className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: disp.cols }}
-          rowHeight={rowH} margin={[6, 6]} compactType={null} preventCollision isBounded
+        <Grid className="layout relative z-10" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: disp.cols }}
+          rowHeight={cell} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded
           isDraggable={edit} isResizable={edit} draggableHandle=".widget-drag-handle" draggableCancel=".widget-no-drag"
           onLayoutChange={(l: Layout[]) => onLayout(l)}>
           {surface.main.widgets.map((p) => (
-            <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) onSelect('main', p.i) }}>
+            <div key={p.i} className="p-[3px]" onClick={(e) => { e.stopPropagation(); if (edit) onSelect('main', p.i) }}>
               <WidgetView p={p} instances={instances} edit={edit} selected={sel?.region === 'main' && sel.i === p.i}
                 onSelect={() => onSelect('main', p.i)} onRemove={() => onRemove('main', p.i)} />
             </div>
@@ -259,7 +263,7 @@ function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Sur
             {sources.map((t) => (<option key={t.typeId} value={t.typeId}>{t.displayName}</option>))}
           </select>
         </F>
-        {!platform && overviewW.length > 0 && instanceW.length > 0 ? (
+        {!platform ? (
           <div className="flex gap-2">
             {MODES.map((m) => (
               <button key={m} onClick={() => setMode(m)} className={cn('flex-1 text-[12px] rounded-md py-1.5 border capitalize', mode === m ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>

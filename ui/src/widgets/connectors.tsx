@@ -166,3 +166,27 @@ function StatusBoard({ instances = [], title }: WidgetProps) {
   )
 }
 registerWidget({ type: 'status-board', label: 'Connections status', multi: 'all', defaultSize: { w: 3, h: 5 }, Component: StatusBoard })
+
+// ---- Generic per-type overview (the "whole / all instances" option for any connector) ----
+function OverviewTile({ id, name }: { id: string; name: string }) {
+  const st = (useTopic(statusTopic(id)) as { state?: string } | null)?.state ?? 'connecting'
+  const dot = st === 'online' ? 'bg-live' : st === 'offline' || st === 'error' ? 'bg-destructive' : 'bg-busy'
+  return (
+    <div className="rounded-lg border border-border/60 px-2.5 py-1.5 flex items-center gap-2">
+      <span className={cn('size-2 rounded-full shrink-0', dot)} />
+      <span className="text-[12px] truncate">{name}</span>
+      <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">{st}</span>
+    </div>
+  )
+}
+function Overview({ instances = [], title }: WidgetProps) {
+  return (
+    <div className="h-full flex flex-col"><Title>{title}</Title>
+      <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(120px,1fr))] content-start">
+        {instances.length === 0 && <div className="text-[11px] text-muted-foreground/50">No instances.</div>}
+        {instances.map((i) => <OverviewTile key={i.id} id={i.id} name={i.name} />)}
+      </div>
+    </div>
+  )
+}
+registerWidget({ type: 'overview', label: 'Overview (all)', anyType: true, multi: 'type', defaultSize: { w: 4, h: 3 }, Component: Overview })
