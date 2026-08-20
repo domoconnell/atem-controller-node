@@ -1,5 +1,5 @@
 {
-  "name": "atem-controller",
+  "name": "stage-it-live",
   "version": "0.1.0",
   "description": "ATEM SuperSource animation + transition sequencer with OSC control, HyperDeck control and web status UI",
   "type": "module",

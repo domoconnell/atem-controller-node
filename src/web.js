@@ -49,6 +49,13 @@ export class WebServer {
         if (err) res.sendFile(path.join(projectRoot, 'public', 'mics', 'index.html'))
       })
     })
+    for (const route of ['atem', 'surfaces', 'settings']) {
+      app.get(`/${route}`, (_req, res) => {
+        res.sendFile(path.join(projectRoot, 'public', `${route}.html`), (err) => {
+          if (err) res.sendFile(path.join(projectRoot, 'public', route, 'index.html'))
+        })
+      })
+    }
     app.get('/api/mics', (_req, res) => res.json(this.sennheiser?.snapshot() ?? { enabled: false }))
 
     app.get('/api/status', (_req, res) => res.json(this.snapshot()))

@@ -3,17 +3,27 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { SlidersHorizontal, Clock, ChevronDown, ClipboardList, Mic } from 'lucide-react'
+import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2 } from 'lucide-react'
 
 const APPS = [
   {
-    id: 'atem', href: '/', icon: SlidersHorizontal,
-    title: 'ATEM Controller', tile: 'from-primary to-amber-700 shadow-[0_0_18px_-4px_var(--primary)]',
+    id: 'home', href: '/', icon: House,
+    title: 'Stage It Live', tile: 'from-primary to-amber-700 shadow-[0_0_18px_-4px_var(--primary)]',
+    sub: () => 'Home',
+  },
+  {
+    id: 'surfaces', href: '/surfaces', icon: LayoutDashboard,
+    title: 'Surfaces', tile: 'from-[#a78bfa] to-violet-800 shadow-[0_0_18px_-4px_#a78bfa]',
+    sub: () => 'Screen layouts',
+  },
+  {
+    id: 'atem', href: '/atem', icon: SlidersHorizontal,
+    title: 'ATEM Transitions', tile: 'from-primary to-amber-700 shadow-[0_0_18px_-4px_var(--primary)]',
     sub: (s: Snapshot | null) => `SuperSource · M/E ${(s?.mainMe ?? 1) + 1}`,
   },
   {
     id: 'timers', href: '/designer', icon: Clock,
-    title: 'Timer Designer', tile: 'from-info to-blue-800 shadow-[0_0_18px_-4px_var(--info)]',
+    title: 'Timers', tile: 'from-info to-blue-800 shadow-[0_0_18px_-4px_var(--info)]',
     sub: () => 'ProPresenter countdowns',
   },
   {
@@ -22,9 +32,9 @@ const APPS = [
     sub: (s: Snapshot | null) => s?.sennheiser?.enabled ? `${s.sennheiser.online}/${s.sennheiser.total} units online` : 'Sennheiser rig',
   },
   {
-    id: 'acceptance', href: '/acceptance', icon: ClipboardList,
-    title: 'Acceptance', tile: 'from-live to-emerald-800 shadow-[0_0_18px_-4px_var(--live)]',
-    sub: () => 'test every transition',
+    id: 'settings', href: '/settings', icon: Settings2,
+    title: 'Settings', tile: 'from-slate-500 to-slate-800 shadow-[0_0_18px_-4px_#64748b]',
+    sub: () => 'Connections',
   },
 ] as const
 
@@ -43,7 +53,7 @@ function Led({ on, label, warn, title }: { on: boolean; label: string; warn?: bo
  * children) and the live-update pulse.
  */
 export function AppHeader({ app, state, wsConnected, tick, children }: {
-  app: 'atem' | 'timers' | 'acceptance' | 'mics'
+  app: 'home' | 'surfaces' | 'atem' | 'timers' | 'mics' | 'settings' | 'acceptance'
   state: Snapshot | null
   wsConnected: boolean
   tick: number
@@ -57,7 +67,7 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
     return () => clearTimeout(t)
   }, [tick])
 
-  const cur = APPS.find((a) => a.id === app)!
+  const cur = APPS.find((a) => a.id === app) ?? APPS[0]
   const pp = state?.propresenter
 
   return (

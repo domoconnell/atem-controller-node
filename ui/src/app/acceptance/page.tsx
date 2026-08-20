@@ -67,7 +67,7 @@ export default function AcceptancePage() {
   return (
     <TooltipProvider>
       <div className="h-screen flex flex-col overflow-hidden">
-        <AppHeader app="acceptance" state={state} wsConnected={connected} tick={tick}>
+        <AppHeader app="atem" state={state} wsConnected={connected} tick={tick}>
           <div className="ml-auto flex items-center gap-3 text-[12px]">
             <ClipboardList className="size-4 text-muted-foreground" />
             <span className="font-semibold">Acceptance</span>

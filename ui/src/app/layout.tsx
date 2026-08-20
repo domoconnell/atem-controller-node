@@ -6,8 +6,8 @@ const sans = Geist({ variable: '--font-sans', subsets: ['latin'] })
 const mono = Geist_Mono({ variable: '--font-mono', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'ATEM Controller',
-  description: 'SuperSource animation and transition engine',
+  title: 'Stage It Live',
+  description: 'Live production control — ATEM, mics, timers, surfaces',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
