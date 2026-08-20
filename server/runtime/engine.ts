@@ -66,6 +66,15 @@ export class Engine {
       this.store.recordMetrics(points.map((p) => ({ instanceId, metric: p.metric, ts: p.ts, value: p.value }))),
   }
 
+  /** Feed a status from a legacy/bridged stack (ATEM, ProPresenter, HyperDeck,
+   *  Sennheiser) into the same aggregate + per-instance topic the engine-run
+   *  connectors use, so overview widgets count them correctly. */
+  setExternalStatus(instanceId: string, state: InstanceStatus['state']): void {
+    this.statuses.set(instanceId, { instanceId, state, detail: null, since: Date.now(), attempt: 0, lastError: null, pollIntervalMs: null })
+    this.hub.publish(statusTopic(instanceId), this.statuses.get(instanceId))
+    this.hub.publish(SYS_STATUS, this.statusAggregate())
+  }
+
   private statusAggregate(): Record<string, string> {
     const out: Record<string, string> = {}
     for (const [id, s] of this.statuses) out[id] = s.state

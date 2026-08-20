@@ -63,11 +63,50 @@ if (connectorEngine) {
       const inst = sennInstances[idx]
       if (!inst) return
       connectorEngine.hub.publish(`mi:${inst.id}:channels`, { channels: dev.channels ?? [], deviceName: dev.deviceName, product: dev.product, online: dev.online })
-      connectorEngine.hub.publish(`mi:${inst.id}:$status`, { instanceId: inst.id, state: dev.online ? 'online' : (dev.reachable ? 'degraded' : 'offline'), detail: null, since: Date.now(), attempt: 0, lastError: null, pollIntervalMs: null })
+      connectorEngine.setExternalStatus(inst.id, dev.online ? 'online' : (dev.reachable ? 'degraded' : 'offline'))
     })
   }
   sennheiser.on('update', publishSenn)
   sennheiser.on('presence', publishSenn)
+
+  // Bridge the other legacy stacks (ATEM / ProPresenter / HyperDeck) onto the
+  // hub too, so their Surface widgets have live data during the migration. The
+  // instance ids match the migration (atem-1 / propresenter-1 / hyperdeck-1).
+  const status = (id, online, degraded = false) => connectorEngine.setExternalStatus(id, online ? 'online' : degraded ? 'degraded' : 'offline')
+
+  // ATEM: program / preview of the main M/E (the SuperSource host bus).
+  const publishAtem = () => {
+    const snap = atem.snapshot()
+    const me = snap.mixEffects?.[config.supersource.me] ?? snap.mixEffects?.[0] ?? null
+    connectorEngine.hub.publish('mi:atem-1:program', {
+      program: me?.programInput ?? null, preview: me?.previewInput ?? null,
+      connected: snap.connected || snap.simulated, simulated: snap.simulated,
+    })
+    status('atem-1', snap.connected || snap.simulated)
+  }
+  atem.on('stateChanged', publishAtem)
+  atem.on('connected', publishAtem)
+  atem.on('disconnected', publishAtem)
+
+  // ProPresenter: countdown timers (remaining seconds -> widget's `seconds`).
+  const publishPro = () => {
+    const snap = propresenter.snapshot()
+    connectorEngine.hub.publish('mi:propresenter-1:timers', {
+      timers: (snap.timers ?? []).map((t) => ({ name: t.name, seconds: Math.round(t.remaining ?? 0), state: t.state })),
+    })
+    status('propresenter-1', snap.connected)
+  }
+  propresenter.on('update', publishPro)
+
+  // HyperDeck: transport (status / timecode / clip / slot).
+  const publishHd = () => {
+    const snap = hyperdeck.snapshot()
+    connectorEngine.hub.publish('mi:hyperdeck-1:transport', { ...(snap.transport ?? {}) })
+    status('hyperdeck-1', snap.connected)
+  }
+  hyperdeck.on('transport', publishHd)
+  hyperdeck.on('connected', publishHd)
+  hyperdeck.on('disconnected', publishHd)
 }
 propresenter.start()
 sennheiser.start().catch((e) => console.error('[senn] start failed:', e.message))
