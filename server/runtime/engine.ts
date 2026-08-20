@@ -9,8 +9,10 @@ import { Hub } from './hub.js'
 /** Connector types still owned by the legacy JS stack (ported later). The
  *  engine lists them but does not run a second connection to them. */
 const LEGACY = new Set(['atem', 'hyperdeck', 'propresenter', 'sennheiser'])
-/** Connector types we never want as user connections (Dave's reference device). */
-const EXCLUDED = new Set(['demo'])
+/** Types that never appear as user connections: the demo device, and
+ *  Companion (it's the core control bridge, configured under Global, not a
+ *  monitored device). */
+const EXCLUDED = new Set(['demo', 'companion'])
 
 /** Config schemas for the connectors still on the legacy stack, so Settings
  *  renders a proper form for them (not a raw JSON box) ahead of the full port. */

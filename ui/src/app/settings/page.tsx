@@ -63,29 +63,39 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
   )
 }
 
-function GlobalForm({ settingKey, fields, settings, onSaved }: {
-  settingKey: string; fields: { key: string; label: string; type?: string }[]
-  settings: Record<string, unknown>; onSaved: () => void
-}) {
-  const initial = (settings[settingKey] as Record<string, unknown>) ?? {}
-  const [draft, setDraft] = useState<Record<string, unknown>>(initial)
-  const save = async () => {
-    await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [settingKey]: draft }) })
-    onSaved()
+function ConfigForm({ fields }: { fields: { path: string; label: string; hint?: string; type?: string }[] }) {
+  const [cfg, setCfg] = useState<Record<string, unknown> | null>(null)
+  const [restart, setRestart] = useState<string[]>([])
+  const [saved, setSaved] = useState(false)
+  useEffect(() => { fetch('/api/config').then((r) => r.json()).then((b) => setCfg(structuredClone(b.config))).catch(() => {}) }, [])
+  const get = (o: unknown, path: string): unknown => path.split('.').reduce((a: unknown, k) => (a == null ? undefined : (a as Record<string, unknown>)[k]), o)
+  const set = (o: Record<string, unknown>, path: string, v: unknown) => {
+    const ks = path.split('.'); let cur: Record<string, unknown> = o
+    ks.slice(0, -1).forEach((k, i) => { if (cur[k] == null) cur[k] = /^\d+$/.test(ks[i + 1]) ? [] : {}; cur = cur[k] as Record<string, unknown> })
+    cur[ks[ks.length - 1]] = v
   }
+  const save = async () => {
+    if (!cfg) return
+    const r = await fetch('/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) })
+    const b = await r.json().catch(() => ({}))
+    setRestart(b.restartRequired ?? []); setSaved(true); setTimeout(() => setSaved(false), 2000)
+  }
+  if (!cfg) return <div className="text-sm text-muted-foreground">Loading…</div>
   return (
-    <div className="space-y-3 max-w-md">
-      <div className="grid grid-cols-1 gap-3">
+    <div className="space-y-4 max-w-2xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
         {fields.map((f) => (
-          <label key={f.key} className="flex flex-col gap-1">
+          <label key={f.path} className="flex flex-col gap-1">
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{f.label}</span>
-            <input type={f.type ?? 'text'} value={draft[f.key] === undefined ? '' : String(draft[f.key])}
-              onChange={(e) => setDraft({ ...draft, [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value })}
-              className="bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px] font-mono outline-none" />
+            <input type={f.type ?? 'text'} value={(get(cfg, f.path) as string | number | undefined) ?? ''}
+              onChange={(e) => { const c = structuredClone(cfg); set(c, f.path, f.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value); setCfg(c) }}
+              className="bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px] font-mono outline-none focus:border-border" />
+            {f.hint && <span className="text-[10.5px] text-muted-foreground/50 leading-snug">{f.hint}</span>}
           </label>
         ))}
       </div>
-      <button onClick={save} className="inline-flex items-center gap-1.5 text-[12px] font-medium rounded-md px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-90"><Save className="size-3.5" /> Save</button>
+      {restart.length > 0 && <div className="text-[12px] text-busy">Saved — restart needed for: <span className="font-mono">{restart.join(', ')}</span></div>}
+      <button onClick={save} className="inline-flex items-center gap-1.5 text-[12px] font-medium rounded-md px-3 py-1.5 bg-primary text-primary-foreground hover:opacity-90"><Save className="size-3.5" /> {saved ? 'Saved' : 'Save'}</button>
     </div>
   )
 }
@@ -94,16 +104,14 @@ export default function SettingsPage() {
   const { state, connected, tick } = useAtemState()
   const [instances, setInstances] = useState<Instance[]>([])
   const [types, setTypes] = useState<ConnectorType[]>([])
-  const [settings, setSettings] = useState<Record<string, unknown>>({})
   const [sel, setSel] = useState('g:web')
 
   const load = useCallback(async () => {
-    const [i, t, s] = await Promise.all([
+    const [i, t] = await Promise.all([
       fetch('/api/instances').then((r) => r.json()).catch(() => ({ instances: [] })),
       fetch('/api/connector-types').then((r) => r.json()).catch(() => ({ types: [] })),
-      fetch('/api/settings').then((r) => r.json()).catch(() => ({ settings: {} })),
     ])
-    setInstances(i.instances ?? []); setTypes(t.types ?? []); setSettings(s.settings ?? {})
+    setInstances(i.instances ?? []); setTypes(t.types ?? [])
   }, [])
   useEffect(() => { load(); const h = setInterval(load, 3000); return () => clearInterval(h) }, [load])
 
@@ -154,8 +162,16 @@ export default function SettingsPage() {
           {/* detail pane */}
           <main className="flex-1 min-h-0 overflow-y-auto p-6">
             <div className="max-w-[760px]">
-              {sel === 'g:web' && (<><h1 className="text-xl font-bold mb-1">Web UI</h1><p className="text-sm text-muted-foreground mb-5">How this dashboard is served.</p><GlobalForm settingKey="web" fields={[{ key: 'port', label: 'Port', type: 'number' }]} settings={settings} onSaved={load} /></>)}
-              {sel === 'g:companion' && (<><h1 className="text-xl font-bold mb-1">Companion</h1><p className="text-sm text-muted-foreground mb-5">The control-surface bridge — receives commands (OSC) and gets our status variables pushed back. Not a monitored device.</p><GlobalForm settingKey="companion" fields={[{ key: 'host', label: 'Host' }, { key: 'port', label: 'Port', type: 'number' }, { key: 'varPrefix', label: 'Variable prefix' }]} settings={settings} onSaved={load} /></>)}
+              {sel === 'g:web' && (<><h1 className="text-xl font-bold mb-1">Web UI</h1><p className="text-sm text-muted-foreground mb-5">How this dashboard is served.</p><ConfigForm fields={[{ path: 'web.port', label: 'Port', type: 'number', hint: 'The port this dashboard is served on' }]} /></>)}
+              {sel === 'g:companion' && (<><h1 className="text-xl font-bold mb-1">Companion</h1><p className="text-sm text-muted-foreground mb-5">The control-surface bridge — receives commands (OSC) and gets our status variables pushed back. Not a monitored device.</p><ConfigForm fields={[
+                { path: 'companion.host', label: 'Companion IP' },
+                { path: 'companion.port', label: 'Companion OSC API port', type: 'number', hint: 'Where we push status variables over OSC (default 12321)' },
+                { path: 'companion.httpPort', label: 'Companion HTTP API port', type: 'number', hint: 'For HTTP variable/button control (default 8000)' },
+                { path: 'companion.varPrefix', label: 'Variable prefix', hint: 'Prepended to every variable we write, e.g. sil_' },
+                { path: 'osc.listenPort', label: 'OSC command port (receive)', type: 'number', hint: 'Companion sends /goto, /sil here (default 9000)' },
+                { path: 'osc.feedback.0.host', label: 'Feedback target IP', hint: 'Usually the Companion machine' },
+                { path: 'osc.feedback.0.port', label: 'Feedback OSC port (send)', type: 'number', hint: 'Companion Generic OSC listener (default 9001)' },
+              ]} /></>)}
               {sel.startsWith('c:') && (() => {
                 const typeId = sel.slice(2); const list = byType.get(typeId) ?? []; const meta = types.find((t) => t.typeId === typeId)
                 return (
