@@ -5,12 +5,14 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw } from 'lucide-react'
 
 interface Person { name: string; micId?: string }
-interface Segment { id: string; title: string; time?: string; people: Person[] }
-interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null }
+interface Segment { id: string; title: string; time?: string; people: Person[]; proItemId?: string }
+interface ProLink { playlistId: string; playlistName?: string; lastSync?: number }
+interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink }
 interface MicDef { id: string; label: string }
+interface Playlist { id: string; name: string; path?: string }
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
@@ -46,14 +48,17 @@ function useServices() {
     return b.services as Service[]
   }, [])
   const remove = useCallback(async (id: string) => { const b = await (await fetch(`/api/features/services/${id}`, { method: 'DELETE' })).json(); setServices(b.services ?? []) }, [])
-  return { services, save, remove }
+  const syncNow = useCallback(async (id: string) => { const b = await (await fetch(`/api/features/services/${id}/sync`, { method: 'POST' })).json(); if (b.services) setServices(b.services) }, [])
+  // Poll so server-side ProPresenter syncs (title/order changes) flow into the UI.
+  useEffect(() => { const h = setInterval(load, 5000); return () => clearInterval(h) }, [load])
+  return { services, save, remove, syncNow }
 }
 
 const sc = 'bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]'
 
 export default function RunsheetPage() {
   const { state, connected, tick } = useAtemState()
-  const { services, save, remove } = useServices()
+  const { services, save, remove, syncNow } = useServices()
   const mics = useMicDefs()
   const [selId, setSelId] = useState<string | null>(null)
   const svc = services.find((s) => s.id === selId) ?? services[0] ?? null
@@ -96,6 +101,10 @@ export default function RunsheetPage() {
           <ServicePicker services={services} current={svc} onPick={setSelId}
             onNew={async () => { const list = await save({ name: 'New service', segments: [] }); const created = list[list.length - 1]; if (created) setSelId(created.id) }} />
           {svc && <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-40')} />}
+          {svc && <ProLinkControl link={svc.proLink}
+            onLink={async (pl) => { await save({ id: svc.id, proLink: { playlistId: pl.id, playlistName: pl.path || pl.name } }); await syncNow(svc.id) }}
+            onUnlink={() => save({ id: svc.id, proLink: null as unknown as undefined })}
+            onResync={() => syncNow(svc.id)} />}
           <label className="cursor-pointer inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 border border-border hover:bg-accent" title="Import a CSV: columns Segment, Time, Person, Mic">
             <Upload className="size-3.5" /> CSV
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={onImport} />
@@ -114,7 +123,7 @@ export default function RunsheetPage() {
           ) : (
             <div className="max-w-[900px] mx-auto space-y-2">
               {segments.map((seg, i) => (
-                <SegmentRow key={seg.id} seg={seg} idx={i} count={segments.length} state={active} mics={mics}
+                <SegmentRow key={seg.id} seg={seg} idx={i} count={segments.length} state={active} mics={mics} synced={!!seg.proItemId}
                   onChange={(s) => setSegments(segments.map((x, j) => j === i ? s : x))}
                   onRemove={() => setSegments(segments.filter((_, j) => j !== i))}
                   onMove={(dir) => move(i, dir)}
@@ -132,8 +141,8 @@ export default function RunsheetPage() {
   )
 }
 
-function SegmentRow({ seg, idx, count, state, mics, onChange, onRemove, onMove, onGoto }: {
-  seg: Segment; idx: number; count: number; state: number | null; mics: { id: string; label: string }[]
+function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, onMove, onGoto }: {
+  seg: Segment; idx: number; count: number; state: number | null; mics: { id: string; label: string }[]; synced?: boolean
   onChange: (s: Segment) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void; onGoto: () => void
 }) {
   const isNow = state === idx, isNext = state != null && state + 1 === idx
@@ -141,15 +150,29 @@ function SegmentRow({ seg, idx, count, state, mics, onChange, onRemove, onMove, 
   return (
     <div className={cn('rounded-xl border p-3 space-y-2', isNow ? 'border-live bg-live/[0.06]' : isNext ? 'border-busy/60 bg-busy/[0.04]' : 'border-border/60 bg-card')}>
       <div className="flex items-center gap-2">
-        <div className="flex flex-col shrink-0 -my-1">
-          <button onClick={() => onMove(-1)} disabled={idx === 0} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
-          <button onClick={() => onMove(1)} disabled={idx === count - 1} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
-        </div>
+        {synced ? (
+          // Order & membership come from ProPresenter — no reorder handles.
+          <span className="w-4 shrink-0" />
+        ) : (
+          <div className="flex flex-col shrink-0 -my-1">
+            <button onClick={() => onMove(-1)} disabled={idx === 0} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
+            <button onClick={() => onMove(1)} disabled={idx === count - 1} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
+          </div>
+        )}
         <button onClick={onGoto} className={cn('shrink-0 w-16 text-center text-[9px] font-black uppercase tracking-wider rounded px-1 py-0.5', isNow ? 'bg-live text-black' : isNext ? 'bg-busy text-black' : 'bg-muted/60 text-muted-foreground hover:bg-muted')}>
           {isNow ? 'NOW' : isNext ? 'NEXT' : `#${idx + 1}`}</button>
-        <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Segment title" className={cn(sc, 'flex-1 font-semibold')} />
+        {synced ? (
+          <div className={cn(sc, 'flex-1 font-semibold flex items-center gap-2 bg-transparent border-transparent px-0')}>
+            <span className="truncate">{seg.title}</span>
+            <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-primary/15 text-primary" title="Synced from ProPresenter">PP</span>
+          </div>
+        ) : (
+          <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Segment title" className={cn(sc, 'flex-1 font-semibold')} />
+        )}
         <input value={seg.time ?? ''} onChange={(e) => onChange({ ...seg, time: e.target.value })} placeholder="10:00" className={cn(sc, 'w-20 tabular-nums')} />
-        <button onClick={onRemove} className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground"><Trash2 className="size-3.5" /></button>
+        {synced
+          ? <span className="w-7.5 shrink-0" />
+          : <button onClick={onRemove} className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground"><Trash2 className="size-3.5" /></button>}
       </div>
       <div className="pl-7 flex flex-wrap gap-1.5">
         {seg.people.map((p, i) => (
@@ -164,6 +187,48 @@ function SegmentRow({ seg, idx, count, state, mics, onChange, onRemove, onMove, 
         ))}
         <button onClick={() => setPeople([...seg.people, { name: '' }])} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground rounded-md border border-dashed border-border/60 px-2 py-1 hover:bg-accent"><Plus className="size-3" /> person</button>
       </div>
+    </div>
+  )
+}
+
+/** Link a service to a live ProPresenter playlist. When linked, the server keeps
+ *  segment titles + order in sync with PP; people/mics/times are layered on here. */
+function ProLinkControl({ link, onLink, onUnlink, onResync }: {
+  link?: ProLink; onLink: (pl: Playlist) => void; onUnlink: () => void; onResync: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [playlists, setPlaylists] = useState<Playlist[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const openMenu = () => {
+    setOpen((o) => !o)
+    if (playlists) return
+    fetch('/api/features/propresenter/playlists').then((r) => r.json()).then((b) => {
+      if (b.ok) { setPlaylists(b.playlists ?? []); setErr(null) } else setErr(b.error || 'ProPresenter unreachable')
+    }).catch((e) => setErr(String(e)))
+  }
+  if (link?.playlistId) {
+    return (
+      <div className="inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 pl-2 pr-1 py-1 text-[12px] text-primary" title="Synced from ProPresenter">
+        <Link2 className="size-3.5 shrink-0" />
+        <span className="max-w-40 truncate font-medium">{link.playlistName || 'ProPresenter'}</span>
+        <button onClick={onResync} className="p-1 rounded hover:bg-primary/20" title="Re-sync now"><RefreshCw className="size-3" /></button>
+        <button onClick={onUnlink} className="p-1 rounded hover:bg-destructive/15 hover:text-destructive" title="Unlink"><Link2Off className="size-3" /></button>
+      </div>
+    )
+  }
+  return (
+    <div className="relative">
+      <button onClick={openMenu} className="inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 border border-border hover:bg-accent" title="Link this service to a ProPresenter playlist">
+        <Link2 className="size-3.5" /> Link PP
+      </button>
+      {open && <div className="absolute left-0 top-full mt-1 z-50 w-64 rounded-lg border border-border bg-popover shadow-2xl p-1 max-h-72 overflow-y-auto" onMouseLeave={() => setOpen(false)}>
+        {err && <div className="text-[11px] text-destructive px-2 py-2">{err}</div>}
+        {!err && playlists == null && <div className="text-[11px] text-muted-foreground px-2 py-2">Loading playlists…</div>}
+        {!err && playlists?.length === 0 && <div className="text-[11px] text-muted-foreground px-2 py-2">No playlists found in ProPresenter.</div>}
+        {playlists?.map((pl) => (
+          <button key={pl.id} onClick={() => { onLink(pl); setOpen(false) }} className="w-full text-left text-[12px] rounded-md px-2 py-1.5 hover:bg-accent truncate">{pl.path || pl.name}</button>
+        ))}
+      </div>}
     </div>
   )
 }

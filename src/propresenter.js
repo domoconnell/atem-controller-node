@@ -159,6 +159,53 @@ export class ProPresenter extends EventEmitter {
       timers: [...this.timers.values()],
     }
   }
+
+  /**
+   * Fetch the ProPresenter playlist tree, flattened to the playlists a service
+   * can link to. Groups are recursed into and contribute a "Group / Name" path.
+   *   GET /v1/playlists -> { items: [{ id:{uuid,name}, field_type, children? }] }
+   * Returns [{ id, name, path }]. Empty array if PP is not configured.
+   */
+  async getPlaylists() {
+    const base = this.baseUrl
+    if (!base) return []
+    const root = await this._get(`${base}/v1/playlists`)
+    const out = []
+    const walk = (nodes, prefix) => {
+      for (const n of nodes ?? []) {
+        const name = n.id?.name ?? n.name ?? '?'
+        const uuid = n.id?.uuid ?? n.uuid
+        const kind = String(n.field_type ?? n.type ?? '').toLowerCase()
+        const path = prefix ? `${prefix} / ${name}` : name
+        if (Array.isArray(n.children) && (kind.includes('group') || n.children.length)) {
+          walk(n.children, path)
+        } else if (uuid) {
+          out.push({ id: uuid, name, path })
+        }
+      }
+    }
+    walk(root?.items ?? (Array.isArray(root) ? root : []), '')
+    return out
+  }
+
+  /**
+   * Fetch one playlist's ordered items as segment seeds.
+   *   GET /v1/playlist/{id} -> { items: [{ id:{uuid,name,index}, type }] }
+   * Returns [{ uuid, name, index }] in playlist order, or null if PP is not
+   * configured (so a temporary outage never wipes a linked runsheet).
+   */
+  async getPlaylistItems(playlistId) {
+    const base = this.baseUrl
+    if (!base || !playlistId) return null
+    const pl = await this._get(`${base}/v1/playlist/${encodeURIComponent(playlistId)}`)
+    const items = (pl?.items ?? []).map((it, i) => ({
+      uuid: it.id?.uuid ?? it.uuid ?? `idx${i}`,
+      name: it.id?.name ?? it.name ?? `Item ${i + 1}`,
+      index: it.id?.index ?? i,
+    }))
+    items.sort((a, b) => a.index - b.index)
+    return items
+  }
 }
 
 /** "0:04:37" / "04:37" / "-0:00:05" -> seconds (negative in overrun). */

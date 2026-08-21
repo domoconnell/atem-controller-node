@@ -123,6 +123,20 @@ export class WebServer {
       res.json({ ok: true, services: this.store.listServices() })
     })
     app.delete('/api/features/services/:id', (req, res) => { this.store?.deleteService(req.params.id); res.json({ ok: true, services: this.store?.listServices() ?? [] }) })
+
+    // ProPresenter playlists — for linking a service to a live playlist so its
+    // segment list stays in sync with ProPresenter (see startRunsheetSync).
+    app.get('/api/features/propresenter/playlists', async (_req, res) => {
+      try { res.json({ ok: true, playlists: (await this.propresenter?.getPlaylists?.()) ?? [] }) }
+      catch (e) { res.status(502).json({ ok: false, error: e.message, playlists: [] }) }
+    })
+    // Force an immediate re-sync of one linked service (e.g. right after linking).
+    app.post('/api/features/services/:id/sync', async (req, res) => {
+      const svc = this.store?.listServices().find((s) => s.id === req.params.id)
+      if (!svc) return res.status(404).json({ ok: false, error: 'no such service' })
+      try { await this.syncService(svc) } catch (e) { return res.status(502).json({ ok: false, error: e.message }) }
+      res.json({ ok: true, services: this.store.listServices() })
+    })
     app.put('/api/settings', (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
       const body = req.body ?? {}
@@ -404,6 +418,55 @@ export class WebServer {
     this.server.listen(config.web.port, () =>
       console.log(`[web] status UI on http://0.0.0.0:${config.web.port}`)
     )
+    this.startRunsheetSync()
+  }
+
+  /** Live ProPresenter -> Services link. Every few seconds, each service with a
+   *  proLink re-fetches its linked playlist and reconciles segments: ProPresenter
+   *  is the source of truth for the item list (title + order), while locally
+   *  added people, mics and times are preserved by matching the PP item uuid. */
+  startRunsheetSync() {
+    if (!this.store || !this.propresenter?.getPlaylistItems) return
+    const tick = async () => {
+      try {
+        for (const svc of this.store.listServices()) {
+          if (svc.proLink?.playlistId) await this.syncService(svc).catch(() => {})
+        }
+      } catch { /* store hiccup; retry next tick */ }
+    }
+    this._runsheetSync = setInterval(tick, 4000)
+    tick()
+  }
+
+  /** Reconcile one linked service's segments against its ProPresenter playlist.
+   *  Returns true if anything changed (and was saved). Leaves segments intact
+   *  when PP is unreachable, so an outage never wipes the runsheet. */
+  async syncService(svc) {
+    const link = svc.proLink
+    if (!link?.playlistId) return false
+    const items = await this.propresenter.getPlaylistItems(link.playlistId)
+    if (!items) return false // PP not configured — keep existing segments
+    const old = svc.segments ?? []
+    const byPro = new Map(old.filter((s) => s.proItemId).map((s) => [s.proItemId, s]))
+    const manual = old.filter((s) => !s.proItemId) // local-only segments, kept & appended
+    const synced = items.map((it) => {
+      const prev = byPro.get(it.uuid)
+      return {
+        id: prev?.id ?? `seg_${Math.random().toString(36).slice(2, 10)}`,
+        proItemId: it.uuid,
+        title: it.name,             // PP owns the title
+        time: prev?.time,           // preserved local augmentation
+        people: prev?.people ?? [], // preserved local augmentation
+      }
+    })
+    const segments = [...synced, ...manual]
+    let activeIndex = svc.activeIndex
+    if (activeIndex != null && activeIndex >= segments.length) activeIndex = segments.length ? segments.length - 1 : null
+    // Only write when something actually changed, to avoid a broadcast storm.
+    if (JSON.stringify({ s: old, a: svc.activeIndex }) === JSON.stringify({ s: segments, a: activeIndex })) return false
+    const { id, name = 'Service', sortOrder = 0, ...rest } = svc
+    this.store.putService(id, name, { ...rest, segments, activeIndex, proLink: { ...link, lastSync: Date.now() } }, sortOrder)
+    return true
   }
 
   scheduleBroadcast() {
