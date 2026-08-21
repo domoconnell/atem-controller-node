@@ -31,13 +31,8 @@ function useClock() {
   return t
 }
 function useInstances(): Inst[] {
-  const [xs, setXs] = useState<Inst[]>([])
-  useEffect(() => {
-    let live = true
-    const load = () => fetch('/api/instances').then((r) => r.json()).then((b) => { if (live) setXs(b.instances ?? []) }).catch(() => {})
-    load(); const h = setInterval(load, 15000); return () => { live = false; clearInterval(h) }
-  }, [])
-  return xs
+  const d = useTopic('sys:instances') as { instances?: Inst[] } | null
+  return d?.instances ?? []
 }
 
 function Card({ title, href, accent, children }: { title: string; href?: string; accent?: string; children: React.ReactNode }) {

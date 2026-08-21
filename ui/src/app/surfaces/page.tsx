@@ -31,10 +31,18 @@ let widgetSeq = 0
 /** First w×h cell (row-major) in a cols×rows grid that no existing item covers,
  *  so a newly added widget lands in empty space instead of overlapping. Falls
  *  back to 0,0 when the grid is full (nothing free) — still visible + movable. */
-function firstFreeCell(layout: Layout[], cols: number, rows: number, w: number, h: number): { x: number; y: number } {
-  const hits = (x: number, y: number) => layout.some((l) => x < l.x + l.w && x + w > l.x && y < l.y + l.h && y + h > l.y)
-  for (let y = 0; y + h <= rows; y++) for (let x = 0; x + w <= cols; x++) if (!hits(x, y)) return { x, y }
-  return { x: 0, y: 0 }
+/** Find room for a new widget. Tries the requested size, then progressively
+ *  smaller, to slot into whatever gap exists; if the grid is genuinely full it
+ *  appends a fresh row at the bottom (edit mode scrolls, so it stays reachable)
+ *  rather than dropping the widget hidden behind the top-left one. */
+function firstFreeCell(layout: Layout[], cols: number, rows: number, w: number, h: number): { x: number; y: number; w: number; h: number } {
+  const hits = (x: number, y: number, ww: number, hh: number) => layout.some((l) => x < l.x + l.w && x + ww > l.x && y < l.y + l.h && y + hh > l.y)
+  const sizes: [number, number][] = [[w, h], [Math.min(w, 4), Math.min(h, 3)], [3, 2], [2, 2], [2, 1]]
+  for (const [ww, hh] of sizes) {
+    for (let y = 0; y + hh <= rows; y++) for (let x = 0; x + ww <= cols; x++) if (!hits(x, y, ww, hh)) return { x, y, w: ww, h: hh }
+  }
+  const maxY = layout.reduce((m, l) => Math.max(m, l.y + l.h), 0)
+  return { x: 0, y: maxY, w: Math.min(w, cols), h }
 }
 
 export default function SurfacesPage() {
@@ -95,9 +103,8 @@ export default function SurfacesPage() {
     if (target === 'main') {
       setSurface((s) => {
         const g = gridDims(s.display)
-        const w = Math.min(def.defaultSize.w, g.cols), h = Math.min(def.defaultSize.h, g.rows)
-        const { x, y } = firstFreeCell(s.main.layout, g.cols, g.rows, w, h)
-        return { ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, x, y, w, h }] } }
+        const cell = firstFreeCell(s.main.layout, g.cols, g.rows, Math.min(def.defaultSize.w, g.cols), Math.min(def.defaultSize.h, g.rows))
+        return { ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, ...cell }] } }
       })
     } else setRegion(target, (w) => (EDGES as string[]).includes(target) ? [placement] : [...w, placement]) // one widget per pull-out drawer
     setAdding(false); setSel({ region: target, i })
@@ -217,14 +224,16 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
   const cellW = w > 0 ? w / cols : 44
   const lmap = Object.fromEntries(surface.main.layout.map((l) => [l.i, l]))
   return (
-    <div ref={ref} className="flex-1 min-h-0 overflow-hidden relative">
+    <div ref={ref} className={cn('flex-1 min-h-0 relative', edit ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden')}>
       {edit && w > 0 && h > 0 && (
         <div className="absolute inset-0 pointer-events-none z-0"
           style={{ backgroundSize: `${cellW}px ${rowH}px`, backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)', opacity: 0.5 }} />
       )}
       {w > 0 && h > 0 && (
+        // Edit mode lets the grid grow past the viewport (scroll) so a widget added
+        // onto a full surface lands below and can be dragged up; view mode is fixed.
         <Grid key={surface.id || 'new'} className="layout relative z-10" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }}
-          rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded
+          rowHeight={rowH} maxRows={edit ? undefined : rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} preventCollision isBounded={!edit}
           isDraggable={edit} isResizable={edit} draggableHandle=".widget-drag-handle" draggableCancel=".widget-no-drag"
           onLayoutChange={(l: Layout[]) => onLayout(l)}>
           {surface.main.widgets.map((p) => (

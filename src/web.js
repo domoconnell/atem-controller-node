@@ -94,6 +94,7 @@ export class WebServer {
       const id = b.id || `mic_${Math.random().toString(36).slice(2, 10)}`
       const { id: _i, label = 'Mic', sortOrder = 0, ...data } = b
       this.store.putMic(id, label, data, sortOrder)
+      this.publishMics()
       res.json({ ok: true, mics: this.store.listMics() })
     })
     app.patch('/api/features/mics/:id', (req, res) => {
@@ -101,9 +102,10 @@ export class WebServer {
       const cur = this.store.listMics().find((m) => m.id === req.params.id) ?? {}
       const { id: _i, label = cur.label ?? 'Mic', sortOrder = cur.sortOrder ?? 0, ...data } = { ...cur, ...(req.body ?? {}) }
       this.store.putMic(req.params.id, label, data, sortOrder)
+      this.publishMics()
       res.json({ ok: true, mics: this.store.listMics() })
     })
-    app.delete('/api/features/mics/:id', (req, res) => { this.store?.deleteMic(req.params.id); res.json({ ok: true, mics: this.store?.listMics() ?? [] }) })
+    app.delete('/api/features/mics/:id', (req, res) => { this.store?.deleteMic(req.params.id); this.publishMics(); res.json({ ok: true, mics: this.store?.listMics() ?? [] }) })
 
     // ---- Runsheet services (timed segments with people + mics) ----
     app.get('/api/features/services', (_req, res) => res.json({ ok: true, services: this.store?.listServices() ?? [] }))
@@ -162,6 +164,7 @@ export class WebServer {
       if (!b.typeId || !b.name) return res.status(400).json({ ok: false, error: 'typeId and name required' })
       const inst = this.store.createInstance({ typeId: b.typeId, name: b.name, config: b.config ?? {}, enabled: b.enabled !== false, allowControl: !!b.allowControl, simulate: !!b.simulate })
       await this.connectorEngine?.reconcile(inst.id)
+      this.publishInstances()
       res.json({ ok: true, instance: inst })
     })
     app.patch('/api/instances/:id', async (req, res) => {
@@ -176,12 +179,14 @@ export class WebServer {
       if (inst?.typeId === 'hyperdeck') this.hyperdeck?.reconfigure?.(cfg)
       else if (inst?.typeId === 'propresenter') this.propresenter?.reconfigure?.(cfg)
       else if (inst?.typeId === 'atem') this.atem?.reconfigure?.(cfg)
+      this.publishInstances()
       res.json({ ok: true, instance: inst })
     })
     app.delete('/api/instances/:id', async (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })
       this.store.deleteInstance(req.params.id)
       await this.connectorEngine?.reconcile(req.params.id)
+      this.publishInstances()
       res.json({ ok: true })
     })
     app.post('/api/instances/:id/commands/:command', async (req, res) => {
@@ -427,7 +432,9 @@ export class WebServer {
       console.log(`[web] status UI on http://0.0.0.0:${config.web.port}`)
     )
     this.startRunsheetSync()
-    this.publishServices() // seed the hub snapshot so widgets have data on connect
+    this.publishServices() // seed the hub snapshots so widgets have data on connect
+    this.publishMics()
+    this.publishInstances()
   }
 
   /** Push the full services list onto the realtime hub so every runsheet widget
@@ -435,6 +442,22 @@ export class WebServer {
   publishServices() {
     try { this.connectorEngine?.hub?.publish('feature:services', { services: this.store?.listServices() ?? [] }) }
     catch { /* hub optional (engine may be absent) */ }
+  }
+
+  /** Push the mic definitions (incl. their live cue) onto the hub, so a cue
+   *  change from the runsheet reflects on every widget instantly rather than
+   *  after the next poll. */
+  publishMics() {
+    try { this.connectorEngine?.hub?.publish('feature:mics', { mics: this.store?.listMics() ?? [] }) }
+    catch { /* hub optional */ }
+  }
+
+  /** Push the connector instance list (id/typeId/name) onto the hub so the
+   *  dashboard and other views never HTTP-poll /api/instances; it changes only
+   *  when a connection is added, edited or removed. */
+  publishInstances() {
+    try { this.connectorEngine?.hub?.publish('sys:instances', { instances: this.connectorEngine?.listInstances() ?? [] }) }
+    catch { /* hub optional */ }
   }
 
   /** Live ProPresenter -> Services link. Every few seconds, each service with a

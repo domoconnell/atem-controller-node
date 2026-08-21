@@ -4,6 +4,7 @@ import { useAtemState } from '@/hooks/use-atem-state'
 import { AppHeader } from '@/components/app-header'
 import { SchemaForm } from '@/components/settings/schema-form'
 import { MicComposite, MicEditor, AddMicButton, useMics, type Mic as MicDef, type CueState } from '@/components/mics/mic-composite'
+import { useTopic } from '@/hooks/use-topic'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -123,18 +124,15 @@ function NavItem({ id, icon: Icon, label, led, active, onSelect }: { id: string;
 
 export default function SettingsPage() {
   const { state, connected, tick } = useAtemState()
-  const [instances, setInstances] = useState<Instance[]>([])
+  // Instances (with live status) arrive over the shared WebSocket — the engine
+  // republishes sys:instances on every status transition, so the LEDs stay live
+  // without polling. The connector-type catalogue is static; fetch it once.
+  const instances = (useTopic('sys:instances') as { instances?: Instance[] } | null)?.instances ?? []
   const [types, setTypes] = useState<ConnectorType[]>([])
   const [sel, setSel] = useState('g:web')
 
-  const load = useCallback(async () => {
-    const [i, t] = await Promise.all([
-      fetch('/api/instances').then((r) => r.json()).catch(() => ({ instances: [] })),
-      fetch('/api/connector-types').then((r) => r.json()).catch(() => ({ types: [] })),
-    ])
-    setInstances(i.instances ?? []); setTypes(t.types ?? [])
-  }, [])
-  useEffect(() => { load(); const h = setInterval(load, 3000); return () => clearInterval(h) }, [load])
+  useEffect(() => { fetch('/api/connector-types').then((r) => r.json()).then((b) => setTypes(b.types ?? [])).catch(() => {}) }, [])
+  const noop = useCallback(() => {}, []) // instance edits refresh via the WS push
 
   const byType = useMemo(() => { const m = new Map<string, Instance[]>(); for (const i of instances) { const a = m.get(i.typeId) ?? []; a.push(i); m.set(i.typeId, a) } return m }, [instances])
   const typeOrder = useMemo(() => {
@@ -151,9 +149,8 @@ export default function SettingsPage() {
   const addInstance = async (typeId: string) => {
     const n = (byType.get(typeId)?.length ?? 0) + 1
     await fetch('/api/instances', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ typeId, name: `${nameOf(typeId)} ${n}`, simulate: true }) })
-    load()
   }
-  const del = async (id: string) => { await fetch(`/api/instances/${id}`, { method: 'DELETE' }); load() }
+  const del = async (id: string) => { await fetch(`/api/instances/${id}`, { method: 'DELETE' }) }
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -194,7 +191,7 @@ export default function SettingsPage() {
                     </div>
                     {meta?.description && <p className="text-sm text-muted-foreground mb-5 max-w-xl">{meta.description}</p>}
                     <div className="space-y-3">
-                      {list.map((i) => <InstanceCard key={i.id} inst={i} schema={schemaOf(typeId)} liveState={stateOf(i)} onSaved={load} onDelete={() => del(i.id)} />)}
+                      {list.map((i) => <InstanceCard key={i.id} inst={i} schema={schemaOf(typeId)} liveState={stateOf(i)} onSaved={noop} onDelete={() => del(i.id)} />)}
                       <button onClick={() => addInstance(typeId)} className="w-full flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground rounded-xl border border-dashed border-border/60 py-3 hover:border-border hover:text-foreground">
                         <Plus className="size-4" /> Add {nameOf(typeId)} connection
                       </button>
@@ -217,8 +214,7 @@ export default function SettingsPage() {
 function MicsSettings() {
   const { mics, save, remove } = useMics()
   const [editing, setEditing] = useState<Partial<MicDef> | null>(null)
-  const [instances, setInstances] = useState<{ id: string; typeId: string; name: string }[]>([])
-  useEffect(() => { fetch('/api/instances').then((r) => r.json()).then((b) => setInstances(b.instances ?? [])).catch(() => {}) }, [])
+  const instances = (useTopic('sys:instances') as { instances?: { id: string; typeId: string; name: string }[] } | null)?.instances ?? []
   const sennInstances = instances.filter((i) => i.typeId === 'sennheiser')
   const digicoInstances = instances.filter((i) => i.typeId === 'digico')
   return (

@@ -1,6 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useAtemState } from '@/hooks/use-atem-state'
+import { useTopic } from '@/hooks/use-topic'
 import { AppHeader } from '@/components/app-header'
 import { MicCard } from '@/components/mics/mic-card'
 import { MicComposite, MicEditor, AddMicButton, useMics, type Mic, type CueState } from '@/components/mics/mic-composite'
@@ -20,8 +21,7 @@ export default function MicsPage() {
   const { state, connected, tick, senn, wire, wireVersion, clearWire } = useAtemState()
   const { mics, save, remove } = useMics()
   const [editing, setEditing] = useState<Partial<Mic> | null>(null)
-  const [instances, setInstances] = useState<{ id: string; typeId: string; name: string }[]>([])
-  useEffect(() => { fetch('/api/instances').then((r) => r.json()).then((b) => setInstances(b.instances ?? [])).catch(() => {}) }, [])
+  const instances = (useTopic('sys:instances') as { instances?: { id: string; typeId: string; name: string }[] } | null)?.instances ?? []
   const sennInstances = instances.filter((i) => i.typeId === 'sennheiser')
   const digicoInstances = instances.filter((i) => i.typeId === 'digico')
 

@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LayoutElement, TimerLayout, TimerInfo } from '@/lib/designer-types'
 import { newElement, slug, type ElementType } from '@/lib/designer-types'
-import { fetchLayouts, saveLayout, deleteLayout, fetchTimers } from '@/lib/api'
+import { fetchLayouts, saveLayout, deleteLayout } from '@/lib/api'
 import { useAtemState } from '@/hooks/use-atem-state'
+import { useTopic } from '@/hooks/use-topic'
 import { AppHeader } from '@/components/app-header'
 import { ElementCanvas } from '@/components/designer/element-canvas'
 import { ElementProps } from '@/components/designer/element-props'
@@ -21,7 +22,8 @@ export default function DesignerPage() {
   const [current, setCurrent] = useState<TimerLayout | null>(null)
   const [saved, setSaved] = useState<string>('')          // JSON of last-saved state
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [timers, setTimers] = useState<TimerInfo[]>([])
+  // ProPresenter timers stream live over the shared WebSocket — no polling.
+  const timers = ((useTopic('mi:propresenter-1:timers') as { timers?: TimerInfo[] } | null)?.timers) ?? []
   const { state: liveState, connected: wsConnected, tick } = useAtemState()
   const ppConnected = liveState?.propresenter?.configured ? liveState.propresenter.connected : null
   const [saving, setSaving] = useState(false)
@@ -35,12 +37,6 @@ export default function DesignerPage() {
       setLayouts(l)
       if (l.length && !current) load(l[0])
     })
-    const timerPoll = () => fetchTimers().then((s) => {
-      setTimers(s.timers as TimerInfo[])
-    }).catch(() => {})
-    timerPoll()
-    const iv = setInterval(timerPoll, 5000)
-    return () => clearInterval(iv)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -60,6 +60,7 @@ export class Engine {
       this.statuses.set(status.instanceId, status)
       this.hub.publish(statusTopic(status.instanceId), status)
       this.hub.publish(SYS_STATUS, this.statusAggregate())
+      this.publishInstanceList()
     },
     publishSystem: (topic, payload) => this.hub.publish(topic, payload),
     recordHistory: (instanceId, points: readonly HistoryPoint[]) =>
@@ -73,6 +74,14 @@ export class Engine {
     this.statuses.set(instanceId, { instanceId, state, detail: null, since: Date.now(), attempt: 0, lastError: null, pollIntervalMs: null })
     this.hub.publish(statusTopic(instanceId), this.statuses.get(instanceId))
     this.hub.publish(SYS_STATUS, this.statusAggregate())
+    this.publishInstanceList()
+  }
+
+  /** Push the instance list (with fresh live status) so views subscribe over the
+   *  hub instead of polling /api/instances. Fires on status transitions, which
+   *  are infrequent (connect/disconnect/degrade), not on every data tick. */
+  private publishInstanceList(): void {
+    this.hub.publish('sys:instances', { instances: this.listInstances() })
   }
 
   private statusAggregate(): Record<string, string> {
@@ -120,7 +129,7 @@ export class Engine {
       const publish = () => {
         const snap = propresenter.snapshot()
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.hub.publish(buildTopic('propresenter-1', 'timers'), { timers: (snap.timers ?? []).map((t: any) => ({ name: t.name, seconds: Math.round(t.remaining ?? 0), state: t.state })) })
+        this.hub.publish(buildTopic('propresenter-1', 'timers'), { timers: (snap.timers ?? []).map((t: any) => ({ name: t.name, seconds: Math.round(t.remaining ?? 0), remaining: t.remaining ?? 0, duration: t.duration ?? null, state: t.state })) })
         st('propresenter-1', snap.connected)
       }
       propresenter.on('update', publish); publish()

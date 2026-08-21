@@ -1,7 +1,6 @@
 'use client'
-import { useEffect, useState } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
-import { useStream } from '@/hooks/use-topic'
+import { useStream, useTopic } from '@/hooks/use-topic'
 import { cn } from '@/lib/utils'
 import { MicOff } from 'lucide-react'
 import type { Mic as MicObj, CueState } from '@/components/mics/mic-composite'
@@ -9,14 +8,8 @@ import type { Mic as MicObj, CueState } from '@/components/mics/mic-composite'
 /** Mic defs are feature objects (not connector instances), so a mics widget
  *  fetches them itself and filters by the config's selected ids. */
 export function useMicDefs(): MicObj[] {
-  const [mics, setMics] = useState<MicObj[]>([])
-  useEffect(() => {
-    let live = true
-    const load = () => fetch('/api/features/mics').then((r) => r.json()).then((b) => { if (live) setMics(b.mics ?? []) }).catch(() => {})
-    load(); const h = setInterval(load, 10000)
-    return () => { live = false; clearInterval(h) }
-  }, [])
-  return mics
+  const d = useTopic('feature:mics') as { mics?: MicObj[] } | null
+  return d?.mics ?? []
 }
 
 interface Ch { id: string; name?: string; rf?: number | null; af?: number | null; battery?: number | null }

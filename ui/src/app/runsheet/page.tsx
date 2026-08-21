@@ -7,6 +7,7 @@ import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
 import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading, RotateCcw } from 'lucide-react'
 import { isValidDuration } from '@/lib/runsheet'
+import { useTopic } from '@/hooks/use-topic'
 
 interface Person { name: string; micId?: string; lead?: boolean }
 interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
@@ -38,20 +39,19 @@ function parseCsv(text: string, mics: MicDef[]): Segment[] {
 }
 
 function useServices() {
-  const [services, setServices] = useState<Service[]>([])
-  const load = useCallback(() => fetch('/api/features/services').then((r) => r.json()).then((b) => setServices(b.services ?? [])).catch(() => {}), [])
-  useEffect(() => { load() }, [load])
+  // Read over the shared WebSocket — server-side ProPresenter syncs and every
+  // other client's edits flow in as pushes; mutations below still POST/PATCH,
+  // and the resulting hub broadcast updates this list. No polling.
+  const topic = useTopic('feature:services') as { services?: Service[] } | null
+  const services = topic?.services ?? []
   const save = useCallback(async (s: Partial<Service> & { id?: string }) => {
     const method = s.id ? 'PATCH' : 'POST'
     const url = s.id ? `/api/features/services/${s.id}` : '/api/features/services'
     const b = await (await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) })).json()
-    setServices(b.services ?? [])
     return b.services as Service[]
   }, [])
-  const remove = useCallback(async (id: string) => { const b = await (await fetch(`/api/features/services/${id}`, { method: 'DELETE' })).json(); setServices(b.services ?? []) }, [])
-  const syncNow = useCallback(async (id: string) => { const b = await (await fetch(`/api/features/services/${id}/sync`, { method: 'POST' })).json(); if (b.services) setServices(b.services) }, [])
-  // Poll so server-side ProPresenter syncs (title/order changes) flow into the UI.
-  useEffect(() => { const h = setInterval(load, 5000); return () => clearInterval(h) }, [load])
+  const remove = useCallback(async (id: string) => { await fetch(`/api/features/services/${id}`, { method: 'DELETE' }) }, [])
+  const syncNow = useCallback(async (id: string) => { await fetch(`/api/features/services/${id}/sync`, { method: 'POST' }) }, [])
   return { services, save, remove, syncNow }
 }
 

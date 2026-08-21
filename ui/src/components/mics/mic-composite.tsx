@@ -1,6 +1,6 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
-import { useStream } from '@/hooks/use-topic'
+import { useCallback, useState } from 'react'
+import { useStream, useTopic } from '@/hooks/use-topic'
 import { cn } from '@/lib/utils'
 import { SegMeter, Battery, Antenna } from './meters'
 import { MicOff, Radio, Pencil, Trash2, Plus, X } from 'lucide-react'
@@ -79,19 +79,18 @@ export function MicComposite({ mic, onCue, onEdit }: { mic: Mic; onCue: (id: str
 
 /** Load + mutate the mic objects. */
 export function useMics() {
-  const [mics, setMics] = useState<Mic[]>([])
-  const load = useCallback(() => fetch('/api/features/mics').then((r) => r.json()).then((b) => setMics(b.mics ?? [])).catch(() => {}), [])
-  useEffect(() => { load() }, [load])
+  // Live over the shared WebSocket (topic 'feature:mics'): a cue change from the
+  // runsheet reflects here instantly, and edits from any client flow in. Saves
+  // still POST/PATCH; the resulting hub broadcast updates the list. No polling.
+  const topic = useTopic('feature:mics') as { mics?: Mic[] } | null
+  const mics = topic?.mics ?? []
   const save = useCallback(async (m: Partial<Mic> & { id?: string }) => {
     const method = m.id ? 'PATCH' : 'POST'
     const url = m.id ? `/api/features/mics/${m.id}` : '/api/features/mics'
-    const b = await (await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) })).json()
-    setMics(b.mics ?? [])
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m) })
   }, [])
-  const remove = useCallback(async (id: string) => {
-    const b = await (await fetch(`/api/features/mics/${id}`, { method: 'DELETE' })).json(); setMics(b.mics ?? [])
-  }, [])
-  return { mics, save, remove, reload: load }
+  const remove = useCallback(async (id: string) => { await fetch(`/api/features/mics/${id}`, { method: 'DELETE' }) }, [])
+  return { mics, save, remove }
 }
 
 const sc = 'h-9 w-full rounded-md border border-input bg-muted/40 px-2.5 text-[13px]'
