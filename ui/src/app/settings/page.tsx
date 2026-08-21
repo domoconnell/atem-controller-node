@@ -287,14 +287,18 @@ function RecordersSettings({ instances }: { instances: Instance[] }) {
 }
 
 // ---- Companion OSC / variable reference ------------------------------------
-function CmdRow({ path }: { path: string }) {
+function CopyBtn({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
-  const copy = () => { navigator.clipboard?.writeText(path).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200) }).catch(() => {}) }
+  const copy = (e: React.MouseEvent) => { e.stopPropagation(); navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200) }).catch(() => {}) }
+  return <button onClick={copy} title="Copy" className="shrink-0 p-0.5 rounded hover:bg-accent">{copied ? <Check className="size-3.5 text-live" /> : <Copy className="size-3.5 text-muted-foreground/40 group-hover:text-foreground" />}</button>
+}
+function CmdRow({ path, label }: { path: string; label?: string }) {
   return (
-    <button onClick={copy} className="group flex items-center gap-2 rounded-md border border-border/50 bg-input/30 px-2.5 py-1.5 hover:border-border text-left w-full">
+    <div className="group flex items-center gap-2 rounded-md border border-border/50 bg-input/30 px-2.5 py-1.5 hover:border-border">
+      {label && <span className="shrink-0 text-[9px] font-black uppercase tracking-wider rounded bg-primary/15 text-primary px-1.5 py-0.5">{label}</span>}
       <code className="text-[12px] font-mono text-foreground/90 truncate flex-1">{path}</code>
-      {copied ? <Check className="size-3.5 text-live shrink-0" /> : <Copy className="size-3.5 text-muted-foreground/40 group-hover:text-foreground shrink-0" />}
-    </button>
+      <CopyBtn text={path} />
+    </div>
   )
 }
 function RefSec({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
@@ -306,7 +310,13 @@ function RefSec({ title, sub, children }: { title: string; sub?: string; childre
   )
 }
 function VarRow({ name, desc }: { name: string; desc?: string }) {
-  return <div className="flex items-baseline gap-2 text-[12px] leading-relaxed"><code className="font-mono text-primary/90">{name}</code>{desc && <span className="text-muted-foreground/70 text-[11px]">{desc}</span>}</div>
+  return (
+    <div className="group flex items-center gap-2 rounded-md border border-border/40 bg-input/20 px-2.5 py-1.5 hover:border-border">
+      <code className="font-mono text-primary/90 text-[12px] truncate">{name}</code>
+      {desc && <span className="text-muted-foreground/70 text-[11px] truncate">{desc}</span>}
+      <span className="ml-auto"><CopyBtn text={name} /></span>
+    </div>
+  )
 }
 interface SurfClient { browserId: string; surfaceId: string | null; surfaceName: string | null }
 function CompanionReference() {
@@ -332,7 +342,7 @@ function CompanionReference() {
         {mics.map((m) => (
           <div key={m.id} className="space-y-1 pt-0.5">
             <div className="text-[11px] text-muted-foreground">{m.label} <span className="text-muted-foreground/40 font-mono">{m.id}</span></div>
-            <div className="grid grid-cols-2 gap-1">{['toggle', 'live', 'standby', 'off'].map((a) => <CmdRow key={a} path={`/sil/miccue/${m.id}/${a}`} />)}</div>
+            <div className="grid grid-cols-2 gap-1">{['toggle', 'live', 'standby', 'off'].map((a) => <CmdRow key={a} path={`/sil/miccue/${m.id}/${a}`} label={a} />)}</div>
           </div>
         ))}
       </RefSec>
@@ -345,7 +355,7 @@ function CompanionReference() {
         {clients.map((c) => (
           <div key={c.browserId} className="space-y-1 pt-0.5">
             <div className="text-[11px] text-muted-foreground">Browser <span className="font-mono text-foreground/70">{c.browserId}</span> → <span className="text-foreground/70">{c.surfaceName ?? c.surfaceId}</span></div>
-            <div className="grid grid-cols-3 gap-1">{['open', 'close', 'toggle'].map((a) => <CmdRow key={a} path={`/sil/surfaces/${c.browserId}/${c.surfaceId}/left_drawer/${a}`} />)}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">{['open', 'close', 'toggle'].map((a) => <CmdRow key={a} path={`/sil/surfaces/${c.browserId}/${c.surfaceId}/left_drawer/${a}`} label={a} />)}</div>
           </div>
         ))}
         <div className="text-[11px] text-muted-foreground/50">Swap <span className="font-mono">left_drawer</span> for <span className="font-mono">right_drawer / top_drawer / bottom_drawer</span>.</div>
@@ -368,9 +378,9 @@ function CompanionReference() {
         <VarRow name={p + 'runsheet_running'} desc="true / false" />
       </RefSec>
       <RefSec title="Mics" sub="one pair per mic">
-        <VarRow name={`${p}mic_<id>_cue`} desc="live / standby / off" />
-        <VarRow name={`${p}mic_<id>_name`} desc="label" />
-        {mics.slice(0, 4).map((m) => <VarRow key={m.id} name={`${p}mic_${m.id}_cue`} desc={m.label} />)}
+        <VarRow name={`${p}<mic_id>_cue`} desc="live / standby / off" />
+        <VarRow name={`${p}<mic_id>_name`} desc="label" />
+        {mics.slice(0, 4).map((m) => <VarRow key={m.id} name={`${p}${m.id}_cue`} desc={m.label} />)}
       </RefSec>
     </div>
   )

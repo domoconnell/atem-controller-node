@@ -601,8 +601,9 @@ export class WebServer {
   pushCompanionMics() {
     const o = this.oscServer; if (!o?.sendCompanionVar) return
     for (const m of this.store?.listMics() ?? []) {
-      o.sendCompanionVar(`mic_${m.id}_cue`, m.cue ?? 'off')
-      o.sendCompanionVar(`mic_${m.id}_name`, m.label ?? '')
+      // m.id already starts with "mic_", so don't double it.
+      o.sendCompanionVar(`${m.id}_cue`, m.cue ?? 'off')
+      o.sendCompanionVar(`${m.id}_name`, m.label ?? '')
     }
   }
 
