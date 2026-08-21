@@ -46,6 +46,18 @@ CREATE TABLE IF NOT EXISTS surfaces (
   updated_at  INTEGER NOT NULL
 );
 
+-- "Mic" composite objects: a named mic fusing a Sennheiser receiver channel,
+-- a DiGiCo console channel, and an internal cue state. Feature-level, not a
+-- connection. data_json carries the mapping + cue.
+CREATE TABLE IF NOT EXISTS mics (
+  id          TEXT PRIMARY KEY,
+  label       TEXT NOT NULL,
+  data_json   TEXT NOT NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS timer_layouts (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,

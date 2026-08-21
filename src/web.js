@@ -84,6 +84,25 @@ export class WebServer {
       res.json({ ok: true })
     })
     app.delete('/api/surfaces/:id', (req, res) => { this.store?.deleteSurface(req.params.id); res.json({ ok: true }) })
+
+    // ---- Mics (composite objects: Sennheiser + DiGiCo + internal cue) ----
+    app.get('/api/features/mics', (_req, res) => res.json({ ok: true, mics: this.store?.listMics() ?? [] }))
+    app.post('/api/features/mics', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const b = req.body ?? {}
+      const id = b.id || `mic_${Math.random().toString(36).slice(2, 10)}`
+      const { id: _i, label = 'Mic', sortOrder = 0, ...data } = b
+      this.store.putMic(id, label, data, sortOrder)
+      res.json({ ok: true, mics: this.store.listMics() })
+    })
+    app.patch('/api/features/mics/:id', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const cur = this.store.listMics().find((m) => m.id === req.params.id) ?? {}
+      const { id: _i, label = cur.label ?? 'Mic', sortOrder = cur.sortOrder ?? 0, ...data } = { ...cur, ...(req.body ?? {}) }
+      this.store.putMic(req.params.id, label, data, sortOrder)
+      res.json({ ok: true, mics: this.store.listMics() })
+    })
+    app.delete('/api/features/mics/:id', (req, res) => { this.store?.deleteMic(req.params.id); res.json({ ok: true, mics: this.store?.listMics() ?? [] }) })
     app.put('/api/settings', (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
       const body = req.body ?? {}
