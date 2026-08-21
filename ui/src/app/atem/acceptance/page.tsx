@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { Play, Check, AlertTriangle, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Loader2, ClipboardList } from 'lucide-react'
+import { Play, Check, AlertTriangle, SkipForward, RotateCcw, ShieldCheck, ShieldAlert, Loader2, ClipboardList, ArrowLeft } from 'lucide-react'
+import Link from 'next/link'
 
 interface Result {
   from: string; to: string; verdict: 'clean' | 'issue' | 'skip'; note: string; at: string
@@ -68,6 +69,9 @@ export default function AcceptancePage() {
     <TooltipProvider>
       <div className="h-screen flex flex-col overflow-hidden">
         <AppHeader app="atem" state={state} wsConnected={connected} tick={tick}>
+          <Button asChild variant="ghost" size="sm" className="h-8 gap-1.5 text-[12px] text-muted-foreground hover:text-foreground">
+            <Link href="/atem"><ArrowLeft className="size-4" /> ATEM Transitions</Link>
+          </Button>
           <div className="ml-auto flex items-center gap-3 text-[12px]">
             <ClipboardList className="size-4 text-muted-foreground" />
             <span className="font-semibold">Acceptance</span>

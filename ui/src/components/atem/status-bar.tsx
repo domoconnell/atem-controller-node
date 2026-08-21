@@ -40,7 +40,7 @@ export function StatusBar({ state, wsConnected, tick, locked, onRecord, onSettin
           <Circle className="size-3 fill-pgm text-pgm" /> Record
         </Button>
         <Button asChild size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" title="Acceptance testing">
-          <Link href="/acceptance"><ClipboardCheck className="size-4" /></Link>
+          <Link href="/atem/acceptance"><ClipboardCheck className="size-4" /></Link>
         </Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" onClick={onSettings} title="Settings">
           <Settings className="size-4" />
