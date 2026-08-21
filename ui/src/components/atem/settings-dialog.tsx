@@ -69,7 +69,7 @@ export function SettingsDialog({ open, onOpenChange, state }: { open: boolean; o
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [instances, setInstances] = useState<{ id: string; typeId: string; name: string }[]>([])
-  const [sel, setSel] = useState<{ atemInstanceId?: string; propresenterInstanceId?: string }>({})
+  const [sel, setSel] = useState<{ atemInstanceId?: string; hyperdeckInstanceId?: string; propresenterInstanceId?: string }>({})
 
   useEffect(() => {
     if (!open) return
@@ -87,6 +87,7 @@ export function SettingsDialog({ open, onOpenChange, state }: { open: boolean; o
     fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atemTransitions: next }) }).catch(() => {})
   }
   const atems = instances.filter((i) => i.typeId === 'atem')
+  const hyperdecks = instances.filter((i) => i.typeId === 'hyperdeck')
   const propres = instances.filter((i) => i.typeId === 'propresenter')
 
   // Save one section immediately on change — everything here is live.
@@ -121,6 +122,14 @@ export function SettingsDialog({ open, onOpenChange, state }: { open: boolean; o
                     className="h-9 w-full rounded-md border border-input bg-muted/40 px-2.5 text-[13px]">
                     <option value="">— select —</option>
                     {atems.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <div className="text-[11.5px] mb-1">HyperDeck</div>
+                  <select value={sel.hyperdeckInstanceId ?? ''} onChange={(e) => saveSel({ ...sel, hyperdeckInstanceId: e.target.value })}
+                    className="h-9 w-full rounded-md border border-input bg-muted/40 px-2.5 text-[13px]">
+                    <option value="">— select —</option>
+                    {hyperdecks.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
                   </select>
                 </label>
                 <label className="block">

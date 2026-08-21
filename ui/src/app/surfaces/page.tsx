@@ -94,7 +94,7 @@ export default function SurfacesPage() {
         const { x, y } = firstFreeCell(s.main.layout, g.cols, g.rows, w, h)
         return { ...s, main: { widgets: [...s.main.widgets, placement], layout: [...s.main.layout, { i, x, y, w, h }] } }
       })
-    } else setRegion(target, (w) => [...w, placement])
+    } else setRegion(target, (w) => (EDGES as string[]).includes(target) ? [placement] : [...w, placement]) // one widget per pull-out drawer
     setAdding(false); setSel({ region: target, i })
   }
   const removeWidget = (t: Target, i: string) => { setRegion(t, (w) => w.filter((x) => x.i !== i)); if (t === 'main') setSurface((s) => ({ ...s, main: { ...s.main, layout: s.main.layout.filter((l) => l.i !== i) } })); setSel(null) }
@@ -336,7 +336,7 @@ function ConfigPanel({ placement, instances, types, onChange, onClose }: {
   const set = (k: string, v: unknown) => onChange({ config: { [k]: v } })
   return (
     <aside className="w-64 shrink-0 border-l border-border/70 overflow-y-auto p-4 space-y-3 bg-background relative z-20">
-      <div className="flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider">{def?.label}</h3><button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xs">done</button></div>
+      <div className="flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider">{def?.label}</h3><button onClick={onClose} title="Close (deselect widget)" className="p-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"><X className="size-3.5" /></button></div>
       <F label="Title"><input value={placement.title ?? ''} placeholder={def?.label} onChange={(e) => onChange({ title: e.target.value })} className={sc} /></F>
       {!def?.multi && sameType.length > 0 && (
         <F label="Instance"><select value={placement.instanceId ?? ''} onChange={(e) => onChange({ instanceId: e.target.value })} className={sc}>{sameType.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></F>

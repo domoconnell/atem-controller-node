@@ -12,7 +12,11 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
   onSelect?: () => void; onRemove?: () => void
 }) {
   const def = getWidget(p.widgetType)
-  const title = p.title || def?.label || p.widgetType
+  // Widgets show NO title by default - only the opt-in placement title (set in
+  // the config sidebar). The widget type label is used solely for the edit
+  // drag-handle so you can still tell them apart while designing.
+  const title = p.title ?? ''
+  const editLabel = p.title || def?.label || p.widgetType
   const boundType = (p.config.typeId as string | undefined) ?? instances.find((x) => x.id === p.instanceId)?.typeId
   if (def?.strip && !edit) return <div className="h-full w-full" style={{ containerType: 'size' } as React.CSSProperties}><def.Component config={p.config} instanceId={p.instanceId} instances={def.multi === 'all' ? instances : def.multi === 'type' ? instances.filter((x) => x.typeId === boundType) : undefined} title={title} /></div>
   if (def?.strip) return (
@@ -29,7 +33,7 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
       style={{ containerType: 'size' } as React.CSSProperties}>
       {edit && (
         <div className="widget-drag-handle shrink-0 h-6 flex items-center gap-1 px-2 bg-muted/40 cursor-move">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground truncate flex-1">{title}</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground truncate flex-1">{editLabel}</span>
           <button onClick={(e) => { e.stopPropagation(); onSelect?.() }} className="widget-no-drag p-0.5 rounded hover:bg-accent"><Settings2 className="size-3" /></button>
           <button onClick={(e) => { e.stopPropagation(); onRemove?.() }} className="widget-no-drag p-0.5 rounded hover:bg-accent hover:text-destructive"><X className="size-3" /></button>
         </div>

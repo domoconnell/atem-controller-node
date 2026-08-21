@@ -19,28 +19,28 @@ items as they land. Branch: `stage-it-live`.
 
 ## Batch: fixes + polish (2026-08-21)
 
-- [ ] **1. HyperDeck instance selector in ATEM Transitions settings.** The
+- [x] **1. HyperDeck instance selector in ATEM Transitions settings.** The
   settings dialog has ATEM + ProPresenter instance pickers but no HyperDeck one.
   Add it (looks capture reads HyperDeck transport). `atemTransitions` setting +
   the legacy hyperdeck should use the selected instance.
-- [ ] **2. Top app bar: connection icons for ALL connections.** `app-header.tsx`
+- [x] **2. Top app bar: connection icons for ALL connections.** `app-header.tsx`
   `connGroups()` shows a hardcoded subset (server/atem/hyperdeck/mics/propres).
   Drive it from the engine's instances + `sys:status` so every connector type
   appears, grouped, with per-type online/total + state colour.
-- [ ] **3. Pull-out drawers hold ONE full-size widget.** Each of top/bottom/
+- [x] **3. Pull-out drawers hold ONE full-size widget.** Each of top/bottom/
   left/right drawers should contain a single widget that fills the whole drawer
   (not a grid of small ones). Update `pullouts.tsx` + the add flow.
-- [ ] **4. Kill the double widget titles.** Widgets render an internal `Title`
+- [x] **4. Kill the double widget titles.** Widgets render an internal `Title`
   *and* the placement title — two titles. Default to **no** title; drop the
   internal one and make the placement title opt-in (blank by default).
-- [ ] **5. Widget settings sidebar overlap + close.** The designer grid still
+- [x] **5. Widget settings sidebar overlap + close.** The designer grid still
   renders under the config sidebar. Fix the layout so it never does, AND add a
   close/✕ on the sidebar that ends the edit session (hide sidebar + deselect the
   widget). The ✕ is the better UX.
-- [ ] **6. Connections header/footer widget redesign.** Currently just status
+- [x] **6. Connections header/footer widget redesign.** Currently just status
   LEDs + a count. Make it **icon-per-connection**, spread across the strip
   (icon coloured by state), condensing as more are added.
-- [ ] **7. Wireless-mic header/footer widget redesign.** Same problem — make it
+- [x] **7. Wireless-mic header/footer widget redesign.** Same problem — make it
   icons (per receiver/channel), spread out, not just LEDs.
 
 ---

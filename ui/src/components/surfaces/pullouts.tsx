@@ -43,15 +43,17 @@ export function Pullouts({ surface, instances, edit, sel, onSelect, onRemove }: 
             </button>
             <div className={cn('absolute z-30 bg-background/95 backdrop-blur-sm border-border shadow-2xl transition-transform duration-300 ease-out flex', panelPos)}
               onClick={(ev) => ev.stopPropagation()}>
-              <div className="flex-1 min-h-0 overflow-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(180px,1fr))] content-start">
-                {widgets.length === 0 && <div className="text-[11px] text-muted-foreground/50 uppercase tracking-wider p-2">{e} drawer{edit ? ' — add widgets' : ''}</div>}
-                {widgets.map((p) => (
-                  <div key={p.i} onClick={(ev) => { ev.stopPropagation(); if (edit) onSelect?.(e, p.i) }}
-                    className={cn('relative h-32', edit && sel?.i === p.i && 'ring-1 ring-primary rounded-xl')}>
-                    <WidgetView p={p} instances={instances} />
-                    {edit && <button onClick={(ev) => { ev.stopPropagation(); onRemove?.(e, p.i) }} className="absolute top-0.5 right-0.5 p-0.5 rounded bg-background/80 hover:text-destructive z-10"><X className="size-3" /></button>}
+              {/* One widget per drawer, filling it entirely. */}
+              <div className="flex-1 min-h-0 p-2">
+                {widgets.length === 0 ? (
+                  <div className="h-full w-full grid place-items-center text-[11px] text-muted-foreground/50 uppercase tracking-wider">{e} drawer{edit ? ' — add a widget' : ''}</div>
+                ) : (
+                  <div onClick={(ev) => { ev.stopPropagation(); if (edit) onSelect?.(e, widgets[0].i) }}
+                    className={cn('relative h-full w-full', edit && sel?.i === widgets[0].i && 'ring-1 ring-primary rounded-xl')}>
+                    <WidgetView p={widgets[0]} instances={instances} />
+                    {edit && <button onClick={(ev) => { ev.stopPropagation(); onRemove?.(e, widgets[0].i) }} className="absolute top-0.5 right-0.5 p-0.5 rounded bg-background/80 hover:text-destructive z-10"><X className="size-3" /></button>}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

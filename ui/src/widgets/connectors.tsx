@@ -5,7 +5,7 @@ import { useStream, useTopic } from '@/hooks/use-topic'
 import { statusTopic } from '@/lib/topics'
 import { cn } from '@/lib/utils'
 import {
-  Mic, CloudSun, Cpu, Activity, Volume2, Disc3,
+  Mic, MicOff, CloudSun, Cpu, Activity, Volume2, Disc3,
   SlidersHorizontal, Wifi, MessageSquare, Timer, Play, Film, Video,
 } from 'lucide-react'
 
@@ -24,6 +24,7 @@ type Tone = 'muted' | 'live' | 'busy' | 'alarm' | 'info'
 const DOT: Record<string, string> = { online: 'bg-live', offline: 'bg-destructive', error: 'bg-destructive', degraded: 'bg-busy', connecting: 'bg-busy' }
 
 function Title({ children }: { children: React.ReactNode }) {
+  if (!children) return null // no title by default (see WidgetView) - opt-in only
   return <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{children}</div>
 }
 function Bar({ value, kind = 'af' }: { value: number; kind?: 'af' | 'rf' | 'ok' }) {
@@ -174,6 +175,32 @@ function MicPanelInline({ id, name }: { id: string; name: string }) {
   )
 }
 connector({ typeId: 'sennheiser', label: 'Wireless mic', icon: Mic, Panel: MicPanel, Strip: MicStrip, Overview: MicRack, panelSize: { w: 3, h: 3 }, overviewSize: { w: 6, h: 5 } })
+
+/** Header/footer overview: one mic icon per receiver, spread across the strip,
+ *  tinted by battery/online, with the % — icons, not just LEDs. */
+function MicStripIcon({ id, name }: { id: string; name: string }) {
+  const d = useStream(id, 'channels') as { channels?: Ch[]; online?: boolean } | null
+  const bats = (d?.channels ?? []).map((c) => c.battery).filter((b): b is number => b != null)
+  const bat = bats.length ? Math.min(...bats) : null
+  const muted = (d?.channels ?? []).some((c) => c.mute)
+  const tint = !d?.online ? 'text-muted-foreground/40' : batTone(bat) === 'alarm' ? 'text-destructive' : batTone(bat) === 'busy' ? 'text-busy' : 'text-[#2dd4bf]'
+  return (
+    <div className="flex-1 min-w-0 flex items-center justify-center gap-1" title={`${(d?.channels?.[0]?.name || name).trim()}${bat != null ? ` · ${bat}%` : ''}`}>
+      <Mic className={cn('size-4 shrink-0', tint)} />
+      {muted && <MicOff className="size-3 shrink-0 text-destructive" />}
+      {bat != null && <span className={cn('text-[10px] font-bold tabular-nums', tint)}>{bat}%</span>}
+    </div>
+  )
+}
+function MicsOverviewStrip({ instances = [] }: WidgetProps) {
+  return (
+    <div className="h-full w-full flex items-center gap-1 px-2 rounded-lg border border-border/50 bg-card overflow-hidden">
+      {instances.length === 0 && <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mx-auto">no receivers</span>}
+      {instances.map((i) => <MicStripIcon key={i.id} id={i.id} name={i.name} />)}
+    </div>
+  )
+}
+registerWidget({ type: 'sennheiser-all-strip', label: 'Wireless mic · all · strip', supportedTypeIds: ['sennheiser'], multi: 'type', strip: true, defaultSize: { w: 6, h: 1 }, Component: MicsOverviewStrip })
 
 /* ================================================================== SMAART */
 

@@ -3,7 +3,14 @@ import { useEffect, useState } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
 import { useTopic } from '@/hooks/use-topic'
 import { cn } from '@/lib/utils'
-import { Activity, Clock } from 'lucide-react'
+import { Clock, Circle, Video, Film, Mic, Timer, Volume2, Play, Disc3, Wifi, SlidersHorizontal, CloudSun, Activity, Cpu, MessageSquare } from 'lucide-react'
+
+const TYPE_ICON: Record<string, React.ElementType> = {
+  atem: Video, hyperdeck: Film, sennheiser: Mic, propresenter: Timer, smaart: Volume2,
+  qlab: Play, reaper: Disc3, unifi: Wifi, digico: SlidersHorizontal, weather: CloudSun,
+  netcheck: Activity, sysmon: Cpu, prodcom: MessageSquare,
+}
+const stTint = (s: string) => s === 'online' ? 'text-live' : s === 'offline' || s === 'error' ? 'text-destructive' : 'text-busy'
 
 /** Long, thin frame for a header/footer widget: leading icon, label, then
  *  right-aligned pills. Fills its share of the strip and truncates as it narrows. */
@@ -21,19 +28,27 @@ function Pill({ tone = 'muted', children }: { tone?: 'muted' | 'live' | 'busy' |
   return <span className={cn('text-[11px] font-semibold tabular-nums rounded px-1.5 py-0.5 shrink-0', c)}>{children}</span>
 }
 
-/** Platform: compact all-connections summary — count pill + a row of state dots. */
-function StripConnections({ instances = [], title }: WidgetProps) {
+/** Platform: all connections as spread icons — one per connector type, coloured
+ *  by state, with an online/total count when a type has several instances. */
+function StripConnections({ instances = [] }: WidgetProps) {
   const agg = useTopic('sys:status') as Record<string, string> | null
-  const states = instances.map((i) => agg?.[i.id] ?? 'connecting')
-  const online = states.filter((s) => s === 'online').length
-  const worst: 'live' | 'busy' | 'alarm' = states.some((s) => s === 'offline' || s === 'error') ? 'alarm' : states.some((s) => s !== 'online') ? 'busy' : 'live'
+  const byType = new Map<string, string[]>()
+  for (const i of instances) { const a = byType.get(i.typeId) ?? []; a.push(agg?.[i.id] ?? 'connecting'); byType.set(i.typeId, a) }
   return (
-    <Frame icon={Activity} label={title || 'Connections'}>
-      <div className="flex items-center gap-[3px] min-w-0 overflow-hidden">
-        {states.map((s, i) => <span key={i} className={cn('size-1.5 rounded-full shrink-0', s === 'online' ? 'bg-live' : s === 'offline' || s === 'error' ? 'bg-destructive' : 'bg-busy')} />)}
-      </div>
-      <Pill tone={worst}>{online}/{instances.length}</Pill>
-    </Frame>
+    <div className="h-full w-full flex items-center gap-1 px-2 rounded-lg border border-border/50 bg-card overflow-hidden">
+      {[...byType.entries()].map(([t, states]) => {
+        const Icon = TYPE_ICON[t] ?? Circle
+        const online = states.filter((s) => s === 'online').length
+        const worst = states.some((s) => s === 'offline' || s === 'error') ? 'offline' : states.some((s) => s !== 'online') ? 'connecting' : 'online'
+        return (
+          <div key={t} className="flex-1 min-w-0 flex items-center justify-center gap-1" title={`${t}: ${online}/${states.length} online`}>
+            <Icon className={cn('size-[18px] shrink-0', stTint(worst))} />
+            {states.length > 1 && <span className={cn('text-[10px] font-bold tabular-nums', stTint(worst))}>{online}/{states.length}</span>}
+          </div>
+        )
+      })}
+      {instances.length === 0 && <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mx-auto">no connections</span>}
+    </div>
   )
 }
 registerWidget({ type: 'strip-connections', label: 'Connections · strip', strip: true, multi: 'all', defaultSize: { w: 4, h: 1 }, Component: StripConnections })
