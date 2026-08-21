@@ -28,11 +28,25 @@ export class ProPresenter extends EventEmitter {
     this._defsFetched = 0
     this._mockStart = Date.now()
     this._timer = null
+    // Runtime config: seeded from config.json, overridable from the Settings UI
+    // via reconfigure() (the SQLite instance is the live source of truth).
+    this.cfg = { ...config.propresenter }
+  }
+
+  /** Apply new connection settings (IP/port/pollMs) from Settings. The poll
+   *  loop reads baseUrl each tick, so the next poll targets the new host; reset
+   *  state so stale timers clear and the status flips immediately. */
+  reconfigure(patch = {}) {
+    this.cfg = { ...this.cfg, ...patch }
+    this.connected = false
+    this.timers.clear()
+    this._defsFetched = 0
+    this.emit('update', this.snapshot())
   }
 
   start() {
     const tick = () => {
-      const ms = Math.max(200, config.propresenter?.pollMs ?? 500)
+      const ms = Math.max(200, this.cfg?.pollMs ?? 500)
       this._timer = setTimeout(tick, ms)
       this.poll().catch(() => {})
     }
@@ -40,7 +54,7 @@ export class ProPresenter extends EventEmitter {
   }
 
   get baseUrl() {
-    const c = config.propresenter
+    const c = this.cfg
     if (!c?.ip) return null
     return `http://${c.ip}:${c.port ?? 50001}`
   }

@@ -107,6 +107,20 @@ if (connectorEngine) {
   hyperdeck.on('transport', publishHd)
   hyperdeck.on('connected', publishHd)
   hyperdeck.on('disconnected', publishHd)
+
+  // Seed an initial status now (all currently disconnected) so a legacy stack
+  // that never connects reports 'offline' rather than the UI assuming online.
+  // Real connect/disconnect events update it thereafter.
+  publishAtem(); publishPro(); publishHd()
+}
+
+// Seed the legacy stacks from their SQLite instances so Settings edits (IP,
+// port, pollMs) persist across restarts - the store is the source of truth, not
+// config.json (which is only the initial migration seed).
+if (store) {
+  const cfgOf = (t) => store.listInstances().find((i) => i.typeId === t)?.config
+  const hd = cfgOf('hyperdeck'); if (hd) hyperdeck.cfg = { ...hyperdeck.cfg, ...hd }
+  const pp = cfgOf('propresenter'); if (pp) propresenter.cfg = { ...propresenter.cfg, ...pp }
 }
 propresenter.start()
 sennheiser.start().catch((e) => console.error('[senn] start failed:', e.message))

@@ -102,7 +102,15 @@ export class WebServer {
       if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })
       this.store.updateInstance(req.params.id, req.body ?? {})
       await this.connectorEngine?.reconcile(req.params.id)
-      res.json({ ok: true, instance: this.store.getInstance(req.params.id) })
+      const inst = this.store.getInstance(req.params.id)
+      // Legacy stacks (ATEM/HyperDeck/ProPresenter) aren't engine-run, so
+      // reconcile() doesn't touch them - push the new config through and
+      // reconnect, otherwise a Settings IP change would be silently ignored.
+      const cfg = inst?.config ?? {}
+      if (inst?.typeId === 'hyperdeck') this.hyperdeck?.reconfigure?.(cfg)
+      else if (inst?.typeId === 'propresenter') this.propresenter?.reconfigure?.(cfg)
+      else if (inst?.typeId === 'atem') this.atem?.reconfigure?.(cfg)
+      res.json({ ok: true, instance: inst })
     })
     app.delete('/api/instances/:id', async (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'engine unavailable' })

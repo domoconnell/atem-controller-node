@@ -20,11 +20,27 @@ export class HyperDeck extends EventEmitter {
     this._buffer = ''
     this._queue = [] // pending {resolve, reject} for commands in flight
     this._reconnectTimer = null
+    // Runtime config: seeded from config.json, overridable from the Settings UI
+    // via reconfigure() (the SQLite instance is the live source of truth).
+    this.cfg = { ...config.hyperdeck }
+  }
+
+  /** Apply new connection settings (e.g. an IP change in Settings) and reconnect
+   *  to the new target immediately, dropping the old connection. */
+  reconfigure(patch = {}) {
+    this.cfg = { ...this.cfg, ...patch }
+    this._clearReconnect()
+    const was = this.connected
+    if (this.socket) { this.socket.removeAllListeners(); this.socket.destroy(); this.socket = null }
+    this.connected = false
+    this.transport = {}
+    if (was) this.emit('disconnected')
+    this.connect()
   }
 
   connect() {
     this._clearReconnect()
-    const { ip, port } = config.hyperdeck
+    const { ip, port } = this.cfg
     this.socket = net.createConnection({ host: ip, port: port ?? 9993 })
     this.socket.setNoDelay(true)
 

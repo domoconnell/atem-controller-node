@@ -10,7 +10,10 @@ import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Save } from 'lucide-reac
 
 type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
 const DOT: Record<ConnState, string> = { live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/30' }
-function stateOf(i: Instance): string { return i.engineRun ? (i.status?.state ?? 'connecting') : 'online' }
+// Real status for every connector — engine-run and legacy/bridged alike
+// (ATEM, HyperDeck, ProPresenter, Sennheiser report via the hub bridge). Never
+// assume 'online' just because it isn't engine-run.
+function stateOf(i: Instance): string { return i.status?.state ?? 'connecting' }
 function ledForType(list: Instance[]): ConnState {
   if (list.length === 0) return 'empty'
   const states = list.map(stateOf)
@@ -100,6 +103,23 @@ function ConfigForm({ fields }: { fields: { path: string; label: string; hint?: 
   )
 }
 
+// Module-scope so the sidebar reconciles in place across the frequent
+// useAtemState re-renders (mics stream constantly). Defining these inside the
+// component made them new types every render, remounting the whole nav and
+// swallowing clicks that landed mid-render.
+function NavHeader({ children }: { children: React.ReactNode }) {
+  return <div className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">{children}</div>
+}
+function NavItem({ id, icon: Icon, label, led, active, onSelect }: { id: string; icon?: React.ElementType; label: string; led?: ConnState; active: boolean; onSelect: (id: string) => void }) {
+  return (
+    <button onClick={() => onSelect(id)} className={cn('w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] text-left', active ? 'bg-muted/70 text-foreground' : 'text-foreground/70 hover:bg-accent')}>
+      {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
+      {led && <span className={cn('size-1.5 rounded-full shrink-0', DOT[led])} />}
+      <span className="truncate">{label}</span>
+    </button>
+  )
+}
+
 export default function SettingsPage() {
   const { state, connected, tick } = useAtemState()
   const [instances, setInstances] = useState<Instance[]>([])
@@ -134,15 +154,6 @@ export default function SettingsPage() {
   }
   const del = async (id: string) => { await fetch(`/api/instances/${id}`, { method: 'DELETE' }); load() }
 
-  const NavHeader = ({ children }: { children: React.ReactNode }) => <div className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">{children}</div>
-  const NavItem = ({ id, icon: Icon, label, led }: { id: string; icon?: React.ElementType; label: string; led?: ConnState }) => (
-    <button onClick={() => setSel(id)} className={cn('w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] text-left', sel === id ? 'bg-muted/70 text-foreground' : 'text-foreground/70 hover:bg-accent')}>
-      {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground" />}
-      {led && <span className={cn('size-1.5 rounded-full shrink-0', DOT[led])} />}
-      <span className="truncate">{label}</span>
-    </button>
-  )
-
   return (
     <TooltipProvider delayDuration={200}>
       <div className="h-screen flex flex-col overflow-hidden">
@@ -151,12 +162,12 @@ export default function SettingsPage() {
           {/* fixed scrollable sidebar */}
           <nav className="w-60 shrink-0 border-r border-border/70 overflow-y-auto py-2">
             <NavHeader>Global</NavHeader>
-            <NavItem id="g:web" icon={Globe} label="Web UI" />
-            <NavItem id="g:companion" icon={Radio} label="Companion" />
+            <NavItem id="g:web" icon={Globe} label="Web UI" active={sel === 'g:web'} onSelect={setSel} />
+            <NavItem id="g:companion" icon={Radio} label="Companion" active={sel === 'g:companion'} onSelect={setSel} />
             <NavHeader>Connections</NavHeader>
-            {typeOrder.map((typeId) => <NavItem key={typeId} id={`c:${typeId}`} label={nameOf(typeId)} led={ledForType(byType.get(typeId) ?? [])} />)}
+            {typeOrder.map((typeId) => <NavItem key={typeId} id={`c:${typeId}`} label={nameOf(typeId)} led={ledForType(byType.get(typeId) ?? [])} active={sel === `c:${typeId}`} onSelect={setSel} />)}
             <NavHeader>Features</NavHeader>
-            <NavItem id="f:mics" icon={Mic} label="Wireless Mics" />
+            <NavItem id="f:mics" icon={Mic} label="Wireless Mics" active={sel === 'f:mics'} onSelect={setSel} />
           </nav>
 
           {/* detail pane */}
