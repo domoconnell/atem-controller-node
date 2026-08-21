@@ -53,12 +53,13 @@ A **Mic** is a first-class internal object that fuses three sources:
 - **Internal cue state** → LIVE / STANDBY / OFF (driven by the runsheet / manual).
 
 Needs:
-- [ ] Data model: `mics` table/store — `{ id, label, sennheiserInstanceId,
+- [x] Data model: `mics` table/store — `{ id, label, sennheiserInstanceId,
   sennheiserChannel, digicoInstanceId, digicoChannel, ... }`.
-- [ ] Mapping UI under Settings → Features → Mics: create a mic, pick its
-  receiver channel + DiGiCo channel, label it.
-- [ ] Composite widget(s): per-mic tile showing label · mic# · internal status ·
-  DiGiCo mute · battery% · RF dB. Overview + strip variants.
+- [x] Mapping UI — built INTO the Mics app (co-opted per request): "+ Mic"
+  → editor (label + Sennheiser receiver + DiGiCo console/channel). Live cards.
+- [x] Composite CARDS in the Mics app (reuse the polished meters + battery +
+  antenna, add DiGiCo mute + clickable cue chip). Hardware receiver view kept.
+- [ ] Composite SURFACES widget (overview + strip) for the designer.
 - [ ] Internal cue state source (LIVE/STANDBY) — set by the runsheet slot that's
   "now"/"next", or manual override.
 
