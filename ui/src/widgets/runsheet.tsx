@@ -3,11 +3,11 @@ import { useEffect, useState } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
 import { useMicDefs, useMicLive, CUE, batTint, MiniBar } from './mics'
 import { cn } from '@/lib/utils'
-import { MicOff } from 'lucide-react'
+import { MicOff, Star } from 'lucide-react'
 import type { Mic as MicObj } from '@/components/mics/mic-composite'
 
-interface Person { name: string; micId?: string }
-interface Segment { id: string; title: string; time?: string; people: Person[] }
+interface Person { name: string; micId?: string; lead?: boolean }
+interface Segment { id: string; title: string; time?: string; people: Person[]; kind?: 'header'; color?: string }
 interface Service { id: string; name: string; segments?: Segment[]; activeIndex?: number | null }
 
 function useServices(): Service[] {
@@ -27,7 +27,8 @@ function PersonLine({ person, mics }: { person: Person; mics: MicObj[] }) {
   const live = useMicLive(mic ?? ({ id: '', label: '' } as MicObj)) // stable hooks; null instance => no data
   return (
     <div className="flex items-center gap-2 py-0.5 text-[12px]">
-      <span className="font-semibold w-20 truncate shrink-0">{person.name || '—'}</span>
+      {person.lead && <Star className="size-3 shrink-0 fill-current text-primary" aria-label="Lead" />}
+      <span className={cn('w-20 truncate shrink-0', person.lead ? 'font-bold' : 'font-semibold')}>{person.name || '—'}</span>
       {mic ? (
         <>
           <span className="text-muted-foreground truncate flex-1 min-w-0">{mic.label}</span>
@@ -63,15 +64,25 @@ function NowNext({ config, title }: WidgetProps) {
   const mics = useMicDefs()
   const svc = (config.serviceId ? services.find((s) => s.id === config.serviceId) : null) ?? services.find((s) => s.activeIndex != null) ?? services[0]
   const segs = svc?.segments ?? []
+  const isH = (s?: Segment) => s?.kind === 'header'
+  const nextItem = (from: number) => { let j = from + 1; while (j < segs.length && isH(segs[j])) j++; return j }
   const idx = svc?.activeIndex ?? null
   const now = idx != null ? segs[idx] ?? null : null
-  const next = idx != null ? segs[idx + 1] ?? null : segs[0] ?? null
+  const next = segs[idx != null ? nextItem(idx) : (() => { let j = 0; while (j < segs.length && isH(segs[j])) j++; return j })()] ?? null
+  // Section = nearest preceding header for the Now item.
+  const section = idx != null ? (() => { for (let j = idx; j >= 0; j--) if (isH(segs[j])) return segs[j]; return null })() : null
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
         {!svc ? <div className="text-[11px] text-muted-foreground/50">No service.</div> : (
           <>
+            {section && (
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="h-3 w-1 rounded-full shrink-0" style={{ background: section.color || '#6b7280' }} />
+                <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground truncate">{section.title}</span>
+              </div>
+            )}
             <SegBlock label="Now" tone="live" seg={now} mics={mics} />
             <SegBlock label="Next" tone="busy" seg={next} mics={mics} />
           </>

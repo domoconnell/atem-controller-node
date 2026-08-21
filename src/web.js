@@ -451,8 +451,13 @@ export class WebServer {
     const manual = old.filter((s) => !s.proItemId) // local-only segments, kept & appended
     const synced = items.map((it) => {
       const prev = byPro.get(it.uuid)
+      const id = prev?.id ?? `seg_${Math.random().toString(36).slice(2, 10)}`
+      if (it.type === 'header') {
+        // A section divider — PP owns title + colour; no people/time on a header.
+        return { id, proItemId: it.uuid, kind: 'header', title: it.name, color: it.color }
+      }
       return {
-        id: prev?.id ?? `seg_${Math.random().toString(36).slice(2, 10)}`,
+        id,
         proItemId: it.uuid,
         title: it.name,             // PP owns the title
         time: prev?.time,           // preserved local augmentation

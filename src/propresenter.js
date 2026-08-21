@@ -190,9 +190,12 @@ export class ProPresenter extends EventEmitter {
 
   /**
    * Fetch one playlist's ordered items as segment seeds.
-   *   GET /v1/playlist/{id} -> { items: [{ id:{uuid,name,index}, type }] }
-   * Returns [{ uuid, name, index }] in playlist order, or null if PP is not
-   * configured (so a temporary outage never wipes a linked runsheet).
+   *   GET /v1/playlist/{id} -> { items: [{ id:{uuid,name,index}, type, header_color }] }
+   * ProPresenter uses `type:'header'` rows (with a header_color) to group the
+   * items beneath them; everything else ('placeholder', 'presentation', media…)
+   * is a real item. We surface that distinction so headers become headers.
+   * Returns [{ uuid, name, index, type, color }] in playlist order, or null if
+   * PP is not configured (so a temporary outage never wipes a linked runsheet).
    */
   async getPlaylistItems(playlistId) {
     const base = this.baseUrl
@@ -202,10 +205,19 @@ export class ProPresenter extends EventEmitter {
       uuid: it.id?.uuid ?? it.uuid ?? `idx${i}`,
       name: it.id?.name ?? it.name ?? `Item ${i + 1}`,
       index: it.id?.index ?? i,
+      type: it.type === 'header' ? 'header' : 'item',
+      color: it.type === 'header' ? ppColorToHex(it.header_color) : undefined,
     }))
     items.sort((a, b) => a.index - b.index)
     return items
   }
+}
+
+/** ProPresenter header_color {red,green,blue,alpha} (0..1 floats) -> "#rrggbb". */
+function ppColorToHex(c) {
+  if (!c) return undefined
+  const h = (v) => Math.max(0, Math.min(255, Math.round((v ?? 0) * 255))).toString(16).padStart(2, '0')
+  return `#${h(c.red)}${h(c.green)}${h(c.blue)}`
 }
 
 /** "0:04:37" / "04:37" / "-0:00:05" -> seconds (negative in overrun). */

@@ -5,10 +5,10 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading } from 'lucide-react'
 
-interface Person { name: string; micId?: string }
-interface Segment { id: string; title: string; time?: string; people: Person[]; proItemId?: string }
+interface Person { name: string; micId?: string; lead?: boolean }
+interface Segment { id: string; title: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
 interface ProLink { playlistId: string; playlistName?: string; lastSync?: number }
 interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink }
 interface MicDef { id: string; label: string }
@@ -71,10 +71,20 @@ export default function RunsheetPage() {
   const update = (patch: Partial<Service>) => { if (svc) save({ id: svc.id, ...patch }) }
   const setSegments = (segs: Segment[]) => update({ segments: segs })
 
-  // Drive the mapped mics' cue from the active/next segment.
+  // Headers are section dividers — the running position skips over them.
+  const nextItem = (from: number | null, dir: 1 | -1): number | null => {
+    let i = from == null ? (dir === 1 ? -1 : segments.length) : from
+    do { i += dir } while (i >= 0 && i < segments.length && segments[i]?.kind === 'header')
+    return i >= 0 && i < segments.length ? i : from
+  }
+  const firstItem = segments.findIndex((s) => s.kind !== 'header')
+  const lastItem = (() => { for (let i = segments.length - 1; i >= 0; i--) if (segments[i]?.kind !== 'header') return i; return -1 })()
+
+  // Drive the mapped mics' cue from the active/next segment (headers skipped).
   const applyCues = useCallback(async (segs: Segment[], idx: number | null) => {
+    let n = idx == null ? -1 : idx; if (idx != null) { do { n++ } while (n < segs.length && segs[n]?.kind === 'header') }
     const live = new Set(idx != null ? (segs[idx]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
-    const standby = new Set(idx != null ? (segs[idx + 1]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
+    const standby = new Set(idx != null && n < segs.length ? (segs[n]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
     await Promise.all(mics.map((m) => {
       const want = live.has(m.id) ? 'live' : standby.has(m.id) ? 'standby' : 'off'
       return (m.cue ?? 'off') === want ? null : fetch(`/api/features/mics/${m.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cue: want }) })
@@ -110,9 +120,9 @@ export default function RunsheetPage() {
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={onImport} />
           </label>
           <div className="ml-auto flex items-center gap-1.5">
-            <button onClick={() => goto(0)} disabled={!segments.length} className="inline-flex items-center gap-1 text-[12px] rounded-md px-2.5 py-1.5 bg-live/15 text-live hover:bg-live/25 disabled:opacity-40"><Play className="size-3.5" /> Start</button>
-            <button onClick={() => goto(active == null ? 0 : Math.max(0, active - 1))} disabled={active == null} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipBack className="size-4" /></button>
-            <button onClick={() => goto(active == null ? 0 : Math.min(segments.length - 1, active + 1))} disabled={active == null || active >= segments.length - 1} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipForward className="size-4" /></button>
+            <button onClick={() => goto(firstItem < 0 ? null : firstItem)} disabled={firstItem < 0} className="inline-flex items-center gap-1 text-[12px] rounded-md px-2.5 py-1.5 bg-live/15 text-live hover:bg-live/25 disabled:opacity-40"><Play className="size-3.5" /> Start</button>
+            <button onClick={() => goto(active == null ? firstItem : nextItem(active, -1))} disabled={active == null || active <= firstItem} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipBack className="size-4" /></button>
+            <button onClick={() => goto(active == null ? firstItem : nextItem(active, 1))} disabled={active == null || active >= lastItem} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipForward className="size-4" /></button>
             <button onClick={() => goto(null)} disabled={active == null} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30" title="Stop / clear cues"><Square className="size-4" /></button>
           </div>
         </AppHeader>
@@ -122,22 +132,63 @@ export default function RunsheetPage() {
             <div className="h-full grid place-items-center text-muted-foreground text-sm">No service — create one from the picker.</div>
           ) : (
             <div className="max-w-[900px] mx-auto space-y-2">
-              {segments.map((seg, i) => (
+              {segments.map((seg, i) => seg.kind === 'header' ? (
+                <HeaderRow key={seg.id} seg={seg} idx={i} count={segments.length} synced={!!seg.proItemId}
+                  onChange={(s) => setSegments(segments.map((x, j) => j === i ? s : x))}
+                  onRemove={() => setSegments(segments.filter((_, j) => j !== i))}
+                  onMove={(dir) => move(i, dir)} />
+              ) : (
                 <SegmentRow key={seg.id} seg={seg} idx={i} count={segments.length} state={active} mics={mics} synced={!!seg.proItemId}
                   onChange={(s) => setSegments(segments.map((x, j) => j === i ? s : x))}
                   onRemove={() => setSegments(segments.filter((_, j) => j !== i))}
                   onMove={(dir) => move(i, dir)}
                   onGoto={() => goto(i)} />
               ))}
-              <button onClick={() => setSegments([...segments, { id: uid(), title: 'Segment', people: [] }])}
-                className="w-full rounded-lg border border-dashed border-border/70 py-3 text-[12px] text-muted-foreground hover:bg-accent/40 hover:text-foreground inline-flex items-center justify-center gap-1.5">
-                <Plus className="size-3.5" /> Add segment
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setSegments([...segments, { id: uid(), title: 'Segment', people: [] }])}
+                  className="flex-1 rounded-lg border border-dashed border-border/70 py-3 text-[12px] text-muted-foreground hover:bg-accent/40 hover:text-foreground inline-flex items-center justify-center gap-1.5">
+                  <Plus className="size-3.5" /> Add segment
+                </button>
+                <button onClick={() => setSegments([...segments, { id: uid(), kind: 'header', title: 'Section', people: [] }])}
+                  className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-[12px] text-muted-foreground hover:bg-accent/40 hover:text-foreground inline-flex items-center justify-center gap-1.5">
+                  <Heading className="size-3.5" /> Add header
+                </button>
+              </div>
             </div>
           )}
         </main>
       </div>
     </TooltipProvider>
+  )
+}
+
+/** A section divider. From ProPresenter it's read-only (title + colour synced);
+ *  added manually it's an editable, reorderable, removable label. */
+function HeaderRow({ seg, idx, count, synced, onChange, onRemove, onMove }: {
+  seg: Segment; idx: number; count: number; synced?: boolean
+  onChange: (s: Segment) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void
+}) {
+  const color = seg.color || '#6b7280'
+  return (
+    <div className="flex items-center gap-2 pt-4 pb-0.5">
+      {synced ? <span className="w-4 shrink-0" /> : (
+        <div className="flex flex-col shrink-0 -my-1">
+          <button onClick={() => onMove(-1)} disabled={idx === 0} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
+          <button onClick={() => onMove(1)} disabled={idx === count - 1} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
+        </div>
+      )}
+      <span className="h-5 w-1.5 rounded-full shrink-0" style={{ background: color }} />
+      {synced ? (
+        <span className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.16em] truncate">{seg.title}</span>
+          <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-primary/15 text-primary" title="Synced from ProPresenter">PP</span>
+        </span>
+      ) : (
+        <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Section" className="flex-1 bg-transparent text-[11px] font-bold uppercase tracking-[0.16em] outline-none border-b border-transparent focus:border-border" />
+      )}
+      <div className="flex-1 h-px bg-border/50" />
+      {synced ? <span className="w-7.5 shrink-0" /> : <button onClick={onRemove} className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground"><Trash2 className="size-3.5" /></button>}
+    </div>
   )
 }
 
@@ -176,8 +227,12 @@ function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, 
       </div>
       <div className="pl-7 flex flex-wrap gap-1.5">
         {seg.people.map((p, i) => (
-          <div key={i} className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 pl-2 pr-1 py-1">
-            <input value={p.name} onChange={(e) => setPeople(seg.people.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} placeholder="Name" className="bg-transparent text-[12px] w-20 outline-none" />
+          <div key={i} className={cn('inline-flex items-center gap-1 rounded-md border pl-1 pr-1 py-1', p.lead ? 'border-primary/60 bg-primary/10' : 'border-border/60 bg-muted/30')}>
+            <button onClick={() => setPeople(seg.people.map((x, j) => j === i ? { ...x, lead: !x.lead } : x))} title={p.lead ? 'Lead — click to unset' : 'Set as lead'}
+              className={cn('p-0.5 rounded shrink-0', p.lead ? 'text-primary' : 'text-muted-foreground/40 hover:text-muted-foreground')}>
+              <Star className={cn('size-3', p.lead && 'fill-current')} />
+            </button>
+            <input value={p.name} onChange={(e) => setPeople(seg.people.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} placeholder="Name" className={cn('bg-transparent text-[12px] w-20 outline-none', p.lead && 'font-semibold')} />
             <select value={p.micId ?? ''} onChange={(e) => setPeople(seg.people.map((x, j) => j === i ? { ...x, micId: e.target.value || undefined } : x))} className="bg-transparent text-[11px] text-muted-foreground outline-none max-w-[90px]">
               <option value="">no mic</option>
               {mics.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
