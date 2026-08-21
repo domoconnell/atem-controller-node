@@ -181,7 +181,7 @@ function Canvas({ surface, edit, sel, instances, onSelect, onRemove, onLayout }:
   if (bh > h) { bh = h; bw = h * disp.aspect }
   return (
     <div ref={ref} className="w-full h-full grid place-items-center" onClick={(e) => e.stopPropagation()}>
-      <div className="relative rounded-lg overflow-hidden border border-border/60 bg-background shadow-2xl flex flex-col" style={{ width: bw || '100%', height: bh || '100%' }}>
+      <div className="relative rounded-lg overflow-hidden border border-border/60 surface-bg shadow-2xl flex flex-col" style={{ width: bw || '100%', height: bh || '100%' }}>
         {surface.header.enabled && <RegionStrip region="header" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
         <MainGrid surface={surface} edit={edit} sel={sel} instances={instances} onSelect={onSelect} onRemove={onRemove} onLayout={onLayout} />
         {surface.footer.enabled && <RegionStrip region="footer" strip {...{ surface, edit, sel, instances, onSelect, onRemove }} />}
@@ -206,8 +206,8 @@ function RegionStrip({ region, surface, edit, sel, instances, onSelect, onRemove
   const widgets = regionWidgets(surface, region)
   // strip = header/footer: thin, widgets share the width (flex-1) and condense, no scroll.
   return (
-    <div className={cn('shrink-0 bg-muted/20 flex gap-1 p-1 border-border/50',
-      strip ? 'h-14 overflow-hidden border-y' : horizontal ? 'h-24 overflow-auto border-y' : 'w-44 flex-col overflow-auto border-x')}>
+    <div className={cn('shrink-0 glass-strip flex gap-2 p-2',
+      strip ? 'h-16 overflow-hidden border-y' : horizontal ? 'h-24 overflow-auto border-y' : 'w-44 flex-col overflow-auto border-x')}>
       {widgets.length === 0 && <div className="text-[10px] text-muted-foreground/40 grid place-items-center w-full uppercase tracking-wider">{region}</div>}
       {widgets.map((p) => (
         <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) onSelect(region, p.i) }}
@@ -246,7 +246,7 @@ function MainGrid({ surface, edit, sel, instances, onSelect, onRemove, onLayout 
           isDraggable={edit} isResizable={edit} draggableHandle=".widget-drag-handle" draggableCancel=".widget-no-drag"
           onLayoutChange={(l: Layout[]) => onLayout(l)}>
           {surface.main.widgets.map((p) => (
-            <div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }} className="p-[3px]" onClick={(e) => { e.stopPropagation(); if (edit) onSelect('main', p.i) }}>
+            <div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }} className="p-1.5" onClick={(e) => { e.stopPropagation(); if (edit) onSelect('main', p.i) }}>
               <WidgetView p={p} instances={instances} edit={edit} selected={sel?.region === 'main' && sel.i === p.i}
                 onSelect={() => onSelect('main', p.i)} onRemove={() => onRemove('main', p.i)} />
             </div>

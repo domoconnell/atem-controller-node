@@ -32,8 +32,7 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
     : def?.multi === 'type' ? instances.filter((x) => x.typeId === boundType)
     : undefined
   return (
-    <div className={cn('h-full w-full rounded-xl border bg-card overflow-hidden flex flex-col',
-      selected ? 'border-primary' : 'border-border/60')}
+    <div className={cn('h-full w-full rounded-2xl overflow-hidden flex flex-col glass', selected && 'glass-selected')}
       style={{ containerType: 'size' } as React.CSSProperties}>
       {edit && (
         <div className="widget-drag-handle shrink-0 h-6 flex items-center gap-1 px-2 bg-muted/40 cursor-move">

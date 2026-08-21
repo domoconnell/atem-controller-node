@@ -103,6 +103,36 @@
     border: 1px solid oklch(0.26 0.012 260);
     box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.04), 0 8px 24px -12px oklch(0 0 0 / 0.6);
   }
+  /* Ambient dashboard backdrop: a warm amber wash top-left, a cool one bottom-right. */
+  .surface-bg {
+    background:
+      radial-gradient(1300px 720px at 10% -14%, oklch(0.78 0.16 75 / 0.10), transparent 55%),
+      radial-gradient(1200px 900px at 106% 116%, oklch(0.62 0.12 255 / 0.10), transparent 55%),
+      linear-gradient(180deg, oklch(0.15 0.009 260), oklch(0.115 0.008 260));
+  }
+  /* Frosted-glass widget card: a faint primary sheen along the top edge, a soft
+     inner highlight and a deep drop shadow, over a blurred translucent panel. */
+  .glass {
+    position: relative;
+    background:
+      linear-gradient(180deg, oklch(0.78 0.16 75 / 0.055), transparent 34%),
+      linear-gradient(155deg, oklch(0.25 0.014 260 / 0.55), oklch(0.17 0.01 260 / 0.48));
+    backdrop-filter: blur(14px) saturate(1.15);
+    border: 1px solid oklch(1 0 0 / 0.08);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.07), 0 18px 44px -20px oklch(0 0 0 / 0.75);
+  }
+  .glass-strip {
+    background:
+      linear-gradient(180deg, oklch(0.78 0.16 75 / 0.05), transparent 60%),
+      linear-gradient(180deg, oklch(0.21 0.012 260 / 0.5), oklch(0.15 0.01 260 / 0.42));
+    backdrop-filter: blur(12px) saturate(1.1);
+    border-color: oklch(1 0 0 / 0.07);
+  }
+  /* Selected widget in the designer: primary ring + glow. */
+  .glass-selected {
+    border-color: var(--primary);
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.08), 0 0 0 1px var(--primary), 0 0 26px -6px var(--primary);
+  }
   .monitor-bezel {
     background: oklch(0.09 0.006 260);
     border: 1px solid oklch(0.22 0.01 260);
