@@ -7,7 +7,7 @@ export interface WidgetProps {
   instances?: { id: string; typeId: string; name: string }[]
   title: string
 }
-export interface ConfigField { key: string; label: string; kind: 'stream' | 'field' | 'text' | 'number' }
+export interface ConfigField { key: string; label: string; kind: 'stream' | 'field' | 'text' | 'number' | 'service' }
 export interface WidgetDef {
   type: string
   label: string

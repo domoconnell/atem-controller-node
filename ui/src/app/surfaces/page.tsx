@@ -10,6 +10,7 @@ import '@/widgets/strips'
 import '@/widgets/mics'
 import '@/widgets/runsheet'
 import { useMicDefs } from '@/widgets/mics'
+import { useServiceList } from '@/widgets/runsheet'
 import { widgetsForType, widgetsForFeature, getWidget } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { Pullouts } from '@/components/surfaces/pullouts'
@@ -355,6 +356,7 @@ function ConfigPanel({ placement, instances, types, onChange, onClose }: {
   const set = (k: string, v: unknown) => onChange({ config: { [k]: v } })
   const micDefs = useMicDefs()
   const micIds = (placement.config.micIds as string[] | undefined) ?? []
+  const services = useServiceList()
   return (
     <aside className="w-64 shrink-0 border-l border-border/70 overflow-y-auto p-4 space-y-3 bg-background relative z-20">
       <div className="flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider">{def?.label}</h3><button onClick={onClose} title="Close (deselect widget)" className="p-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"><X className="size-3.5" /></button></div>
@@ -378,6 +380,7 @@ function ConfigPanel({ placement, instances, types, onChange, onClose }: {
       {def?.configFields?.map((f) => {
         if (f.kind === 'stream') return <F key={f.key} label="Stream"><select value={String(placement.config.stream ?? '')} onChange={(e) => set('stream', e.target.value)} className={sc}>{streams.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></F>
         if (f.kind === 'field') return <F key={f.key} label="Field"><select value={String(placement.config.field ?? '')} onChange={(e) => set('field', e.target.value)} className={sc}>{(curStream?.fields ?? []).map((x) => <option key={x.id} value={x.id}>{x.label ?? x.id}</option>)}</select></F>
+        if (f.kind === 'service') return <F key={f.key} label={f.label}><select value={String(placement.config.serviceId ?? '')} onChange={(e) => set('serviceId', e.target.value)} className={sc}><option value="">Auto (running service)</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></F>
         return <F key={f.key} label={f.label}><input type={f.kind === 'number' ? 'number' : 'text'} value={String(placement.config[f.key] ?? '')} onChange={(e) => set(f.key, f.kind === 'number' ? Number(e.target.value) : e.target.value)} className={sc} /></F>
       })}
     </aside>
