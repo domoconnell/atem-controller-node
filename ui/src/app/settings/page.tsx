@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAtemState } from '@/hooks/use-atem-state'
 import { AppHeader } from '@/components/app-header'
 import { SchemaForm } from '@/components/settings/schema-form'
+import { MicComposite, MicEditor, AddMicButton, useMics, type Mic as MicDef, type CueState } from '@/components/mics/mic-composite'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -201,11 +202,43 @@ export default function SettingsPage() {
                   </>
                 )
               })()}
-              {sel === 'f:mics' && (<><h1 className="text-xl font-bold mb-1">Wireless Mics</h1><p className="text-sm text-muted-foreground mb-4 max-w-xl">A composite feature, not a connection: each mic links a <span className="text-foreground/80">Sennheiser</span> receiver channel to a <span className="text-foreground/80">DiGiCo</span> console channel and a live/standby/off cue. Configure the receivers under Connections → Sennheiser; the channel↔cue mapping lives here.</p><div className="text-[12px] text-muted-foreground/60 rounded-lg border border-dashed border-border/50 px-4 py-6 text-center">Mapping editor coming next.</div></>)}
+              {sel === 'f:mics' && <MicsSettings />}
             </div>
           </main>
         </div>
       </div>
     </TooltipProvider>
+  )
+}
+
+/** Wireless Mics feature panel — mirrors the Mics app's composite editor so the
+ *  channel↔cue mapping can be managed from Settings too. Same components, same
+ *  data (/api/features/mics), so edits show in both places. */
+function MicsSettings() {
+  const { mics, save, remove } = useMics()
+  const [editing, setEditing] = useState<Partial<MicDef> | null>(null)
+  const [instances, setInstances] = useState<{ id: string; typeId: string; name: string }[]>([])
+  useEffect(() => { fetch('/api/instances').then((r) => r.json()).then((b) => setInstances(b.instances ?? [])).catch(() => {}) }, [])
+  const sennInstances = instances.filter((i) => i.typeId === 'sennheiser')
+  const digicoInstances = instances.filter((i) => i.typeId === 'digico')
+  return (
+    <>
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <h1 className="text-xl font-bold">Wireless Mics</h1>
+        <AddMicButton onClick={() => setEditing({ label: '', cue: 'off' })} />
+      </div>
+      <p className="text-sm text-muted-foreground mb-4 max-w-xl">A composite feature, not a connection: each mic links a <span className="text-foreground/80">Sennheiser</span> receiver channel to a <span className="text-foreground/80">DiGiCo</span> console channel and a live/standby/off cue. Configure the receivers under Connections → Sennheiser. This mirrors the <a href="/mics" className="underline hover:text-foreground">Mics app</a>.</p>
+      {mics.length === 0 ? (
+        <button onClick={() => setEditing({ label: '', cue: 'off' })} className="w-full rounded-xl border border-dashed border-border/70 py-6 text-[12px] text-muted-foreground hover:bg-accent/40 hover:text-foreground">
+          No mics yet — map a receiver + console channel to a person. <span className="underline">Add one</span>.
+        </button>
+      ) : (
+        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(252px,1fr))]">
+          {mics.map((m) => <MicComposite key={m.id} mic={m} onCue={(id, cue: CueState) => save({ id, cue })} onEdit={(x) => setEditing(x)} />)}
+        </div>
+      )}
+      <MicEditor mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
+        onSave={save} onDelete={remove} onClose={() => setEditing(null)} />
+    </>
   )
 }
