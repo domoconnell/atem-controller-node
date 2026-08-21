@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS services (
   updated_at  INTEGER NOT NULL
 );
 
+-- Record-status "recorders": a chosen connector instance (HyperDeck/ATEM/REAPER)
+-- given a role. Internal feature. data_json carries { instanceId, typeId, role }.
+CREATE TABLE IF NOT EXISTS recorders (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  data_json   TEXT NOT NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS timer_layouts (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,

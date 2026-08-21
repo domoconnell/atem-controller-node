@@ -440,7 +440,23 @@ export class AtemController extends EventEmitter {
       meCount: Math.max(1, (this.state?.video?.mixEffects ?? []).length),
       boxCount: ss?.[this.ssrcId]?.boxes?.length ?? 4,
     }
-    return { connected: this.connected, simulated: this.simulated, boxes, mixEffects: mes, inputs, mediaPlayers, options }
+    // ISO / disk recording (Constellation & co). RecordingStatus: 0 idle,
+    // 1 recording, 128 stopping. duration is a timecode of how long we've rolled.
+    const rec = this.state?.recording
+    let recording = null
+    if (rec) {
+      const s = rec.status?.state
+      const dur = rec.duration
+      const disk = rec.disks ? Object.values(rec.disks).find(Boolean) : null
+      recording = {
+        state: s === 1 ? 'recording' : s === 128 ? 'stopping' : 'idle',
+        durationSeconds: dur ? (dur.hours ?? 0) * 3600 + (dur.minutes ?? 0) * 60 + (dur.seconds ?? 0) : null,
+        timeAvailableSeconds: rec.status?.recordingTimeAvailable ?? disk?.recordingTimeAvailable ?? null,
+        filename: rec.properties?.filename ?? null,
+        volumeName: disk?.volumeName ?? null,
+      }
+    }
+    return { connected: this.connected, simulated: this.simulated, boxes, mixEffects: mes, inputs, mediaPlayers, options, recording }
   }
 }
 

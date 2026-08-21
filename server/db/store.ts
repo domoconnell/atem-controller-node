@@ -119,6 +119,15 @@ export class Store {
   }
   deleteService(id: string) { this.db.prepare('DELETE FROM services WHERE id=?').run(id) }
 
+  listRecorders() { return (this.db.prepare('SELECT id,name,data_json,sort_order FROM recorders ORDER BY sort_order,name').all() as any[]).map((r) => ({ id: r.id, label: r.name, sortOrder: r.sort_order, ...JSON.parse(r.data_json) })) }
+  putRecorder(id: string, label: string, data: Json, sortOrder = 0) {
+    const t = now()
+    this.db.prepare(`INSERT INTO recorders(id,name,data_json,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,data_json=excluded.data_json,sort_order=excluded.sort_order,updated_at=excluded.updated_at`)
+      .run(id, label, JSON.stringify(data), sortOrder, t, t)
+  }
+  deleteRecorder(id: string) { this.db.prepare('DELETE FROM recorders WHERE id=?').run(id) }
+
   // ---- timer layouts / renderer presets / acceptance (generic keyed blobs) ----
   listTimerLayouts() { return (this.db.prepare('SELECT id,name,data_json FROM timer_layouts').all() as any[]).map((r) => ({ id: r.id, name: r.name, ...JSON.parse(r.data_json) })) }
   putTimerLayout(id: string, name: string, data: Json) { const t = now(); this.db.prepare(`INSERT INTO timer_layouts(id,name,data_json,updated_at) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,data_json=excluded.data_json,updated_at=excluded.updated_at`).run(id, name, JSON.stringify(data), t) }

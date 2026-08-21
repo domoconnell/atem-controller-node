@@ -5,10 +5,11 @@ import { AppHeader } from '@/components/app-header'
 import { SchemaForm } from '@/components/settings/schema-form'
 import { MicComposite, MicEditor, AddMicButton, useMics, type Mic as MicDef, type CueState } from '@/components/mics/mic-composite'
 import { useTopic } from '@/hooks/use-topic'
+import type { Recorder } from '@/widgets/recorders'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Save } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save } from 'lucide-react'
 
 type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
 const DOT: Record<ConnState, string> = { live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/30' }
@@ -166,6 +167,7 @@ export default function SettingsPage() {
             {typeOrder.map((typeId) => <NavItem key={typeId} id={`c:${typeId}`} label={nameOf(typeId)} led={ledForType(byType.get(typeId) ?? [])} active={sel === `c:${typeId}`} onSelect={setSel} />)}
             <NavHeader>Features</NavHeader>
             <NavItem id="f:mics" icon={Mic} label="Wireless Mics" active={sel === 'f:mics'} onSelect={setSel} />
+            <NavItem id="f:recorders" icon={Disc} label="Recorders" active={sel === 'f:recorders'} onSelect={setSel} />
           </nav>
 
           {/* detail pane */}
@@ -200,6 +202,7 @@ export default function SettingsPage() {
                 )
               })()}
               {sel === 'f:mics' && <MicsSettings />}
+              {sel === 'f:recorders' && <RecordersSettings instances={instances} />}
             </div>
           </main>
         </div>
@@ -235,6 +238,50 @@ function MicsSettings() {
       )}
       <MicEditor key={editing?.id ?? 'new'} mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
         onSave={save} onDelete={remove} onClose={() => setEditing(null)} />
+    </>
+  )
+}
+
+const RECORDER_TYPES = ['hyperdeck', 'atem', 'reaper']
+const recSc = 'bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]'
+
+/** Tag connector instances (HyperDeck / ATEM ISO / REAPER) as record or
+ *  playback devices for the Record status widget. Config lives in the DB and
+ *  is pushed over the hub (feature:recorders). */
+function RecordersSettings({ instances }: { instances: Instance[] }) {
+  const recorders = ((useTopic('feature:recorders') as { recorders?: Recorder[] } | null)?.recorders) ?? []
+  const candidates = instances.filter((i) => RECORDER_TYPES.includes(i.typeId))
+  const add = () => {
+    const inst = candidates[0]
+    fetch('/api/features/recorders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: inst?.name ?? 'Recorder', instanceId: inst?.id ?? '', typeId: inst?.typeId ?? '', role: 'record' }) })
+  }
+  const patch = (id: string, body: Record<string, unknown>) => fetch(`/api/features/recorders/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const del = (id: string) => fetch(`/api/features/recorders/${id}`, { method: 'DELETE' })
+  return (
+    <>
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <h1 className="text-xl font-bold">Recorders</h1>
+        <button onClick={add} disabled={candidates.length === 0} className="inline-flex items-center gap-1.5 text-[12px] font-medium rounded-md px-2.5 py-1.5 border border-border hover:bg-accent disabled:opacity-40"><Plus className="size-3.5" /> Device</button>
+      </div>
+      <p className="text-sm text-muted-foreground mb-4 max-w-xl">Tag your HyperDecks, ATEM ISO recorders and REAPER as <span className="text-foreground/80">record</span> or <span className="text-foreground/80">playback</span> devices. The <span className="text-foreground/80">Record status</span> widget then shows all of them — status, timecode, format and disk time-left. Add that widget from the Surfaces designer.</p>
+      {candidates.length === 0 && <div className="text-[12px] text-muted-foreground/70 rounded-lg border border-dashed border-border/50 px-4 py-6 text-center">No HyperDeck, ATEM or REAPER connections yet — add them under Connections first.</div>}
+      <div className="space-y-2">
+        {recorders.map((r) => (
+          <div key={r.id} className="flex items-center gap-2 rounded-lg border border-border/60 p-2">
+            <input value={r.label} onChange={(e) => patch(r.id, { label: e.target.value })} placeholder="Label" className={cn(recSc, 'w-40')} />
+            <select value={r.instanceId} onChange={(e) => { const inst = candidates.find((i) => i.id === e.target.value); patch(r.id, { instanceId: e.target.value, typeId: inst?.typeId ?? r.typeId }) }} className={cn(recSc, 'flex-1 min-w-0')}>
+              {candidates.every((i) => i.id !== r.instanceId) && <option value={r.instanceId}>{r.instanceId || '— pick device —'}</option>}
+              {candidates.map((i) => <option key={i.id} value={i.id}>{i.name} · {i.typeId}</option>)}
+            </select>
+            <select value={r.role} onChange={(e) => patch(r.id, { role: e.target.value })} className={cn(recSc, 'w-28')}>
+              <option value="record">Record</option>
+              <option value="playback">Playback</option>
+            </select>
+            <button onClick={() => del(r.id)} className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground shrink-0"><Trash2 className="size-3.5" /></button>
+          </div>
+        ))}
+        {recorders.length === 0 && candidates.length > 0 && <div className="text-[12px] text-muted-foreground/60 px-1">No recorders yet — click <span className="text-foreground/70">Device</span> to add one.</div>}
+      </div>
     </>
   )
 }

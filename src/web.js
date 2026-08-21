@@ -107,6 +107,27 @@ export class WebServer {
     })
     app.delete('/api/features/mics/:id', (req, res) => { this.store?.deleteMic(req.params.id); this.publishMics(); res.json({ ok: true, mics: this.store?.listMics() ?? [] }) })
 
+    // ---- Recorders: connector instances tagged as record/playback devices ----
+    app.get('/api/features/recorders', (_req, res) => res.json({ ok: true, recorders: this.store?.listRecorders() ?? [] }))
+    app.post('/api/features/recorders', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const b = req.body ?? {}
+      const id = b.id || `rec_${Math.random().toString(36).slice(2, 10)}`
+      const { id: _i, label = 'Recorder', sortOrder = 0, ...data } = b
+      this.store.putRecorder(id, label, data, sortOrder)
+      this.publishRecorders()
+      res.json({ ok: true, recorders: this.store.listRecorders() })
+    })
+    app.patch('/api/features/recorders/:id', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const cur = this.store.listRecorders().find((m) => m.id === req.params.id) ?? {}
+      const { id: _i, label = cur.label ?? 'Recorder', sortOrder = cur.sortOrder ?? 0, ...data } = { ...cur, ...(req.body ?? {}) }
+      this.store.putRecorder(req.params.id, label, data, sortOrder)
+      this.publishRecorders()
+      res.json({ ok: true, recorders: this.store.listRecorders() })
+    })
+    app.delete('/api/features/recorders/:id', (req, res) => { this.store?.deleteRecorder(req.params.id); this.publishRecorders(); res.json({ ok: true, recorders: this.store?.listRecorders() ?? [] }) })
+
     // ---- Runsheet services (timed segments with people + mics) ----
     app.get('/api/features/services', (_req, res) => res.json({ ok: true, services: this.store?.listServices() ?? [] }))
     app.post('/api/features/services', (req, res) => {
@@ -434,6 +455,7 @@ export class WebServer {
     this.startRunsheetSync()
     this.publishServices() // seed the hub snapshots so widgets have data on connect
     this.publishMics()
+    this.publishRecorders()
     this.publishInstances()
   }
 
@@ -449,6 +471,13 @@ export class WebServer {
    *  after the next poll. */
   publishMics() {
     try { this.connectorEngine?.hub?.publish('feature:mics', { mics: this.store?.listMics() ?? [] }) }
+    catch { /* hub optional */ }
+  }
+
+  /** Push the recorder list (which devices are tagged record/playback) so the
+   *  record-status widget updates without polling. */
+  publishRecorders() {
+    try { this.connectorEngine?.hub?.publish('feature:recorders', { recorders: this.store?.listRecorders() ?? [] }) }
     catch { /* hub optional */ }
   }
 

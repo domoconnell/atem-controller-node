@@ -121,6 +121,7 @@ export class Engine {
         const snap = atem.snapshot()
         const me = snap.mixEffects?.[atem.me] ?? snap.mixEffects?.[0] ?? null
         this.hub.publish(buildTopic('atem-1', 'program'), { program: me?.programInput ?? null, preview: me?.previewInput ?? null, connected: snap.connected || snap.simulated, simulated: snap.simulated })
+        this.hub.publish(buildTopic('atem-1', 'recording'), snap.recording ?? null)
         st('atem-1', snap.connected || snap.simulated)
       }
       atem.on('stateChanged', publish); atem.on('connected', publish); atem.on('disconnected', publish); publish()
