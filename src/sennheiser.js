@@ -104,6 +104,23 @@ export function buildLegacySubscribe(ip) {
   return Buffer.concat([LEGACY_TOKEN, oct, oct, Buffer.from([0x01, 0x00, 0x01, 0x01, 0x01, 0x01])])
 }
 
+/**
+ * The full WSM init handshake (captured from a fresh WSM connection): a
+ * variant-A subscribe, two session-setup commands, then the variant-B (config)
+ * subscribe. This establishes the session the c8fcf7ca config block flows
+ * within - the plain periodic subscribe alone only yields telemetry.
+ */
+export function buildLegacyHandshake(ip) {
+  const oct = Buffer.from(ip.split('.').map(Number))          // e.g. 0a0a0aa2
+  const rev = Buffer.from([...oct].reverse())                 // a20a0a0a (as WSM sends it)
+  return [
+    Buffer.concat([LEGACY_TOKEN, oct, oct, Buffer.from([0x00, 0x00, 0x01, 0x01, 0x01, 0x01])]), // subscribe variant A
+    Buffer.concat([Buffer.from('a4fdf7ca', 'hex'), oct, Buffer.from([0x01, 0x01, 0x01])]),
+    Buffer.concat([Buffer.from('4c37cace', 'hex'), rev, Buffer.from([0xff, 0xff, 0xff, 0xff, 0x01, 0x01])]),
+    buildLegacySubscribe(ip), // subscribe variant B (full config)
+  ]
+}
+
 export function parseLegacyFrame(buf) {
   // 85-byte ASCII identity beacon: "Model=EM300G3   ID=001B667A8EDB   IPA=..."
   const text = buf.toString('latin1')
@@ -267,6 +284,12 @@ export class SennheiserMonitor extends EventEmitter {
       await new Promise((res) => this._legacySender.bind(0, res)).catch(() => {})
       if (!this._legacyIp) console.warn('[senn] no LAN IP found for legacy subscribe - old G3 will fall back to ping presence')
       else console.log(`[senn] legacy G3 subscribe as ${this._legacyIp} (recv :8133) for ${legacy.length} unit(s)`)
+      // Establish the session so the config block flows, and refresh it in case
+      // the unit ages the session out.
+      if (this._legacyIp) {
+        for (const d of legacy) this._legacyHandshake(d)
+        this._timers.push(setInterval(() => { for (const d of legacy) this._legacyHandshake(d) }, 30000))
+      }
     }
     for (const d of dx) {
       const s = dgram.createSocket('udp4')
@@ -313,6 +336,14 @@ export class SennheiserMonitor extends EventEmitter {
     wire('tx', 'senn', `legacy ${d.ip}`, `subscribe as ${this._legacyIp} (recv :8133)`)
     // Send from the ephemeral sender (like WSM), fall back to the recv socket.
     ;(this._legacySender ?? this._legacy)?.send(buildLegacySubscribe(this._legacyIp), d.port ?? LEGACY_PORT, d.ip)
+  }
+
+  /** WSM's session-setup handshake — makes the unit start sending the config
+   *  block (name/freq/squelch/AF), not just telemetry. */
+  _legacyHandshake(d) {
+    const sock = this._legacySender ?? this._legacy
+    wire('tx', 'senn', `legacy ${d.ip}`, `handshake as ${this._legacyIp}`)
+    for (const buf of buildLegacyHandshake(this._legacyIp)) sock?.send(buf, d.port ?? LEGACY_PORT, d.ip)
   }
 
   _onLegacy(msg, rinfo) {
