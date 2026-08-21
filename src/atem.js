@@ -41,6 +41,9 @@ export class AtemController extends EventEmitter {
     this.connected = false
     this.ssrcId = config.supersource.id
     this.me = config.supersource.me
+    // Runtime config: seeded from config.json, overridable from Settings via
+    // reconfigure() (the SQLite instance is the live source of truth).
+    this.cfg = { ...config.atem }
 
     this.real.on('connected', () => {
       if (this.simulated) {
@@ -48,7 +51,7 @@ export class AtemController extends EventEmitter {
         this._useReal()
       }
       this.connected = true
-      console.log('[atem] connected to', config.atem.ip)
+      console.log('[atem] connected to', this.cfg.ip)
       this.emit('connected')
       this.emit('stateChanged')
     })
@@ -70,7 +73,26 @@ export class AtemController extends EventEmitter {
 
   async connect() {
     this._scheduleSimFallback()
-    await this.real.connect(config.atem.ip)
+    await this.real.connect(this.cfg.ip)
+  }
+
+  /**
+   * Apply new connection settings from Settings (IP / sim fallback) and
+   * reconnect to the new switcher. Tears down the simulator if it was running
+   * and drops the old real connection first; the usual sim-fallback still
+   * applies if the new target isn't reachable (keeps the app usable).
+   */
+  async reconfigure(patch = {}) {
+    this.cfg = { ...this.cfg, ...patch }
+    clearTimeout(this._simTimer)
+    const was = this.connected || this.simulated
+    if (this.sim) { this.sim.removeAllListeners(); try { this.sim.disconnect() } catch { /* noop */ } this.sim = null }
+    this.simulated = false
+    this.atem = this._realLogged
+    try { await this.real.disconnect() } catch { /* not connected */ }
+    this.connected = false
+    if (was) { this.emit('disconnected'); this.emit('stateChanged') }
+    await this.connect()
   }
 
   /**
@@ -79,9 +101,9 @@ export class AtemController extends EventEmitter {
    * dry-running transitions). The real one takes over if it turns up.
    */
   _scheduleSimFallback() {
-    if (config.atem?.simulate === false) return
+    if (this.cfg?.simulate === false) return
     clearTimeout(this._simTimer)
-    const grace = config.atem?.simFallbackMs ?? 4000
+    const grace = this.cfg?.simFallbackMs ?? 4000
     this._simTimer = setTimeout(() => {
       if (this.connected || this.simulated) return
       this._useSim()
@@ -98,7 +120,7 @@ export class AtemController extends EventEmitter {
     })
     this.sim.on('connected', () => {
       this.connected = true
-      console.log('[atem] ⚠ no ATEM at', config.atem.ip, '- running the built-in SIMULATOR')
+      console.log('[atem] ⚠ no ATEM at', this.cfg.ip, '- running the built-in SIMULATOR')
       this.emit('connected')
       this.emit('stateChanged')
     })

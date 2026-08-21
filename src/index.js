@@ -119,6 +119,7 @@ if (connectorEngine) {
 // config.json (which is only the initial migration seed).
 if (store) {
   const cfgOf = (t) => store.listInstances().find((i) => i.typeId === t)?.config
+  const at = cfgOf('atem'); if (at) atem.cfg = { ...atem.cfg, ...at }
   const hd = cfgOf('hyperdeck'); if (hd) hyperdeck.cfg = { ...hyperdeck.cfg, ...hd }
   const pp = cfgOf('propresenter'); if (pp) propresenter.cfg = { ...propresenter.cfg, ...pp }
 }
