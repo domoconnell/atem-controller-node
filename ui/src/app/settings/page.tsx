@@ -237,7 +237,7 @@ function MicsSettings() {
           {mics.map((m) => <MicComposite key={m.id} mic={m} onCue={(id, cue: CueState) => save({ id, cue })} onEdit={(x) => setEditing(x)} />)}
         </div>
       )}
-      <MicEditor mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
+      <MicEditor key={editing?.id ?? 'new'} mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
         onSave={save} onDelete={remove} onClose={() => setEditing(null)} />
     </>
   )

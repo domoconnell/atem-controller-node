@@ -303,7 +303,7 @@ function ServicePicker({ services, current, onPick, onNew }: { services: Service
   const [open, setOpen] = useState(false)
   return (
     <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 hover:bg-accent border border-border">{current?.name || 'Services'} <ChevronDown className="size-3" /></button>
+      <button onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 hover:bg-accent border border-border w-44 justify-between"><span className="truncate">{current?.name || 'Services'}</span> <ChevronDown className="size-3 shrink-0" /></button>
       {open && <div className="absolute left-0 top-full mt-1 z-50 w-52 rounded-lg border border-border bg-popover shadow-2xl p-1" onMouseLeave={() => setOpen(false)}>
         {services.map((s) => <button key={s.id} onClick={() => { onPick(s.id); setOpen(false) }} className="w-full text-left text-[12.5px] rounded-md px-2 py-1.5 hover:bg-accent">{s.name}</button>)}
         <button onClick={() => { onNew(); setOpen(false) }} className="w-full text-left text-[12.5px] rounded-md px-2 py-1.5 hover:bg-accent text-muted-foreground border-t border-border/40 mt-1"><Plus className="size-3 inline mr-1" /> New service</button>

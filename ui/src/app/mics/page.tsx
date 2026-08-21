@@ -111,7 +111,7 @@ export default function MicsPage() {
           )}
         </main>
 
-        <MicEditor mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
+        <MicEditor key={editing?.id ?? 'new'} mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
           onSave={save} onDelete={remove} onClose={() => setEditing(null)} />
 
         <WireLog lines={wire} version={wireVersion} onClear={clearWire} />

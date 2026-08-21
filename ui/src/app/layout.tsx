@@ -8,6 +8,7 @@ const mono = Geist_Mono({ variable: '--font-mono', subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Stage It Live',
   description: 'Live production control — ATEM, mics, timers, surfaces',
+  icons: { icon: [{ url: '/brand/favicon.svg', type: 'image/svg+xml' }] },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

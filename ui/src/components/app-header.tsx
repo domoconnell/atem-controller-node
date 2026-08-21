@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2, ListChecks } from 'lucide-react'
+import { Brand } from '@/components/brand'
 
 const APPS = [
   {
@@ -66,12 +67,17 @@ export function AppHeader({ app, state, tick, children }: {
   const cur = APPS.find((a) => a.id === app) ?? APPS[0]
 
   return (
-    <header className="shrink-0 flex items-center gap-5 px-5 h-14 border-b border-border/70 bg-background/80 z-30">
+    <header className="shrink-0 flex items-center gap-4 px-4 h-14 border-b border-border/70 bg-background/80 z-30">
+      {/* persistent Stage It brand, links home */}
+      <Link href="/" title="Stage It Live" className="shrink-0 text-foreground/85 hover:text-foreground transition-colors">
+        <Brand variant="full" className="h-5" />
+      </Link>
+      <div className="h-6 w-px bg-border shrink-0" />
       {/* app switcher */}
       <div className="relative">
         <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-3 group outline-none">
           <div className={cn('size-7 rounded-md bg-gradient-to-br grid place-items-center', cur.tile)}>
-            <cur.icon className="size-4 text-black/80" />
+            {cur.id === 'home' ? <Brand variant="icon" className="size-4 text-black/80" /> : <cur.icon className="size-4 text-black/80" />}
           </div>
           <div className="leading-tight text-left">
             <div className="text-[13px] font-semibold tracking-tight flex items-center gap-1.5">
@@ -91,7 +97,7 @@ export function AppHeader({ app, state, tick, children }: {
                   a.id === app && 'bg-muted/60'
                 )}>
                 <div className={cn('size-7 rounded-md bg-gradient-to-br grid place-items-center shrink-0', a.tile)}>
-                  <a.icon className="size-4 text-black/80" />
+                  {a.id === 'home' ? <Brand variant="icon" className="size-4 text-black/80" /> : <a.icon className="size-4 text-black/80" />}
                 </div>
                 <div className="leading-tight">
                   <div className="text-[12.5px] font-semibold">{a.title}</div>
@@ -103,9 +109,11 @@ export function AppHeader({ app, state, tick, children }: {
         )}
       </div>
 
-      {children}
-
-      <span className={cn('led', pulse && 'pulse')} title="flashes on every state update" />
+      {/* all app-specific controls + the live pulse float right */}
+      <div className="ml-auto flex items-center gap-2 min-w-0">
+        {children}
+        <span className={cn('led', pulse && 'pulse')} title="flashes on every state update" />
+      </div>
     </header>
   )
 }
