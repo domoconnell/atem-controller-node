@@ -74,7 +74,9 @@ An **internal** feature (not a connection) — its **own top-level app**.
 - [x] A **Service** = ordered **segments**. Each: `{ title, time, people[] }`
   where each person maps to a Mic. Data model + store + `/api/features/services`
   + the **Runsheet app** (new top-level app) with segment/people editing.
-- [x] Manual entry.  - [ ] Import from ProPresenter / CSV upload.
+- [x] Manual entry + **CSV import** (columns: Segment, Time, Person, Mic).
+  - [ ] Import from ProPresenter.
+- [x] Segment reorder (up/down).
 - [x] "Now / Next" engine: manual Start/next/prev/stop; the now segment's mics
   go LIVE, the next segment's go STANDBY, the rest OFF (drives mic.cue). Verified.
 - [ ] Auto-advance by time / segment timers.

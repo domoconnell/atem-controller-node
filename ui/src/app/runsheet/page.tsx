@@ -5,13 +5,34 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, ChevronDown, Play, SkipForward, SkipBack, Square, GripVertical, X } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload } from 'lucide-react'
 
 interface Person { name: string; micId?: string }
 interface Segment { id: string; title: string; time?: string; people: Person[] }
 interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null }
+interface MicDef { id: string; label: string }
 
 const uid = () => Math.random().toString(36).slice(2, 9)
+
+/** Parse a runsheet CSV. Columns (any order, case-insensitive):
+ *  Segment, Time, Person, Mic  — rows with the same Segment group into one. */
+function parseCsv(text: string, mics: MicDef[]): Segment[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim())
+  if (!lines.length) return []
+  const header = lines[0].split(',').map((h) => h.trim().toLowerCase())
+  const iSeg = header.indexOf('segment'), iTime = header.indexOf('time'), iPerson = header.indexOf('person'), iMic = header.indexOf('mic')
+  const micByLabel = new Map(mics.map((m) => [m.label.toLowerCase(), m.id]))
+  const segs: Segment[] = []; const byTitle = new Map<string, Segment>()
+  for (const line of lines.slice(1)) {
+    const c = line.split(',').map((x) => x.trim())
+    const title = (iSeg >= 0 ? c[iSeg] : c[0]) || 'Segment'
+    let seg = byTitle.get(title)
+    if (!seg) { seg = { id: uid(), title, time: iTime >= 0 ? c[iTime] : undefined, people: [] }; byTitle.set(title, seg); segs.push(seg) }
+    const person = iPerson >= 0 ? c[iPerson] : ''
+    if (person) seg.people.push({ name: person, micId: iMic >= 0 ? micByLabel.get((c[iMic] ?? '').toLowerCase()) : undefined })
+  }
+  return segs
+}
 
 function useServices() {
   const [services, setServices] = useState<Service[]>([])
@@ -55,6 +76,18 @@ export default function RunsheetPage() {
     }).filter(Boolean))
   }, [mics])
   const goto = (idx: number | null) => { update({ activeIndex: idx }); applyCues(segments, idx) }
+  const move = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= segments.length) return; const c = [...segments]; [c[i], c[j]] = [c[j], c[i]]; setSegments(c) }
+  const onImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const segs = parseCsv(String(reader.result), mics)
+      if (!segs.length) return
+      const list = await save({ name: file.name.replace(/\.csv$/i, '') || 'Imported', segments: segs })
+      const created = list[list.length - 1]; if (created) setSelId(created.id)
+    }
+    reader.readAsText(file); e.target.value = ''
+  }
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -63,6 +96,10 @@ export default function RunsheetPage() {
           <ServicePicker services={services} current={svc} onPick={setSelId}
             onNew={async () => { const list = await save({ name: 'New service', segments: [] }); const created = list[list.length - 1]; if (created) setSelId(created.id) }} />
           {svc && <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-40')} />}
+          <label className="cursor-pointer inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 border border-border hover:bg-accent" title="Import a CSV: columns Segment, Time, Person, Mic">
+            <Upload className="size-3.5" /> CSV
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={onImport} />
+          </label>
           <div className="ml-auto flex items-center gap-1.5">
             <button onClick={() => goto(0)} disabled={!segments.length} className="inline-flex items-center gap-1 text-[12px] rounded-md px-2.5 py-1.5 bg-live/15 text-live hover:bg-live/25 disabled:opacity-40"><Play className="size-3.5" /> Start</button>
             <button onClick={() => goto(active == null ? 0 : Math.max(0, active - 1))} disabled={active == null} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipBack className="size-4" /></button>
@@ -77,9 +114,10 @@ export default function RunsheetPage() {
           ) : (
             <div className="max-w-[900px] mx-auto space-y-2">
               {segments.map((seg, i) => (
-                <SegmentRow key={seg.id} seg={seg} idx={i} state={active} mics={mics}
+                <SegmentRow key={seg.id} seg={seg} idx={i} count={segments.length} state={active} mics={mics}
                   onChange={(s) => setSegments(segments.map((x, j) => j === i ? s : x))}
                   onRemove={() => setSegments(segments.filter((_, j) => j !== i))}
+                  onMove={(dir) => move(i, dir)}
                   onGoto={() => goto(i)} />
               ))}
               <button onClick={() => setSegments([...segments, { id: uid(), title: 'Segment', people: [] }])}
@@ -94,16 +132,19 @@ export default function RunsheetPage() {
   )
 }
 
-function SegmentRow({ seg, idx, state, mics, onChange, onRemove, onGoto }: {
-  seg: Segment; idx: number; state: number | null; mics: { id: string; label: string }[]
-  onChange: (s: Segment) => void; onRemove: () => void; onGoto: () => void
+function SegmentRow({ seg, idx, count, state, mics, onChange, onRemove, onMove, onGoto }: {
+  seg: Segment; idx: number; count: number; state: number | null; mics: { id: string; label: string }[]
+  onChange: (s: Segment) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void; onGoto: () => void
 }) {
   const isNow = state === idx, isNext = state != null && state + 1 === idx
   const setPeople = (people: Person[]) => onChange({ ...seg, people })
   return (
     <div className={cn('rounded-xl border p-3 space-y-2', isNow ? 'border-live bg-live/[0.06]' : isNext ? 'border-busy/60 bg-busy/[0.04]' : 'border-border/60 bg-card')}>
       <div className="flex items-center gap-2">
-        <GripVertical className="size-4 text-muted-foreground/40 shrink-0" />
+        <div className="flex flex-col shrink-0 -my-1">
+          <button onClick={() => onMove(-1)} disabled={idx === 0} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3.5" /></button>
+          <button onClick={() => onMove(1)} disabled={idx === count - 1} className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3.5" /></button>
+        </div>
         <button onClick={onGoto} className={cn('shrink-0 w-16 text-center text-[9px] font-black uppercase tracking-wider rounded px-1 py-0.5', isNow ? 'bg-live text-black' : isNext ? 'bg-busy text-black' : 'bg-muted/60 text-muted-foreground hover:bg-muted')}>
           {isNow ? 'NOW' : isNext ? 'NEXT' : `#${idx + 1}`}</button>
         <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Segment title" className={cn(sc, 'flex-1 font-semibold')} />

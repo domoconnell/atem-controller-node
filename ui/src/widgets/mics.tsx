@@ -41,6 +41,17 @@ export function MiniBar({ value, kind }: { value: number | null | undefined; kin
   const c = kind === 'rf' ? 'bg-[#2dd4bf]' : v > 0.88 ? 'bg-destructive' : v > 0.7 ? 'bg-busy' : 'bg-live'
   return <span className="w-6 h-1 rounded-full bg-muted/40 overflow-hidden inline-block"><span className={cn('block h-full rounded-full', c)} style={{ width: `${v * 100}%` }} /></span>
 }
+/** Vertical level meter (fills bottom-up), for the compact strip. */
+export function VMeter({ value, kind, label }: { value: number | null | undefined; kind: 'rf' | 'af'; label: string }) {
+  const v = Math.max(0, Math.min(1, value ?? 0))
+  const c = kind === 'rf' ? 'bg-[#2dd4bf]' : v > 0.88 ? 'bg-destructive' : v > 0.7 ? 'bg-busy' : 'bg-live'
+  return (
+    <span className="flex flex-col items-center gap-0.5">
+      <span className="w-1.5 h-4 rounded-sm bg-muted/40 overflow-hidden flex items-end"><span className={cn('w-full rounded-sm transition-[height] duration-150', c)} style={{ height: `${v * 100}%` }} /></span>
+      <span className="text-[7px] font-bold uppercase text-muted-foreground/60 leading-none">{label}</span>
+    </span>
+  )
+}
 
 /** One mic as a compact strip cell: cue · name · mute · rf/af · battery. */
 function StripCell({ mic }: { mic: MicObj }) {
@@ -51,10 +62,15 @@ function StripCell({ mic }: { mic: MicObj }) {
       <span className="text-[11px] font-semibold truncate min-w-0">{mic.label}</span>
       {muted && <MicOff className="size-3 shrink-0 text-destructive" />}
       {online ? (
-        <span className="shrink-0 flex items-center gap-1.5">
-          <span className="flex items-center gap-0.5"><span className="text-[7px] font-bold uppercase text-muted-foreground/60">RF</span><MiniBar value={ch?.rf} kind="rf" /></span>
-          <span className="flex items-center gap-0.5"><span className="text-[7px] font-bold uppercase text-muted-foreground/60">AF</span><MiniBar value={ch?.af} kind="af" /></span>
-          {ch?.battery != null && <span className={cn('text-[10px] font-bold tabular-nums', batTint(ch.battery))}>{ch.battery}%</span>}
+        <span className="shrink-0 flex items-end gap-1.5">
+          <VMeter value={ch?.rf} kind="rf" label="RF" />
+          <VMeter value={ch?.af} kind="af" label="AF" />
+          {ch?.battery != null && (
+            <span className="flex flex-col items-center gap-0.5">
+              <span className={cn('text-[10px] font-bold tabular-nums leading-none', batTint(ch.battery))}>{ch.battery}%</span>
+              <span className="text-[7px] font-bold uppercase text-muted-foreground/60 leading-none">BAT</span>
+            </span>
+          )}
         </span>
       ) : <span className="text-[9px] uppercase tracking-wider text-muted-foreground/40 shrink-0">off</span>}
     </div>
