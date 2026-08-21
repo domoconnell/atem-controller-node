@@ -7,7 +7,9 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import '@/widgets/builtin'
 import '@/widgets/connectors'
 import '@/widgets/strips'
-import { widgetsForType, getWidget } from '@/widgets/registry'
+import '@/widgets/mics'
+import { useMicDefs } from '@/widgets/mics'
+import { widgetsForType, widgetsForFeature, getWidget } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { Pullouts } from '@/components/surfaces/pullouts'
 import { useMeasure } from '@/components/surfaces/use-measure'
@@ -80,10 +82,11 @@ export default function SurfacesPage() {
     return { ...s, pullouts: { ...s.pullouts, [t]: { ...s.pullouts[t], enabled: !s.pullouts[t].enabled } } }
   })
 
-  const addWidget = (target: Target, typeId: string, instanceId: string, widgetType: string) => {
+  const addWidget = (target: Target, typeId: string, instanceId: string, widgetType: string, extra?: { micIds?: string[] }) => {
     const def = getWidget(widgetType); if (!def) return
     let config: Record<string, unknown> = {}
-    if (def.multi === 'type') config = { typeId }
+    if (def.feature === 'mics') config = { micIds: extra?.micIds ?? [] }
+    else if (def.multi === 'type') config = { typeId }
     else if (!def.multi) { const t = types.find((x) => x.typeId === typeId); const fs = t?.streams?.[0]; config = { stream: fs?.id, field: fs?.fields?.[0]?.id } }
     const i = `w${(widgetSeq++).toString(36)}${Date.now().toString(36)}`
     const placement: Placement = { i, widgetType, instanceId: def.multi ? null : instanceId, config, title: '' }
@@ -247,34 +250,36 @@ function SurfacePicker({ list, current, onPick, onNew }: { list: { id: string; n
   )
 }
 
-function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Surface; instances: Instance[]; types: ConnectorType[]; onAdd: (t: Target, typeId: string, instanceId: string, widgetType: string) => void; onClose: () => void }) {
+function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Surface; instances: Instance[]; types: ConnectorType[]; onAdd: (t: Target, typeId: string, instanceId: string, widgetType: string, extra?: { micIds?: string[] }) => void; onClose: () => void }) {
   const targets: Target[] = ['main', ...(surface.header.enabled ? ['header'] as Target[] : []), ...(surface.footer.enabled ? ['footer'] as Target[] : []), ...EDGES.filter((e) => surface.pullouts[e].enabled)]
   const [target, setTarget] = useState<Target>('main')
-  const sources = [...types.filter((t) => instances.some((i) => i.typeId === t.typeId)), { typeId: '__platform__', displayName: 'Platform' } as ConnectorType]
+  const sources = [...types.filter((t) => instances.some((i) => i.typeId === t.typeId)), { typeId: '__mics__', displayName: 'Mics' } as ConnectorType, { typeId: '__platform__', displayName: 'Platform' } as ConnectorType]
   const [typeId, setTypeId] = useState(sources[0]?.typeId ?? '')
   const platform = typeId === '__platform__'
+  const isMics = typeId === '__mics__'
+  const micDefs = useMicDefs()
+  const [micIds, setMicIds] = useState<string[]>([])
   const [mode, setMode] = useState<'overview' | 'instance'>('instance')
   const insts = instances.filter((i) => i.typeId === typeId)
   const [instanceId, setInstanceId] = useState(insts[0]?.id ?? '')
-  const all = platform ? widgetsForType(null) : widgetsForType(typeId)
+  const all = isMics ? widgetsForFeature('mics') : platform ? widgetsForType(null) : widgetsForType(typeId)
   const overviewW = all.filter((w) => w.multi)
   const instanceW = all.filter((w) => !w.multi)
   const isStrip = target === 'header' || target === 'footer'
-  const basePool = platform || mode === 'overview' ? (platform ? all : overviewW) : instanceW
+  const basePool = isMics ? all : platform || mode === 'overview' ? (platform ? all : overviewW) : instanceW
   const widgets = basePool.filter((w) => isStrip ? w.strip : !w.strip)
   const [widgetType, setWidgetType] = useState(widgets[0]?.type ?? '')
   useEffect(() => {
     const n = instances.filter((i) => i.typeId === typeId); setInstanceId(n[0]?.id ?? '')
-    const w = typeId === '__platform__' ? widgetsForType(null) : widgetsForType(typeId)
-    if (typeId !== '__platform__' && w.filter((x) => !x.multi).length === 0) setMode('overview')
+    const w = typeId === '__platform__' || typeId === '__mics__' ? [] : widgetsForType(typeId)
+    if (typeId !== '__platform__' && typeId !== '__mics__' && w.filter((x) => !x.multi).length === 0) setMode('overview')
   }, [typeId])
   useEffect(() => {
-    const strip = target === 'header' || target === 'footer'
-    const base = platform || mode === 'overview' ? (platform ? all : overviewW) : instanceW
-    const w = base.filter((x) => strip ? x.strip : !x.strip)
+    const base = isMics ? widgetsForFeature('mics') : platform || mode === 'overview' ? (platform ? widgetsForType(null) : overviewW) : instanceW
+    const w = base.filter((x) => isStrip ? x.strip : !x.strip)
     setWidgetType(w[0]?.type ?? '')
-  }, [typeId, mode, platform, target])
-  const needInstance = !platform && mode === 'instance'
+  }, [typeId, mode, platform, target]) // eslint-disable-line react-hooks/exhaustive-deps
+  const needInstance = !platform && !isMics && mode === 'instance'
   return (
     <div className="fixed inset-0 z-[100] bg-black/50 grid place-items-center" onClick={onClose}>
       <div className="w-[440px] rounded-xl border border-border bg-background p-5 space-y-3.5" onClick={(e) => e.stopPropagation()}>
@@ -289,7 +294,7 @@ function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Sur
             {sources.map((t) => (<option key={t.typeId} value={t.typeId}>{t.displayName}</option>))}
           </select>
         </F>
-        {!platform ? (
+        {!platform && !isMics ? (
           <div className="flex gap-2">
             {MODES.map((m) => (
               <button key={m} onClick={() => setMode(m)} className={cn('flex-1 text-[12px] rounded-md py-1.5 border capitalize', mode === m ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground')}>
@@ -305,6 +310,19 @@ function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Sur
             </select>
           </F>
         ) : null}
+        {isMics ? (
+          <F label={`Mics${micIds.length ? ` · ${micIds.length}` : ''}`}>
+            <div className="max-h-44 overflow-y-auto border border-border rounded-md p-1.5 space-y-0.5">
+              {micDefs.length === 0 && <div className="text-[11px] text-muted-foreground/60 p-1">No mics yet — create them in the Mics app.</div>}
+              {micDefs.map((m) => (
+                <label key={m.id} className="flex items-center gap-2 text-[12px] px-1.5 py-1 rounded hover:bg-accent cursor-pointer">
+                  <input type="checkbox" checked={micIds.includes(m.id)} onChange={(e) => setMicIds((ids) => e.target.checked ? [...ids, m.id] : ids.filter((x) => x !== m.id))} className="accent-primary" />
+                  {m.label}
+                </label>
+              ))}
+            </div>
+          </F>
+        ) : null}
         <F label="Widget">
           <select value={widgetType} onChange={(e) => setWidgetType(e.target.value)} className={sc}>
             {widgets.map((w) => (<option key={w.type} value={w.type}>{w.label}</option>))}
@@ -312,7 +330,7 @@ function AddDialog({ surface, instances, types, onAdd, onClose }: { surface: Sur
         </F>
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} className="text-[12px] px-3 py-1.5 rounded-md hover:bg-accent">Cancel</button>
-          <button onClick={() => onAdd(target, typeId, instanceId, widgetType)} disabled={(needInstance && !instanceId) || !widgetType} className="text-[12px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-40">Add</button>
+          <button onClick={() => onAdd(target, typeId, instanceId, widgetType, isMics ? { micIds } : undefined)} disabled={(needInstance && !instanceId) || !widgetType || (isMics && micIds.length === 0)} className="text-[12px] px-3 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-40">Add</button>
         </div>
       </div>
     </div>
@@ -334,11 +352,26 @@ function ConfigPanel({ placement, instances, types, onChange, onClose }: {
   const sameType = instances.filter((i) => i.typeId === typeId)
   const curStream = streams.find((s) => s.id === placement.config.stream)
   const set = (k: string, v: unknown) => onChange({ config: { [k]: v } })
+  const micDefs = useMicDefs()
+  const micIds = (placement.config.micIds as string[] | undefined) ?? []
   return (
     <aside className="w-64 shrink-0 border-l border-border/70 overflow-y-auto p-4 space-y-3 bg-background relative z-20">
       <div className="flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider">{def?.label}</h3><button onClick={onClose} title="Close (deselect widget)" className="p-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"><X className="size-3.5" /></button></div>
       <F label="Title"><input value={placement.title ?? ''} placeholder={def?.label} onChange={(e) => onChange({ title: e.target.value })} className={sc} /></F>
-      {!def?.multi && sameType.length > 0 && (
+      {def?.feature === 'mics' && (
+        <F label={`Mics${micIds.length ? ` · ${micIds.length}` : ''}`}>
+          <div className="max-h-52 overflow-y-auto border border-border rounded-md p-1.5 space-y-0.5">
+            {micDefs.length === 0 && <div className="text-[11px] text-muted-foreground/60 p-1">No mics yet.</div>}
+            {micDefs.map((m) => (
+              <label key={m.id} className="flex items-center gap-2 text-[12px] px-1.5 py-1 rounded hover:bg-accent cursor-pointer">
+                <input type="checkbox" checked={micIds.includes(m.id)} onChange={(e) => set('micIds', e.target.checked ? [...micIds, m.id] : micIds.filter((x) => x !== m.id))} className="accent-primary" />
+                {m.label}
+              </label>
+            ))}
+          </div>
+        </F>
+      )}
+      {!def?.multi && !def?.feature && sameType.length > 0 && (
         <F label="Instance"><select value={placement.instanceId ?? ''} onChange={(e) => onChange({ instanceId: e.target.value })} className={sc}>{sameType.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></F>
       )}
       {def?.configFields?.map((f) => {

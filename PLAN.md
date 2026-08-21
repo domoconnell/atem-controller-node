@@ -59,7 +59,9 @@ Needs:
   → editor (label + Sennheiser receiver + DiGiCo console/channel). Live cards.
 - [x] Composite CARDS in the Mics app (reuse the polished meters + battery +
   antenna, add DiGiCo mute + clickable cue chip). Hardware receiver view kept.
-- [ ] Composite SURFACES widget (overview + strip) for the designer.
+- [x] Composite SURFACES widgets: mics-strip (header/footer, spread cells: cue +
+  RF/AF + battery + mute) and mics-panel, with a mic multi-select in the add
+  flow + config sidebar. New "Mics" widget source (feature widgets).
 - [ ] Internal cue state source (LIVE/STANDBY) — set by the runsheet slot that's
   "now"/"next", or manual override.
 

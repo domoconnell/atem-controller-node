@@ -13,6 +13,9 @@ export interface WidgetDef {
   label: string
   /** connector types this widget can bind to; undefined = platform widget */
   supportedTypeIds?: readonly string[]
+  /** Feature widget (not bound to a connector instance) — e.g. 'mics' composites.
+   *  Configured with a selection (micIds) rather than an instance. */
+  feature?: 'mics'
   /** 'type' = all instances of the bound connector type; 'all' = every connection. */
   multi?: 'type' | 'all'
   /** Applies to every connector type (generic field/overview widgets). */
@@ -29,6 +32,7 @@ export function registerWidget(def: WidgetDef) { REGISTRY.set(def.type, def) }
 export function getWidget(type: string) { return REGISTRY.get(type) }
 export function listWidgets() { return [...REGISTRY.values()] }
 export function widgetsForType(typeId: string | null) {
-  if (typeId == null) return listWidgets().filter((w) => !w.supportedTypeIds && !w.anyType)  // pure platform
+  if (typeId == null) return listWidgets().filter((w) => !w.supportedTypeIds && !w.anyType && !w.feature)  // pure platform
   return listWidgets().filter((w) => w.anyType || w.supportedTypeIds?.includes(typeId))
 }
+export function widgetsForFeature(feature: string) { return listWidgets().filter((w) => w.feature === feature) }
