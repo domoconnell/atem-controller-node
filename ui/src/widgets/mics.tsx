@@ -108,9 +108,9 @@ function MicCard({ mic, nowNext }: { mic: MicObj; nowNext?: { now?: string; next
           {nowNext?.next && <NowNextLine tone="busy" label="Next" name={nowNext.next} />}
         </div>
       )}
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">RF</span><SegMeter value={rf} kind="rf" className="flex-1" /></div>
-        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">AF</span><SegMeter value={af} kind="af" className="flex-1" /></div>
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1 min-w-0"><span className="text-[7.5px] font-bold uppercase text-muted-foreground/60">RF</span><SegMeter value={rf} kind="rf" segs={12} className="w-14" /></span>
+        <span className="flex items-center gap-1 min-w-0"><span className="text-[7.5px] font-bold uppercase text-muted-foreground/60">AF</span><SegMeter value={af} kind="af" segs={12} className="w-14" /></span>
       </div>
       <div className="flex items-center gap-1.5">
         <Battery pct={battery} pending={online ? ch?.battery == null : false} />
@@ -144,7 +144,7 @@ function MicsPanel({ config, title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
-      <div className="flex-1 min-h-0 overflow-y-auto p-1.5 grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(165px,1fr))] content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto p-1.5 grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] content-start">
         {sel.length === 0 && <div className="text-[11px] text-muted-foreground/50 p-1">No mics selected.</div>}
         {sel.map((m) => <MicCard key={m.id} mic={m} nowNext={nn.get(m.id)} />)}
       </div>
@@ -203,9 +203,9 @@ export function ReceiverCard({ ch, online, name }: { ch: Ch; online: boolean; na
         <span className="text-[12px] font-bold tracking-tight truncate">{label}</span>
         {ch.mute != null && <div className="ml-auto shrink-0"><MuteChip label="TX" muted={ch.mute} /></div>}
       </div>
-      <div className="flex flex-col gap-0.5">
-        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">RF</span><SegMeter value={rf} kind="rf" className="flex-1" /></div>
-        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">AF</span><SegMeter value={af} kind="af" className="flex-1" /></div>
+      <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1 min-w-0"><span className="text-[7.5px] font-bold uppercase text-muted-foreground/60">RF</span><SegMeter value={rf} kind="rf" segs={12} className="w-14" /></span>
+        <span className="flex items-center gap-1 min-w-0"><span className="text-[7.5px] font-bold uppercase text-muted-foreground/60">AF</span><SegMeter value={af} kind="af" segs={12} className="w-14" /></span>
       </div>
       <div className="flex items-center gap-1.5">
         <Battery pct={battery} pending={online ? ch.battery == null : false} />

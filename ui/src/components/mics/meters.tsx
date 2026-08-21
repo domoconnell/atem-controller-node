@@ -7,8 +7,8 @@ import { cn } from '@/lib/utils'
  * `value` is 0..1 (null = no data). Ramp: green -> amber (>70%) -> red (>88%)
  * for AF; RF uses a single teal hue. CSS transitions smooth the 8Hz updates.
  */
-export function SegMeter({ value, kind = 'af', className }: { value: number | null | undefined; kind?: 'af' | 'rf'; className?: string }) {
-  const SEGS = 26
+export function SegMeter({ value, kind = 'af', className, segs = 26 }: { value: number | null | undefined; kind?: 'af' | 'rf'; className?: string; segs?: number }) {
+  const SEGS = segs
   const peak = useRef({ v: 0, t: 0 })
   const now = Date.now()
   const v = value ?? 0

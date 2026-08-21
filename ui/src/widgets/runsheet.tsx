@@ -50,10 +50,10 @@ function PersonMini({ person, mics }: { person: Person; mics: MicObj[] }) {
   const mic = mics.find((m) => m.id === person.micId)
   const live = useMicLive(mic ?? ({ id: '', label: '' } as MicObj)) // stable hooks; null instance => no data
   return (
-    <span className="inline-flex items-center gap-1 text-[11px] whitespace-nowrap">
+    <span className="inline-flex items-center gap-1 text-[11px] whitespace-nowrap rounded-md border border-border/50 bg-muted/25 pl-1.5 pr-1 py-0.5">
       {person.lead && <Star className="size-2.5 shrink-0 fill-current text-primary" />}
       <span className={cn('truncate', person.lead && 'font-semibold')}>{person.name || '—'}</span>
-      {mic && <span className="shrink-0 text-[10px] font-semibold text-foreground/80 rounded bg-muted/50 px-1 py-px">{mic.label}</span>}
+      {mic && <span className="shrink-0 text-[10px] font-semibold text-foreground/80 rounded bg-background/60 px-1 py-px">{mic.label}</span>}
       {mic && <span className={cn('text-[8px] font-black uppercase tracking-wide rounded px-1 py-px', CUE[live.cue].c)}>{CUE[live.cue].l}</span>}
       {mic && live.muted && <MicOff className="size-2.5 shrink-0 text-destructive" />}
       {mic && live.online && live.ch?.battery != null && <span className={cn('text-[9px] font-bold tabular-nums', batTint(live.ch.battery))}>{live.ch.battery}%</span>}
@@ -186,13 +186,13 @@ function RunsheetList({ config, title }: WidgetProps) {
                     {isNow ? 'NOW' : isNext ? 'NEXT' : ''}</span>
                   <span className="text-[12.5px] font-semibold truncate shrink min-w-0">{segTitle(seg)}</span>
                   {/* lead mics on the same line */}
-                  {leads.length > 0 && <span className="flex items-center gap-x-3 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
+                  {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
                   <span className="ml-auto shrink-0 text-[11px] pl-1">
                     {isNow ? <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} /> : <span className="tabular-nums text-muted-foreground/70">{seg.time || ''}</span>}
                   </span>
                 </div>
                 {others.length > 0 && (
-                  <div className="pl-11 pt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
+                  <div className="pl-11 pt-0.5 flex flex-wrap gap-1.5 gap-y-1 text-muted-foreground">
                     {others.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}
                   </div>
                 )}
@@ -222,13 +222,13 @@ function RunsheetStrip({ config }: WidgetProps) {
       <span className="shrink-0 text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 bg-live text-black">NOW</span>
       <span className="shrink-0 text-[13px] font-semibold truncate max-w-40">{now ? segTitle(now) : '—'}</span>
       {now?.time && <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/70">{now.time}</span>}
-      <span className="flex items-center gap-2.5 overflow-hidden min-w-0">
+      <span className="flex items-center gap-1.5 overflow-hidden min-w-0">
         {(now?.people ?? []).map((p, i) => <PersonMini key={i} person={p} mics={mics} />)}
       </span>
       <span className="mx-0.5 shrink-0 text-muted-foreground/40">→</span>
       <span className="shrink-0 text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 bg-busy text-black">NEXT</span>
       <span className="shrink-0 text-[13px] font-medium text-muted-foreground truncate max-w-40">{next ? segTitle(next) : '—'}</span>
-      <span className="flex items-center gap-2.5 overflow-hidden min-w-0 text-muted-foreground">
+      <span className="flex items-center gap-1.5 overflow-hidden min-w-0 text-muted-foreground">
         {(next?.people ?? []).map((p, i) => <PersonMini key={i} person={p} mics={mics} />)}
       </span>
     </div>

@@ -119,7 +119,7 @@ function ReceiverCards({ id, name }: { id: string; name: string }) {
 function MicPanel({ instanceId, title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(165px,1fr))] content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] content-start">
         <ReceiverCards id={instanceId ?? ''} name={title || 'Receiver'} />
       </div>
     </div>
@@ -142,7 +142,7 @@ function MicStrip({ instanceId, title }: WidgetProps) {
 function MicRack({ instances = [], title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(165px,1fr))] content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] content-start">
         {instances.length === 0 && <div className="text-[11px] text-muted-foreground/50">No receivers.</div>}
         {instances.map((i) => <ReceiverCards key={i.id} id={i.id} name={i.name} />)}
       </div>
