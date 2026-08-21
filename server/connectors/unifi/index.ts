@@ -1,3 +1,5 @@
+import http from 'node:http'
+import https from 'node:https'
 import { z } from 'zod'
 import type { Connector, ConnectorContext, ConnectorModule } from '../core/types.js'
 import { unifiConditions } from './conditions.js'
@@ -44,12 +46,21 @@ class UnifiConnector implements Connector<UnifiConfig> {
   private cancelPoll: (() => void) | null = null
   private polling = false
   private siteId: string | null = null
+  private agent: https.Agent | null = null
 
   async start(ctx: ConnectorContext<UnifiConfig>): Promise<void> {
     this.ctx = ctx
+    // UniFi consoles present a self-signed certificate. Node's global fetch has
+    // no per-request way to accept it, so we drive requests through a node:https
+    // Agent whose trust policy we control. Default is to accept (a closed show
+    // network is the normal deployment); only an explicit false re-enables it.
+    this.agent = new https.Agent({
+      keepAlive: true,
+      rejectUnauthorized: ctx.config.allowSelfSignedCert === false,
+    })
     this.cancelPoll = ctx.setInterval(
       () => void this.poll(),
-      ctx.config.pollIntervalSeconds * 1_000,
+      (ctx.config.pollIntervalSeconds || 30) * 1_000,
     )
     await this.poll()
   }
@@ -57,6 +68,8 @@ class UnifiConnector implements Connector<UnifiConfig> {
   stop(): void {
     this.cancelPoll?.()
     this.cancelPoll = null
+    this.agent?.destroy()
+    this.agent = null
     this.ctx = null
     this.siteId = null
   }
@@ -139,26 +152,39 @@ class UnifiConnector implements Connector<UnifiConfig> {
     return results
   }
 
-  private async get(ctx: ConnectorContext<UnifiConfig>, path: string): Promise<unknown> {
-    const base = ctx.config.baseUrl.replace(/\/$/, '')
-    const url = `${base}/proxy/network/integration/v1${path}`
+  private get(ctx: ConnectorContext<UnifiConfig>, path: string): Promise<unknown> {
+    // Tolerate a bare host ("10.10.10.1") — the controller speaks https.
+    const raw = ctx.config.baseUrl.trim().replace(/\/+$/, '')
+    const base = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+    const url = new URL(`${base}/proxy/network/integration/v1${path}`)
+    const secure = url.protocol === 'https:'
+    const lib = secure ? https : http
 
-    const controller = new AbortController()
-    const onAbort = () => controller.abort(ctx.signal.reason)
-    ctx.signal.addEventListener('abort', onAbort, { once: true })
-    const deadline = setTimeout(() => controller.abort(new Error('timed out')), REQUEST_TIMEOUT_MS)
-
-    try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: { 'x-api-key': ctx.config.apiKey, accept: 'application/json' },
-      })
-      if (!response.ok) throw new Error(`controller returned ${response.status}`)
-      return await response.json()
-    } finally {
-      clearTimeout(deadline)
-      ctx.signal.removeEventListener('abort', onAbort)
-    }
+    return new Promise((resolve, reject) => {
+      const req = lib.request(
+        url,
+        {
+          method: 'GET',
+          agent: secure ? this.agent ?? undefined : undefined,
+          headers: { 'x-api-key': ctx.config.apiKey, accept: 'application/json' },
+          signal: ctx.signal,
+          timeout: REQUEST_TIMEOUT_MS,
+        },
+        (res) => {
+          const status = res.statusCode ?? 0
+          const chunks: Buffer[] = []
+          res.on('data', (chunk: Buffer) => chunks.push(chunk))
+          res.on('end', () => {
+            if (status < 200 || status >= 300) { reject(new Error(`controller returned ${status}`)); return }
+            const text = Buffer.concat(chunks).toString('utf8')
+            try { resolve(text ? JSON.parse(text) : null) } catch { reject(new Error('controller returned a non-JSON body')) }
+          })
+        },
+      )
+      req.on('timeout', () => req.destroy(new Error('timed out')))
+      req.on('error', reject)
+      req.end()
+    })
   }
 }
 
