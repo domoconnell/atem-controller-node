@@ -5,10 +5,10 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading, RotateCcw } from 'lucide-react'
 
 interface Person { name: string; micId?: string; lead?: boolean }
-interface Segment { id: string; title: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
+interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
 interface ProLink { playlistId: string; playlistName?: string; lastSync?: number }
 interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink }
 interface MicDef { id: string; label: string }
@@ -179,9 +179,14 @@ function HeaderRow({ seg, idx, count, synced, onChange, onRemove, onMove }: {
       )}
       <span className="h-5 w-1.5 rounded-full shrink-0" style={{ background: color }} />
       {synced ? (
-        <span className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.16em] truncate">{seg.title}</span>
-          <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-primary/15 text-primary" title="Synced from ProPresenter">PP</span>
+        <span className="flex-1 min-w-0 flex items-center gap-1.5">
+          <input value={seg.titleOverride ?? seg.title}
+            onChange={(e) => { const v = e.target.value; onChange({ ...seg, titleOverride: v === seg.title ? undefined : v }) }}
+            className="flex-1 min-w-0 bg-transparent text-[11px] font-bold uppercase tracking-[0.16em] outline-none border-b border-transparent focus:border-border" />
+          {seg.titleOverride != null && (
+            <button onClick={() => onChange({ ...seg, titleOverride: undefined })} title={`Reset to ProPresenter title: “${seg.title}”`} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent shrink-0"><RotateCcw className="size-3.5" /></button>
+          )}
+          <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-primary/15 text-primary" title={`Synced from ProPresenter: ${seg.title}`}>PP</span>
         </span>
       ) : (
         <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Section" className="flex-1 bg-transparent text-[11px] font-bold uppercase tracking-[0.16em] outline-none border-b border-transparent focus:border-border" />
@@ -213,9 +218,15 @@ function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, 
         <button onClick={onGoto} className={cn('shrink-0 w-16 text-center text-[9px] font-black uppercase tracking-wider rounded px-1 py-0.5', isNow ? 'bg-live text-black' : isNext ? 'bg-busy text-black' : 'bg-muted/60 text-muted-foreground hover:bg-muted')}>
           {isNow ? 'NOW' : isNext ? 'NEXT' : `#${idx + 1}`}</button>
         {synced ? (
-          <div className={cn(sc, 'flex-1 font-semibold flex items-center gap-2 bg-transparent border-transparent px-0')}>
-            <span className="truncate">{seg.title}</span>
-            <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-primary/15 text-primary" title="Synced from ProPresenter">PP</span>
+          <div className="flex-1 flex items-center gap-1.5 min-w-0">
+            {/* Editable rename: overrides the PP title locally, kept across syncs. */}
+            <input value={seg.titleOverride ?? seg.title}
+              onChange={(e) => { const v = e.target.value; onChange({ ...seg, titleOverride: v === seg.title ? undefined : v }) }}
+              className={cn(sc, 'flex-1 min-w-0 font-semibold')} />
+            {seg.titleOverride != null && (
+              <button onClick={() => onChange({ ...seg, titleOverride: undefined })} title={`Reset to ProPresenter title: “${seg.title}”`} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent shrink-0"><RotateCcw className="size-3.5" /></button>
+            )}
+            <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-primary/15 text-primary" title={`Synced from ProPresenter: ${seg.title}`}>PP</span>
           </div>
         ) : (
           <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Segment title" className={cn(sc, 'flex-1 font-semibold')} />

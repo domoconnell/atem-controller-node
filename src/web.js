@@ -113,6 +113,7 @@ export class WebServer {
       const id = b.id || `svc_${Math.random().toString(36).slice(2, 10)}`
       const { id: _i, name = 'Service', sortOrder = 0, ...data } = b
       this.store.putService(id, name, data, sortOrder)
+      this.publishServices()
       res.json({ ok: true, services: this.store.listServices() })
     })
     app.patch('/api/features/services/:id', (req, res) => {
@@ -120,9 +121,10 @@ export class WebServer {
       const cur = this.store.listServices().find((s) => s.id === req.params.id) ?? {}
       const { id: _i, name = cur.name ?? 'Service', sortOrder = cur.sortOrder ?? 0, ...data } = { ...cur, ...(req.body ?? {}) }
       this.store.putService(req.params.id, name, data, sortOrder)
+      this.publishServices()
       res.json({ ok: true, services: this.store.listServices() })
     })
-    app.delete('/api/features/services/:id', (req, res) => { this.store?.deleteService(req.params.id); res.json({ ok: true, services: this.store?.listServices() ?? [] }) })
+    app.delete('/api/features/services/:id', (req, res) => { this.store?.deleteService(req.params.id); this.publishServices(); res.json({ ok: true, services: this.store?.listServices() ?? [] }) })
 
     // ProPresenter playlists — for linking a service to a live playlist so its
     // segment list stays in sync with ProPresenter (see startRunsheetSync).
@@ -419,6 +421,14 @@ export class WebServer {
       console.log(`[web] status UI on http://0.0.0.0:${config.web.port}`)
     )
     this.startRunsheetSync()
+    this.publishServices() // seed the hub snapshot so widgets have data on connect
+  }
+
+  /** Push the full services list onto the realtime hub so every runsheet widget
+   *  updates at once over the shared WebSocket (no per-widget HTTP polling). */
+  publishServices() {
+    try { this.connectorEngine?.hub?.publish('feature:services', { services: this.store?.listServices() ?? [] }) }
+    catch { /* hub optional (engine may be absent) */ }
   }
 
   /** Live ProPresenter -> Services link. Every few seconds, each service with a
@@ -459,9 +469,10 @@ export class WebServer {
       return {
         id,
         proItemId: it.uuid,
-        title: it.name,             // PP owns the title
-        time: prev?.time,           // preserved local augmentation
-        people: prev?.people ?? [], // preserved local augmentation
+        title: it.name,                      // PP owns the base title
+        titleOverride: prev?.titleOverride,  // preserved local rename (wins in the UI)
+        time: prev?.time,                    // preserved local augmentation
+        people: prev?.people ?? [],          // preserved local augmentation
       }
     })
     const segments = [...synced, ...manual]
@@ -471,6 +482,7 @@ export class WebServer {
     if (JSON.stringify({ s: old, a: svc.activeIndex }) === JSON.stringify({ s: segments, a: activeIndex })) return false
     const { id, name = 'Service', sortOrder = 0, ...rest } = svc
     this.store.putService(id, name, { ...rest, segments, activeIndex, proLink: { ...link, lastSync: Date.now() } }, sortOrder)
+    this.publishServices()
     return true
   }
 

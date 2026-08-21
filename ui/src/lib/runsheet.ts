@@ -1,10 +1,12 @@
 /** Shared runsheet model + helpers, used by the Runsheet app and its widgets. */
 
 export interface Person { name: string; micId?: string; lead?: boolean }
-export interface Segment { id: string; title: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
+export interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
 export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: unknown }
 
 export const isHeader = (s?: Segment | null) => s?.kind === 'header'
+/** The name to display: a local rename wins over the ProPresenter/base title. */
+export const segTitle = (s?: Segment | null) => (s?.titleOverride?.trim() ? s.titleOverride : s?.title) ?? ''
 
 /** The next runnable item after `from` (headers are skipped); null past the end. */
 export function nextItemIndex(segs: Segment[], from: number | null): number | null {
