@@ -7,6 +7,10 @@
     "@companion-module/base": "~1.11.0"
   },
   "scripts": {
-    "dev": "echo 'Point Companion Developer modules path at this folder'"
+    "dev": "echo 'Point Companion Developer modules path at this folder'",
+    "package": "companion-module-build --output stageit"
+  },
+  "devDependencies": {
+    "@companion-module/tools": "^2.3.0"
   }
 }

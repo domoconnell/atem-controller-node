@@ -9,7 +9,7 @@ import type { Recorder } from '@/widgets/recorders'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw, Download } from 'lucide-react'
 
 type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
 const DOT: Record<ConnState, string> = { live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/30' }
@@ -330,6 +330,15 @@ function CompanionReference() {
   const oscPort = cfg?.osc?.listenPort ?? 9000
   return (
     <div className="mt-8 space-y-6 border-t border-border/50 pt-6">
+      <div className="rounded-xl border border-primary/40 bg-primary/[0.06] p-4 flex items-center gap-4">
+        <div className="size-10 rounded-lg bg-primary/15 grid place-items-center shrink-0"><Radio className="size-5 text-primary" /></div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[14px] font-bold">Stage It Companion module</div>
+          <div className="text-[12px] text-muted-foreground">Native buttons for runsheet, mic cues and surface drawers — with live status colours. In Companion: <span className="text-foreground/80">Import module package</span> → upload this file, then add a <span className="text-foreground/80">Stage It</span> connection pointing at this server.</div>
+        </div>
+        <a href="/companion/stageit.tgz" download className="shrink-0 inline-flex items-center gap-1.5 text-[12px] font-semibold rounded-md px-3 py-2 bg-primary text-primary-foreground hover:opacity-90"><Download className="size-4" /> Download module</a>
+      </div>
+      <p className="text-[12px] text-muted-foreground -mt-2">Prefer raw OSC? Everything below works without the module too.</p>
       <div>
         <h2 className="text-[15px] font-bold">OSC commands</h2>
         <p className="text-[12px] text-muted-foreground">Send to this machine on <span className="font-mono text-foreground/80">UDP :{oscPort}</span>. Click a path to copy it.</p>

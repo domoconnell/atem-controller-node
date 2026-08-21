@@ -132,6 +132,11 @@ export class WebServer {
     // Companion reference in Settings).
     app.get('/api/surface-clients', (_req, res) => res.json({ ok: true, clients: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c) }))
 
+    // The packaged Companion module, for the "Import module package" screen.
+    app.get('/companion/stageit.tgz', (_req, res) => {
+      res.download(path.join(projectRoot, 'companion', 'stageit.tgz'), 'companion-module-stageit.tgz', (err) => { if (err && !res.headersSent) res.status(404).json({ ok: false, error: 'module package not built' }) })
+    })
+
     // ---- Companion module API: one poll for state + REST command endpoints ----
     app.get('/api/companion/state', (_req, res) => {
       const svc = this._runningService()
