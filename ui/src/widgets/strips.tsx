@@ -67,16 +67,14 @@ registerWidget({ type: 'strip-clock', label: 'Clock · strip', strip: true, defa
  *  align defaults to centre. */
 function StripBrand({ config }: WidgetProps) {
   const icon = (config.variant as string | undefined) === 'icon'
-  const align = (config.align as string | undefined) ?? 'center'
   return (
-    <div className={cn('h-full w-full flex items-center px-3 rounded-lg overflow-hidden text-foreground/90',
-      align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center')}>
+    <div className="h-full flex items-center justify-center px-3 rounded-lg text-foreground/90">
       <Brand variant={icon ? 'icon' : 'full'} className={icon ? 'h-4 w-4' : 'h-4 w-[84px]'} />
     </div>
   )
 }
 registerWidget({
-  type: 'strip-brand', label: 'Logo · strip', strip: true, defaultSize: { w: 3, h: 1 },
+  type: 'strip-brand', label: 'Logo · strip', strip: true, stripFit: true, defaultSize: { w: 3, h: 1 },
   configFields: [{ key: 'variant', label: 'Variant (blank = wordmark, "icon" = mark)', kind: 'text' }, { key: 'align', label: 'Align (left / center / right)', kind: 'text' }],
   Component: StripBrand,
 })

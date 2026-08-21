@@ -100,6 +100,7 @@ export default function SurfacesPage() {
     if (def.feature === 'mics') config = { micIds: extra?.micIds ?? [] }
     else if (def.multi === 'type') config = { typeId }
     else if (!def.multi) { const t = types.find((x) => x.typeId === typeId); const fs = t?.streams?.[0]; config = { stream: fs?.id, field: fs?.fields?.[0]?.id } }
+    if (def.stripFit) config.stripW = 0 // size to content (e.g. a logo)
     const i = `w${(widgetSeq++).toString(36)}${Date.now().toString(36)}`
     const placement: Placement = { i, widgetType, instanceId: def.multi ? null : instanceId, config, title: '' }
     if (target === 'main') {
@@ -210,7 +211,7 @@ function RegionStrip({ region, surface, edit, sel, instances, onSelect, onRemove
       {widgets.length === 0 && <div className="text-[10px] text-muted-foreground/40 grid place-items-center w-full uppercase tracking-wider">{region}</div>}
       {widgets.map((p) => (
         <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) onSelect(region, p.i) }}
-          style={strip ? { flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 } : undefined}
+          style={strip ? (p.config.stripW === 0 ? { flex: '0 0 auto' } : { flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 }) : undefined}
           className={cn('relative', strip ? 'min-w-0 h-full' : horizontal ? 'w-52 h-full shrink-0' : 'w-full h-24 shrink-0',
             edit && sel?.i === p.i && 'ring-1 ring-primary rounded-lg')}>
           <WidgetView p={p} instances={instances} />
@@ -364,7 +365,7 @@ function ConfigPanel({ placement, instances, types, region, onChange, onMove, on
   placement: Placement; instances: Instance[]; types: CType[]; region: Target; onChange: (patch: Partial<Placement>) => void; onMove: (dir: -1 | 1) => void; onClose: () => void
 }) {
   const isStrip = region === 'header' || region === 'footer'
-  const stripW = (placement.config.stripW as number) || 1
+  const stripW = (placement.config.stripW as number | undefined) ?? 1
   const def = getWidget(placement.widgetType)
   const inst = instances.find((i) => i.id === placement.instanceId)
   const typeId = inst?.typeId ?? (placement.config.typeId as string | undefined)
@@ -382,10 +383,10 @@ function ConfigPanel({ placement, instances, types, region, onChange, onMove, on
       <F label="Title"><input value={placement.title ?? ''} placeholder={def?.label} onChange={(e) => onChange({ title: e.target.value })} className={sc} /></F>
       {isStrip && (
         <>
-          <F label={`Width · ${stripW}×`}>
+          <F label={`Width · ${stripW === 0 ? 'fit content' : `${stripW}×`}`}>
             <div className="flex items-center gap-2">
-              <input type="range" min={1} max={6} step={1} value={stripW} onChange={(e) => set('stripW', Number(e.target.value))} className="flex-1 accent-primary" />
-              <span className="text-[12px] tabular-nums w-8 text-right">{stripW}×</span>
+              <input type="range" min={0} max={6} step={1} value={stripW} onChange={(e) => set('stripW', Number(e.target.value))} className="flex-1 accent-primary" />
+              <span className="text-[12px] tabular-nums w-9 text-right">{stripW === 0 ? 'fit' : `${stripW}×`}</span>
             </div>
           </F>
           <F label="Order">

@@ -20,7 +20,7 @@ type IRef = { id: string; typeId: string; name: string }
 function Strip({ widgets, instances }: { widgets: Placement[]; instances: IRef[] }) {
   return (
     <div className="bg-muted/20 flex gap-1 p-1 h-14 overflow-hidden shrink-0 border-y border-border/40">
-      {widgets.map((p) => (<div key={p.i} className="min-w-0 h-full" style={{ flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 }}><WidgetView p={p} instances={instances} /></div>))}
+      {widgets.map((p) => (<div key={p.i} className="min-w-0 h-full" style={p.config.stripW === 0 ? { flex: '0 0 auto' } : { flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 }}><WidgetView p={p} instances={instances} /></div>))}
     </div>
   )
 }

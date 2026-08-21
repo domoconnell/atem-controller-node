@@ -18,9 +18,13 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
   const title = p.title ?? ''
   const editLabel = p.title || def?.label || p.widgetType
   const boundType = (p.config.typeId as string | undefined) ?? instances.find((x) => x.id === p.instanceId)?.typeId
-  if (def?.strip && !edit) return <div className="h-full w-full" style={{ containerType: 'size' } as React.CSSProperties}><def.Component config={p.config} instanceId={p.instanceId} instances={def.multi === 'all' ? instances : def.multi === 'type' ? instances.filter((x) => x.typeId === boundType) : undefined} title={title} /></div>
+  // A fit widget (e.g. a logo) sizes to its own content — no container-type,
+  // which would otherwise make its width come from the parent and collapse it.
+  const stripStyle = def?.stripFit ? undefined : ({ containerType: 'size' } as React.CSSProperties)
+  const stripW = def?.stripFit ? 'h-full w-auto' : 'h-full w-full'
+  if (def?.strip && !edit) return <div className={stripW} style={stripStyle}><def.Component config={p.config} instanceId={p.instanceId} instances={def.multi === 'all' ? instances : def.multi === 'type' ? instances.filter((x) => x.typeId === boundType) : undefined} title={title} /></div>
   if (def?.strip) return (
-    <div className={cn('h-full w-full rounded-lg overflow-hidden', selected && 'ring-1 ring-primary')} style={{ containerType: 'size' } as React.CSSProperties}>
+    <div className={cn(stripW, 'rounded-lg overflow-hidden', selected && 'ring-1 ring-primary')} style={stripStyle}>
       <def.Component config={p.config} instanceId={p.instanceId} instances={def.multi === 'all' ? instances : def.multi === 'type' ? instances.filter((x) => x.typeId === boundType) : undefined} title={title} />
     </div>
   )

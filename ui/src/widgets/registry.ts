@@ -22,6 +22,9 @@ export interface WidgetDef {
   anyType?: boolean
   /** Designed for the thin header/footer strips (long, thin, icon+pill). */
   strip?: boolean
+  /** Strip widget that should size to its content (e.g. a logo) rather than
+   *  share the strip width — added with stripW: 0 ("fit"). */
+  stripFit?: boolean
   defaultSize: { w: number; h: number }
   configFields?: ConfigField[]
   Component: ComponentType<WidgetProps>
