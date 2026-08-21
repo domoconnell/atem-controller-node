@@ -36,9 +36,9 @@ export function useMicLive(mic: MicObj) {
 // off. Red: no RF or low battery.
 type Tone = 'green' | 'orange' | 'red'
 const TONE: Record<Tone, string> = {
-  green: 'border-live/40 bg-live/10',
-  orange: 'border-busy/45 bg-busy/10',
-  red: 'border-destructive/50 bg-destructive/12',
+  green: 'border-live/25 bg-live/[0.04]',
+  orange: 'border-busy/30 bg-busy/[0.05]',
+  red: 'border-destructive/35 bg-destructive/[0.05]',
 }
 const noRf = (online: boolean, rf: number | null | undefined) => !online || rf == null || rf <= 0.02
 const lowBat = (b: number | null | undefined) => b != null && b <= 20
@@ -73,22 +73,22 @@ export function VMeter({ value, kind, label }: { value: number | null | undefine
 function MuteChip({ label, muted }: { label: string; muted: boolean | undefined }) {
   if (muted == null) return null
   return (
-    <span className={cn('inline-flex items-center gap-0.5 text-[8.5px] font-bold uppercase tracking-wide rounded px-1 py-0.5', muted ? 'bg-destructive/20 text-destructive' : 'bg-live/15 text-live')}>
-      {muted && <MicOff className="size-2.5" />}{label}
+    <span className={cn('inline-flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wide rounded px-1 py-px', muted ? 'bg-destructive/20 text-destructive' : 'bg-live/12 text-live/90')}>
+      {muted && <MicOff className="size-2" />}{label}
     </span>
   )
 }
 function NowNextLine({ tone, label, name }: { tone: 'live' | 'busy'; label: string; name: string }) {
   return (
-    <div className="flex items-baseline gap-1.5 text-[11px] min-w-0">
-      <span className={cn('shrink-0 text-[8px] font-black uppercase tracking-wider', tone === 'live' ? 'text-live' : 'text-busy')}>{label}</span>
-      <span className="truncate font-medium">{name}</span>
+    <div className="flex items-baseline gap-1 min-w-0">
+      <span className={cn('shrink-0 text-[7.5px] font-black uppercase tracking-wider', tone === 'live' ? 'text-live' : 'text-busy')}>{label}</span>
+      <span className="truncate text-[10px]">{name}</span>
     </div>
   )
 }
 
-/** Full composite mic card — name, cue, who's on it now/next, RF/AF meters,
- *  battery, TX + DESK mute; the whole card tints by status. */
+/** Compact composite mic card — name, cue, who's on it now/next, RF/AF meters,
+ *  battery, TX + DESK mute; a subtle status tint. */
 function MicCard({ mic, nowNext }: { mic: MicObj; nowNext?: { now?: string; next?: string } }) {
   const { online, ch, muted, cue } = useMicLive(mic)
   const rf = online ? ch?.rf : null
@@ -97,22 +97,22 @@ function MicCard({ mic, nowNext }: { mic: MicObj; nowNext?: { now?: string; next
   const sennMute = mic.sennheiserInstanceId ? (ch?.mute ?? false) : undefined
   const tone = compositeTone(online, rf, battery, !!muted || !!sennMute, cue)
   return (
-    <div className={cn('rounded-xl border p-3 flex flex-col gap-2', TONE[tone])}>
-      <div className="flex items-center gap-2">
-        <span className="text-[16px] font-bold tracking-tight truncate">{mic.label}</span>
-        <span className={cn('ml-auto shrink-0 text-[9px] font-black uppercase tracking-[0.1em] rounded px-1.5 py-0.5', CUE[cue].c)}>{CUE[cue].l}</span>
+    <div className={cn('rounded-md border p-1.5 flex flex-col gap-1', TONE[tone])}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[12px] font-bold tracking-tight truncate">{mic.label}</span>
+        <span className={cn('ml-auto shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-px', CUE[cue].c)}>{CUE[cue].l}</span>
       </div>
       {(nowNext?.now || nowNext?.next) && (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex flex-col gap-px">
           {nowNext?.now && <NowNextLine tone="live" label="Now" name={nowNext.now} />}
           {nowNext?.next && <NowNextLine tone="busy" label="Next" name={nowNext.next} />}
         </div>
       )}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2"><span className="w-5 text-[9px] font-bold uppercase text-muted-foreground/70">RF</span><SegMeter value={rf} kind="rf" className="flex-1" /></div>
-        <div className="flex items-center gap-2"><span className="w-5 text-[9px] font-bold uppercase text-muted-foreground/70">AF</span><SegMeter value={af} kind="af" className="flex-1" /></div>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">RF</span><SegMeter value={rf} kind="rf" className="flex-1" /></div>
+        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">AF</span><SegMeter value={af} kind="af" className="flex-1" /></div>
       </div>
-      <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+      <div className="flex items-center gap-1.5">
         <Battery pct={battery} pending={online ? ch?.battery == null : false} />
         <div className="ml-auto flex items-center gap-1">
           <MuteChip label="TX" muted={sennMute} />
@@ -144,7 +144,7 @@ function MicsPanel({ config, title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(200px,1fr))] content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto p-1.5 grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(165px,1fr))] content-start">
         {sel.length === 0 && <div className="text-[11px] text-muted-foreground/50 p-1">No mics selected.</div>}
         {sel.map((m) => <MicCard key={m.id} mic={m} nowNext={nn.get(m.id)} />)}
       </div>
@@ -198,16 +198,16 @@ export function ReceiverCard({ ch, online, name }: { ch: Ch; online: boolean; na
   const tone = receiverTone(online, rf, battery, !!ch.mute)
   const label = ch.name?.trim() || name
   return (
-    <div className={cn('rounded-xl border p-3 flex flex-col gap-2', TONE[tone])}>
-      <div className="flex items-center gap-2">
-        <span className="text-[15px] font-bold tracking-tight truncate">{label}</span>
+    <div className={cn('rounded-md border p-1.5 flex flex-col gap-1', TONE[tone])}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-[12px] font-bold tracking-tight truncate">{label}</span>
         {ch.mute != null && <div className="ml-auto shrink-0"><MuteChip label="TX" muted={ch.mute} /></div>}
       </div>
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2"><span className="w-5 text-[9px] font-bold uppercase text-muted-foreground/70">RF</span><SegMeter value={rf} kind="rf" className="flex-1" /></div>
-        <div className="flex items-center gap-2"><span className="w-5 text-[9px] font-bold uppercase text-muted-foreground/70">AF</span><SegMeter value={af} kind="af" className="flex-1" /></div>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">RF</span><SegMeter value={rf} kind="rf" className="flex-1" /></div>
+        <div className="flex items-center gap-1"><span className="w-3.5 text-[8px] font-bold uppercase text-muted-foreground/60">AF</span><SegMeter value={af} kind="af" className="flex-1" /></div>
       </div>
-      <div className="flex items-center gap-2 pt-1 border-t border-border/30">
+      <div className="flex items-center gap-1.5">
         <Battery pct={battery} pending={online ? ch.battery == null : false} />
         {!online && <span className="ml-auto text-[9px] uppercase tracking-wider text-muted-foreground/40">offline</span>}
       </div>
