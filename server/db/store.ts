@@ -108,6 +108,17 @@ export class Store {
   }
   deleteMic(id: string) { this.db.prepare('DELETE FROM mics WHERE id=?').run(id) }
 
+  // ---- services (runsheet: ordered timed segments with people + mics) ----
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  listServices() { return (this.db.prepare('SELECT id,name,data_json,sort_order FROM services ORDER BY sort_order,name').all() as any[]).map((r) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, ...JSON.parse(r.data_json) })) }
+  putService(id: string, name: string, data: Json, sortOrder = 0) {
+    const t = now()
+    this.db.prepare(`INSERT INTO services(id,name,data_json,sort_order,created_at,updated_at) VALUES (?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,data_json=excluded.data_json,sort_order=excluded.sort_order,updated_at=excluded.updated_at`)
+      .run(id, name, JSON.stringify(data), sortOrder, t, t)
+  }
+  deleteService(id: string) { this.db.prepare('DELETE FROM services WHERE id=?').run(id) }
+
   // ---- timer layouts / renderer presets / acceptance (generic keyed blobs) ----
   listTimerLayouts() { return (this.db.prepare('SELECT id,name,data_json FROM timer_layouts').all() as any[]).map((r) => ({ id: r.id, name: r.name, ...JSON.parse(r.data_json) })) }
   putTimerLayout(id: string, name: string, data: Json) { const t = now(); this.db.prepare(`INSERT INTO timer_layouts(id,name,data_json,updated_at) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,data_json=excluded.data_json,updated_at=excluded.updated_at`).run(id, name, JSON.stringify(data), t) }

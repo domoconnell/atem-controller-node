@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS mics (
   updated_at  INTEGER NOT NULL
 );
 
+-- Runsheet "services": an ordered list of timed segments, each with people and
+-- their mics. Internal feature. data_json carries { segments: [...], activeSegment }.
+CREATE TABLE IF NOT EXISTS services (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  data_json   TEXT NOT NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS timer_layouts (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,

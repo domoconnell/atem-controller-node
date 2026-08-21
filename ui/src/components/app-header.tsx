@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2, Server, Disc3, MonitorPlay, Circle, Video, Film, Volume2, Play, Wifi, CloudSun, Cpu, MessageSquare, Activity } from 'lucide-react'
+import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2, Server, Disc3, MonitorPlay, Circle, Video, Film, Volume2, Play, Wifi, CloudSun, Cpu, MessageSquare, Activity, ListChecks } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTopic } from '@/hooks/use-topic'
 
@@ -27,6 +27,11 @@ const APPS = [
     id: 'timers', href: '/designer', icon: Clock,
     title: 'Timers', tile: 'from-info to-blue-800 shadow-[0_0_18px_-4px_var(--info)]',
     sub: () => 'ProPresenter countdowns',
+  },
+  {
+    id: 'runsheet', href: '/runsheet', icon: ListChecks,
+    title: 'Runsheet', tile: 'from-[#f0abfc] to-fuchsia-800 shadow-[0_0_18px_-4px_#f0abfc]',
+    sub: () => 'Services · segments · mics',
   },
   {
     id: 'mics', href: '/mics', icon: Mic,
@@ -78,7 +83,7 @@ const CONN_TEXT: Record<ConnState, string> = { live: 'text-live', sim: 'text-bus
  * children) and the live-update pulse.
  */
 export function AppHeader({ app, state, wsConnected, tick, children }: {
-  app: 'home' | 'surfaces' | 'atem' | 'timers' | 'mics' | 'settings' | 'acceptance'
+  app: 'home' | 'surfaces' | 'atem' | 'timers' | 'runsheet' | 'mics' | 'settings' | 'acceptance'
   state: Snapshot | null
   wsConnected: boolean
   tick: number

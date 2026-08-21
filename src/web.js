@@ -36,9 +36,10 @@ export class WebServer {
     app.get('/transparency-test', (_req, res) =>
       res.sendFile(path.join(projectRoot, 'renderer', 'transparency-test.html'))
     )
-    app.get('/acceptance', (_req, res) => {
-      res.sendFile(path.join(projectRoot, 'public', 'acceptance.html'), (err) => {
-        if (err) res.sendFile(path.join(projectRoot, 'public', 'acceptance', 'index.html'))
+    app.get('/acceptance', (_req, res) => res.redirect(301, '/atem/acceptance')) // moved under ATEM
+    app.get('/atem/acceptance', (_req, res) => {
+      res.sendFile(path.join(projectRoot, 'public', 'atem', 'acceptance.html'), (err) => {
+        if (err) res.sendFile(path.join(projectRoot, 'public', 'atem', 'acceptance', 'index.html'))
       })
     })
     app.get('/designer', (_req, res) => {
@@ -51,7 +52,7 @@ export class WebServer {
         if (err) res.sendFile(path.join(projectRoot, 'public', 'mics', 'index.html'))
       })
     })
-    for (const route of ['atem', 'surfaces', 'settings', 'surface']) {
+    for (const route of ['atem', 'surfaces', 'settings', 'surface', 'runsheet']) {
       app.get(`/${route}`, (_req, res) => {
         res.sendFile(path.join(projectRoot, 'public', `${route}.html`), (err) => {
           if (err) res.sendFile(path.join(projectRoot, 'public', route, 'index.html'))
@@ -103,6 +104,25 @@ export class WebServer {
       res.json({ ok: true, mics: this.store.listMics() })
     })
     app.delete('/api/features/mics/:id', (req, res) => { this.store?.deleteMic(req.params.id); res.json({ ok: true, mics: this.store?.listMics() ?? [] }) })
+
+    // ---- Runsheet services (timed segments with people + mics) ----
+    app.get('/api/features/services', (_req, res) => res.json({ ok: true, services: this.store?.listServices() ?? [] }))
+    app.post('/api/features/services', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const b = req.body ?? {}
+      const id = b.id || `svc_${Math.random().toString(36).slice(2, 10)}`
+      const { id: _i, name = 'Service', sortOrder = 0, ...data } = b
+      this.store.putService(id, name, data, sortOrder)
+      res.json({ ok: true, services: this.store.listServices() })
+    })
+    app.patch('/api/features/services/:id', (req, res) => {
+      if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
+      const cur = this.store.listServices().find((s) => s.id === req.params.id) ?? {}
+      const { id: _i, name = cur.name ?? 'Service', sortOrder = cur.sortOrder ?? 0, ...data } = { ...cur, ...(req.body ?? {}) }
+      this.store.putService(req.params.id, name, data, sortOrder)
+      res.json({ ok: true, services: this.store.listServices() })
+    })
+    app.delete('/api/features/services/:id', (req, res) => { this.store?.deleteService(req.params.id); res.json({ ok: true, services: this.store?.listServices() ?? [] }) })
     app.put('/api/settings', (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
       const body = req.body ?? {}
