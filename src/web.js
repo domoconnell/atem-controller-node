@@ -120,6 +120,12 @@ export class WebServer {
       if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
       const cur = this.store.listServices().find((s) => s.id === req.params.id) ?? {}
       const { id: _i, name = cur.name ?? 'Service', sortOrder = cur.sortOrder ?? 0, ...data } = { ...cur, ...(req.body ?? {}) }
+      // Setting the active position (re)starts that segment's timer; clearing it
+      // (stop) clears the clock. Only a request that actually moves the playhead
+      // touches this, so editing people/times never resets a running timer.
+      if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'activeIndex')) {
+        data.activeStartedAt = req.body.activeIndex == null ? null : Date.now()
+      }
       this.store.putService(req.params.id, name, data, sortOrder)
       this.publishServices()
       res.json({ ok: true, services: this.store.listServices() })

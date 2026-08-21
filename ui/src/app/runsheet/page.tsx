@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
 import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading, RotateCcw } from 'lucide-react'
+import { isValidDuration } from '@/lib/runsheet'
 
 interface Person { name: string; micId?: string; lead?: boolean }
 interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
@@ -231,7 +232,9 @@ function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, 
         ) : (
           <input value={seg.title} onChange={(e) => onChange({ ...seg, title: e.target.value })} placeholder="Segment title" className={cn(sc, 'flex-1 font-semibold')} />
         )}
-        <input value={seg.time ?? ''} onChange={(e) => onChange({ ...seg, time: e.target.value })} placeholder="10:00" className={cn(sc, 'w-20 tabular-nums')} />
+        <input value={seg.time ?? ''} onChange={(e) => onChange({ ...seg, time: e.target.value })} placeholder="10:00"
+          title={isValidDuration(seg.time) ? 'Planned duration — M:SS or H:MM:SS' : 'Invalid time — use M:SS or H:MM:SS'}
+          className={cn(sc, 'w-20 tabular-nums', !isValidDuration(seg.time) && 'border-destructive text-destructive focus:border-destructive')} />
         {synced
           ? <span className="w-7.5 shrink-0" />
           : <button onClick={onRemove} className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground"><Trash2 className="size-3.5" /></button>}

@@ -2,7 +2,34 @@
 
 export interface Person { name: string; micId?: string; lead?: boolean }
 export interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
-export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: unknown }
+export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; activeStartedAt?: number | null; proLink?: unknown }
+
+/** A segment's planned duration "M:SS" / "MM:SS" / "H:MM:SS" -> seconds, or null
+ *  if blank/invalid. Minutes and seconds fields must each be < 60. */
+export function parseDuration(str?: string | null): number | null {
+  if (!str || !str.trim()) return null
+  const parts = str.trim().split(':')
+  if (parts.length < 2 || parts.length > 3) return null
+  if (!parts.every((p) => /^\d+$/.test(p))) return null
+  const nums = parts.map(Number)
+  if (nums[nums.length - 1] >= 60) return null            // seconds
+  if (nums[nums.length - 2] >= 60) return null            // minutes
+  return nums.reduce((total, n) => total * 60 + n, 0)
+}
+/** Blank counts as valid (no planned time); otherwise it must parse. */
+export const isValidDuration = (str?: string | null): boolean => !str || !str.trim() || parseDuration(str) != null
+
+/** Seconds -> "M:SS" or "H:MM:SS" (negative keeps its sign, for overrun). */
+export function fmtDuration(totalSec: number): string {
+  const neg = totalSec < 0
+  let s = Math.abs(Math.round(totalSec))
+  const h = Math.floor(s / 3600); s -= h * 3600
+  const m = Math.floor(s / 60); s -= m * 60
+  const core = h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`
+  return (neg ? '-' : '') + core
+}
 
 export const isHeader = (s?: Segment | null) => s?.kind === 'header'
 /** The name to display: a local rename wins over the ProPresenter/base title. */

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
 import { useMicDefs, useMicLive, CUE, batTint, MiniBar } from './mics'
 import { useTopic } from '@/hooks/use-topic'
@@ -9,7 +9,31 @@ import type { Mic as MicObj } from '@/components/mics/mic-composite'
 import {
   type Person, type Segment, type Service,
   isHeader, segTitle, nextItemIndex, prevItemIndex, firstItemIndex, lastItemIndex, sectionFor, resolveService, gotoIndex,
+  parseDuration, fmtDuration,
 } from '@/lib/runsheet'
+
+/** Re-renders about twice a second so live timers tick. Only runs when enabled
+ *  (a segment is actually running), so idle widgets stay quiet. */
+function useTick(enabled: boolean): number {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    if (!enabled) return
+    const h = setInterval(() => bump((x) => x + 1), 500)
+    return () => clearInterval(h)
+  }, [enabled])
+  return Date.now()
+}
+
+/** Live clock for the running segment: counts a planned time down (turning red
+ *  with a +overrun once past it), or counts elapsed up when no time is set. */
+function SegClock({ seg, startedAt, now, className }: { seg: Segment; startedAt: number | null | undefined; now: number; className?: string }) {
+  const planned = parseDuration(seg.time)
+  const elapsed = startedAt ? Math.max(0, (now - startedAt) / 1000) : 0
+  if (planned == null) return <span className={cn('tabular-nums font-bold text-live', className)}>{fmtDuration(elapsed)}</span>
+  const remaining = planned - elapsed
+  const over = remaining < 0
+  return <span className={cn('tabular-nums font-bold', over ? 'text-destructive' : remaining < 30 ? 'text-busy' : 'text-live', className)}>{over ? `+${fmtDuration(-remaining)}` : fmtDuration(remaining)}</span>
+}
 
 /** All services, pushed live over the shared WebSocket hub (topic
  *  'feature:services'). Every runsheet widget shares this one subscription, so
@@ -68,12 +92,12 @@ function SectionLabel({ seg }: { seg: Segment }) {
   )
 }
 
-function SegBlock({ label, tone, seg, mics }: { label: string; tone: 'live' | 'busy'; seg: Segment | null; mics: MicObj[] }) {
+function SegBlock({ label, tone, seg, mics, clock }: { label: string; tone: 'live' | 'busy'; seg: Segment | null; mics: MicObj[]; clock?: React.ReactNode }) {
   return (
     <div className="mb-2.5">
       <div className={cn('text-[10px] font-bold uppercase tracking-wider mb-1', tone === 'live' ? 'text-live' : 'text-busy')}>
         {label}: <span className="text-foreground normal-case tracking-normal">{seg ? segTitle(seg) : '—'}</span>
-        {seg?.time ? <span className="text-muted-foreground/60 ml-1.5 tabular-nums font-normal">{seg.time}</span> : null}
+        {clock ? <span className="ml-1.5 normal-case tracking-normal">{clock}</span> : seg?.time ? <span className="text-muted-foreground/60 ml-1.5 tabular-nums font-normal">{seg.time}</span> : null}
       </div>
       {(seg?.people ?? []).map((p, i) => <PersonLine key={i} person={p} mics={mics} />)}
       {(!seg || seg.people.length === 0) && <div className="text-[11px] text-muted-foreground/40 pl-1">—</div>}
@@ -92,6 +116,7 @@ function NowNext({ config, title }: WidgetProps) {
   const now = idx != null ? segs[idx] ?? null : null
   const next = segs[idx != null ? (nextItemIndex(segs, idx) ?? -1) : (firstItemIndex(segs) ?? -1)] ?? null
   const section = sectionFor(segs, idx)
+  const tnow = useTick(idx != null)
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
@@ -99,7 +124,7 @@ function NowNext({ config, title }: WidgetProps) {
         {!svc ? <div className="text-[11px] text-muted-foreground/50">No service.</div> : (
           <>
             {section && <div className="mb-1.5"><SectionLabel seg={section} /></div>}
-            <SegBlock label="Now" tone="live" seg={now} mics={mics} />
+            <SegBlock label="Now" tone="live" seg={now} mics={mics} clock={now ? <SegClock seg={now} startedAt={svc?.activeStartedAt} now={tnow} /> : null} />
             <SegBlock label="Next" tone="busy" seg={next} mics={mics} />
           </>
         )}
@@ -110,7 +135,9 @@ function NowNext({ config, title }: WidgetProps) {
 registerWidget({ type: 'runsheet-nownext', label: 'Runsheet · Now / Next', defaultSize: { w: 4, h: 4 }, configFields: [{ key: 'serviceId', label: 'Service', kind: 'service' }], Component: NowNext })
 
 /** The full running order: headers as section dividers, each item with its time
- *  and who's on it (names + live mic status), NOW/NEXT highlighted, auto-scrolls. */
+ *  and who's on it (lead mics inline, others below). The running item is
+ *  highlighted with a live count-down/overrun clock; the view keeps NOW and the
+ *  upcoming NEXT both on screen. */
 function RunsheetList({ config, title }: WidgetProps) {
   const services = useServicesTopic()
   const mics = useMicDefs()
@@ -118,36 +145,59 @@ function RunsheetList({ config, title }: WidgetProps) {
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   const nextIdx = idx != null ? nextItemIndex(segs, idx) : firstItemIndex(segs)
+  const now = useTick(idx != null)
+  const contRef = useRef<HTMLDivElement>(null)
   const nowRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { nowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [idx])
+  const nextRef = useRef<HTMLDivElement>(null)
+  // Keep NOW and NEXT both visible: scroll NOW a little below the top (so its
+  // section header shows) which reveals the NEXT item just beneath it; if NEXT
+  // still falls below the fold, nudge it into view.
+  useEffect(() => {
+    const cont = contRef.current, el = nowRef.current
+    if (!cont || !el) return
+    const c = cont.getBoundingClientRect(), e = el.getBoundingClientRect()
+    cont.scrollTo({ top: Math.max(0, cont.scrollTop + (e.top - c.top) - Math.min(64, c.height * 0.25)), behavior: 'smooth' })
+    const nx = nextRef.current
+    if (nx) requestAnimationFrame(() => nx.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+  }, [idx, segs.length])
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
-      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5">
+      <div ref={contRef} className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5">
         {!svc ? <div className="text-[11px] text-muted-foreground/50 px-1">No service.</div> : segs.length === 0 ? <div className="text-[11px] text-muted-foreground/50 px-1">Empty runsheet.</div> : (
-          segs.map((seg, i) => isHeader(seg) ? (
-            <div key={seg.id} className="flex items-center gap-2 pt-2.5 pb-1 first:pt-1">
-              <span className="h-3.5 w-1 rounded-full shrink-0" style={{ background: seg.color || '#6b7280' }} />
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground truncate">{segTitle(seg)}</span>
-              <div className="flex-1 h-px bg-border/40" />
-            </div>
-          ) : (
-            <div key={seg.id} ref={i === idx ? nowRef : undefined}
-              className={cn('rounded-md px-2 py-1', i === idx ? 'bg-live/15' : i === nextIdx ? 'bg-busy/10' : '')}>
-              <div className="flex items-baseline gap-2">
-                <span className={cn('shrink-0 w-9 text-center text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 -translate-y-px',
-                  i === idx ? 'bg-live text-black' : i === nextIdx ? 'bg-busy text-black' : 'bg-muted/50 text-muted-foreground')}>
-                  {i === idx ? 'NOW' : i === nextIdx ? 'NEXT' : ''}</span>
-                <span className="text-[12.5px] font-semibold truncate">{segTitle(seg)}</span>
-                <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground/70">{seg.time || ''}</span>
+          segs.map((seg, i) => {
+            if (isHeader(seg)) return (
+              <div key={seg.id} className="flex items-center gap-2 pt-2.5 pb-1 first:pt-1">
+                <span className="h-3.5 w-1 rounded-full shrink-0" style={{ background: seg.color || '#6b7280' }} />
+                <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground truncate">{segTitle(seg)}</span>
+                <div className="flex-1 h-px bg-border/40" />
               </div>
-              {seg.people.length > 0 && (
-                <div className="pl-11 pt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
-                  {seg.people.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}
+            )
+            const isNow = i === idx, isNext = i === nextIdx
+            const leads = seg.people.filter((p) => p.lead)
+            const others = seg.people.filter((p) => !p.lead)
+            return (
+              <div key={seg.id} ref={isNow ? nowRef : isNext ? nextRef : undefined}
+                className={cn('rounded-md px-2 py-1', isNow ? 'bg-live/15' : isNext ? 'bg-busy/10' : '')}>
+                <div className="flex items-center gap-2">
+                  <span className={cn('shrink-0 w-9 text-center text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5',
+                    isNow ? 'bg-live text-black' : isNext ? 'bg-busy text-black' : 'bg-muted/50 text-muted-foreground')}>
+                    {isNow ? 'NOW' : isNext ? 'NEXT' : ''}</span>
+                  <span className="text-[12.5px] font-semibold truncate shrink min-w-0">{segTitle(seg)}</span>
+                  {/* lead mics on the same line */}
+                  {leads.length > 0 && <span className="flex items-center gap-x-3 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
+                  <span className="ml-auto shrink-0 text-[11px] pl-1">
+                    {isNow ? <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} /> : <span className="tabular-nums text-muted-foreground/70">{seg.time || ''}</span>}
+                  </span>
                 </div>
-              )}
-            </div>
-          ))
+                {others.length > 0 && (
+                  <div className="pl-11 pt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
+                    {others.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}
+                  </div>
+                )}
+              </div>
+            )
+          })
         )}
       </div>
     </div>
