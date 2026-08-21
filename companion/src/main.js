@@ -66,7 +66,7 @@ class StageItInstance extends InstanceBase {
       const sig = JSON.stringify([this.data.mics.map((m) => m.id), this.data.surfaces.map((x) => x.id), this.data.displays.map((d) => d.browserId)])
       if (sig !== this._sig) { this._sig = sig; this.rebuild() }
       this.pushValues()
-      this.checkFeedbacks('mic_cue_is', 'runsheet_running')
+      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running')
     } catch (e) {
       this.updateStatus(InstanceStatus.ConnectionFailure, e.message)
     }
@@ -100,6 +100,7 @@ class StageItInstance extends InstanceBase {
     for (const m of this.data.mics) {
       defs.push({ variableId: `${m.id}_cue`, name: `Mic cue — ${m.label}` })
       defs.push({ variableId: `${m.id}_name`, name: `Mic name — ${m.label}` })
+      defs.push({ variableId: `${m.id}_muted`, name: `Mic muted — ${m.label}` })
     }
     this.setVariableDefinitions(defs)
   }
@@ -113,7 +114,7 @@ class StageItInstance extends InstanceBase {
       runsheet_now_time: rs.nowTime ?? '',
       runsheet_running: rs.running ? 'true' : 'false',
     }
-    for (const m of this.data.mics) { vals[`${m.id}_cue`] = m.cue; vals[`${m.id}_name`] = m.label }
+    for (const m of this.data.mics) { vals[`${m.id}_cue`] = m.cue; vals[`${m.id}_name`] = m.label; vals[`${m.id}_muted`] = m.muted ? 'true' : 'false' }
     this.setVariableValues(vals)
   }
 
@@ -157,7 +158,7 @@ class StageItInstance extends InstanceBase {
         type: 'boolean',
         name: 'Mic cue is…',
         description: 'Colour a button when a mic is at a given cue state.',
-        defaultStyle: { bgcolor: combineRgb(200, 30, 30), color: combineRgb(255, 255, 255) },
+        defaultStyle: { bgcolor: combineRgb(30, 150, 60), color: combineRgb(255, 255, 255) },
         options: [
           { type: 'dropdown', id: 'mic', label: 'Mic', choices: mics, default: mics[0]?.id ?? '' },
           { type: 'dropdown', id: 'cue', label: 'Cue', choices: [{ id: 'live', label: 'Live' }, { id: 'standby', label: 'Standby' }, { id: 'off', label: 'Off' }], default: 'live' },
@@ -165,6 +166,19 @@ class StageItInstance extends InstanceBase {
         callback: (fb) => {
           const m = this.data.mics.find((x) => x.id === fb.options.mic)
           return !!m && m.cue === fb.options.cue
+        },
+      },
+      mic_muted: {
+        type: 'boolean',
+        name: 'Mic is muted',
+        description: 'Colour a button red when a mic is muted at the console/tx.',
+        defaultStyle: { bgcolor: combineRgb(200, 30, 30), color: combineRgb(255, 255, 255) },
+        options: [
+          { type: 'dropdown', id: 'mic', label: 'Mic', choices: mics, default: mics[0]?.id ?? '' },
+        ],
+        callback: (fb) => {
+          const m = this.data.mics.find((x) => x.id === fb.options.mic)
+          return !!m && !!m.muted
         },
       },
       runsheet_running: {
@@ -193,8 +207,9 @@ class StageItInstance extends InstanceBase {
         style: { text: `${m.label}\\n$(stageit:${m.id}_cue)`, size: '14', color: white, bgcolor: dark },
         steps: [{ down: [{ actionId: 'mic_cue', options: { mic: m.id, action: 'toggle' } }], up: [] }],
         feedbacks: [
-          { feedbackId: 'mic_cue_is', options: { mic: m.id, cue: 'live' }, style: { bgcolor: combineRgb(200, 30, 30) } },
           { feedbackId: 'mic_cue_is', options: { mic: m.id, cue: 'standby' }, style: { bgcolor: combineRgb(200, 140, 0), color: combineRgb(0, 0, 0) } },
+          { feedbackId: 'mic_cue_is', options: { mic: m.id, cue: 'live' }, style: { bgcolor: combineRgb(30, 150, 60), color: white } },
+          { feedbackId: 'mic_muted', options: { mic: m.id }, style: { bgcolor: combineRgb(200, 30, 30), color: white } },
         ],
       }
     }

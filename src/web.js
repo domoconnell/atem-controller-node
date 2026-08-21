@@ -147,7 +147,7 @@ export class WebServer {
       const next = nIdx != null ? segs[nIdx] ?? null : null
       res.json({
         ok: true,
-        mics: (this.store?.listMics() ?? []).map((m) => ({ id: m.id, label: m.label, cue: m.cue ?? 'off' })),
+        mics: (this.store?.listMics() ?? []).map((m) => ({ id: m.id, label: m.label, cue: m.cue ?? 'off', muted: this._micMuted(m) })),
         surfaces: (this.store?.listSurfaces() ?? []).map((s) => ({ id: s.id, name: s.name })),
         displays: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c),
         runsheet: { service: svc?.name ?? null, running: idx != null, now: this._segTitle(now), next: this._segTitle(next), nowTime: now?.time ?? null },
@@ -552,6 +552,22 @@ export class WebServer {
   _runningService() { const svcs = this.store?.listServices() ?? []; return svcs.find((s) => s.activeIndex != null) ?? svcs[0] }
   _segTitle(s) { return s ? (s.titleOverride?.trim() ? s.titleOverride : s.title) : '' }
 
+  /** Live mute of a composite mic — DiGiCo console mute, else Sennheiser tx mute
+   *  — read from the realtime hub's latest channel snapshot. */
+  _micMuted(mic) {
+    const read = (instId, streamId) => { try { return this.connectorEngine?.hub?.snapshot(`mi:${instId}:${streamId}`)?.data } catch { return null } }
+    if (mic.digicoInstanceId && mic.digicoChannel != null) {
+      const ch = (read(mic.digicoInstanceId, 'channels')?.channels ?? []).find((c) => c.channel === mic.digicoChannel)
+      if (ch) return !!ch.muted
+    }
+    if (mic.sennheiserInstanceId) {
+      const chans = read(mic.sennheiserInstanceId, 'channels')?.channels ?? []
+      const ch = chans.find((c) => c.id === mic.sennheiserChannel) ?? chans[0]
+      if (ch?.mute != null) return !!ch.mute
+    }
+    return false
+  }
+
   /** Set each mapped mic's cue from the now (live) / next-item (standby) segments
    *  of a service — the single source of truth for cue automation. */
   applyCues(svc, idx) {
@@ -644,6 +660,7 @@ export class WebServer {
       // m.id already starts with "mic_", so don't double it.
       o.sendCompanionVar(`${m.id}_cue`, m.cue ?? 'off')
       o.sendCompanionVar(`${m.id}_name`, m.label ?? '')
+      o.sendCompanionVar(`${m.id}_muted`, this._micMuted(m) ? 'true' : 'false')
     }
   }
 
