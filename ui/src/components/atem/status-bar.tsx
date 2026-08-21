@@ -5,7 +5,8 @@ import { AppHeader } from '@/components/app-header'
 import { TransitionWidget } from './transition-strip'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Circle, Settings } from 'lucide-react'
+import Link from 'next/link'
+import { Circle, Settings, ClipboardCheck } from 'lucide-react'
 
 export function StatusBar({ state, wsConnected, tick, locked, onRecord, onSettings }: {
   state: Snapshot | null; wsConnected: boolean; tick: number; locked: boolean
@@ -37,6 +38,9 @@ export function StatusBar({ state, wsConnected, tick, locked, onRecord, onSettin
         <div className="h-6 w-px bg-border" />
         <Button size="sm" variant="secondary" className="h-8 text-[11px] font-bold uppercase tracking-wider" disabled={locked || !state} onClick={onRecord} title="Record the live state as a new look">
           <Circle className="size-3 fill-pgm text-pgm" /> Record
+        </Button>
+        <Button asChild size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" title="Acceptance testing">
+          <Link href="/acceptance"><ClipboardCheck className="size-4" /></Link>
         </Button>
         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground" onClick={onSettings} title="Settings">
           <Settings className="size-4" />
