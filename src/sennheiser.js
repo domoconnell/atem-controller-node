@@ -255,8 +255,18 @@ export class SennheiserMonitor extends EventEmitter {
       this._legacy.on('message', (msg, rinfo) => this._onLegacy(msg, rinfo))
       await new Promise((res) => this._legacy.bind(this.simulate ? 0 : LEGACY_PORT, res))
         .catch((e) => console.error('[senn] cannot bind :8133 (WSM running here?):', e.message))
+      // Send the subscribe from a SEPARATE ephemeral socket, mirroring WSM (it
+      // subscribes from an ephemeral source port, not 8133). The unit only
+      // returns the c8fcf7ca config block (name/freq/squelch/AF) to an
+      // ephemeral-sourced subscribe; telemetry still streams to reqIP:8133 (the
+      // _legacy socket). The sender also listens, since the sim replies to the
+      // sender's source rather than 8133.
+      this._legacySender = dgram.createSocket('udp4')
+      this._legacySender.on('error', () => {})
+      this._legacySender.on('message', (msg, rinfo) => this._onLegacy(msg, rinfo))
+      await new Promise((res) => this._legacySender.bind(0, res)).catch(() => {})
       if (!this._legacyIp) console.warn('[senn] no LAN IP found for legacy subscribe - old G3 will fall back to ping presence')
-      else console.log(`[senn] legacy G3 subscribe as ${this._legacyIp} (port 8133) for ${legacy.length} unit(s)`)
+      else console.log(`[senn] legacy G3 subscribe as ${this._legacyIp} (recv :8133) for ${legacy.length} unit(s)`)
     }
     for (const d of dx) {
       const s = dgram.createSocket('udp4')
@@ -285,6 +295,7 @@ export class SennheiserMonitor extends EventEmitter {
     for (const s of this._sscSocks.values()) { try { s.close() } catch {} }
     try { this._g34?.close() } catch {}
     try { this._legacy?.close() } catch {}
+    try { this._legacySender?.close() } catch {}
     this._fleet?.stop()
   }
 
@@ -299,8 +310,9 @@ export class SennheiserMonitor extends EventEmitter {
   }
 
   _legacySubscribe(d) {
-    wire('tx', 'senn', `legacy ${d.ip}`, `subscribe as ${this._legacyIp}:8133`)
-    this._legacy?.send(buildLegacySubscribe(this._legacyIp), d.port ?? LEGACY_PORT, d.ip)
+    wire('tx', 'senn', `legacy ${d.ip}`, `subscribe as ${this._legacyIp} (recv :8133)`)
+    // Send from the ephemeral sender (like WSM), fall back to the recv socket.
+    ;(this._legacySender ?? this._legacy)?.send(buildLegacySubscribe(this._legacyIp), d.port ?? LEGACY_PORT, d.ip)
   }
 
   _onLegacy(msg, rinfo) {
