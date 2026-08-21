@@ -78,8 +78,9 @@ export async function applyCues(mics: MicLike[], segs: Segment[], idx: number | 
 }
 
 /** PATCH a service's active position and re-cue mics; returns the updated list. */
-export async function gotoIndex(serviceId: string, idx: number | null, mics: MicLike[], segs: Segment[]): Promise<Service[]> {
+/** Move a service's playhead. The server re-cues the mapped mics (single source
+ *  of truth for both the UI and OSC), so we just PATCH the position. */
+export async function gotoIndex(serviceId: string, idx: number | null): Promise<Service[]> {
   const b = await (await fetch(`/api/features/services/${serviceId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activeIndex: idx }) })).json()
-  await applyCues(mics, segs, idx)
   return (b.services as Service[]) ?? []
 }

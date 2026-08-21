@@ -81,17 +81,8 @@ export default function RunsheetPage() {
   const firstItem = segments.findIndex((s) => s.kind !== 'header')
   const lastItem = (() => { for (let i = segments.length - 1; i >= 0; i--) if (segments[i]?.kind !== 'header') return i; return -1 })()
 
-  // Drive the mapped mics' cue from the active/next segment (headers skipped).
-  const applyCues = useCallback(async (segs: Segment[], idx: number | null) => {
-    let n = idx == null ? -1 : idx; if (idx != null) { do { n++ } while (n < segs.length && segs[n]?.kind === 'header') }
-    const live = new Set(idx != null ? (segs[idx]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
-    const standby = new Set(idx != null && n < segs.length ? (segs[n]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
-    await Promise.all(mics.map((m) => {
-      const want = live.has(m.id) ? 'live' : standby.has(m.id) ? 'standby' : 'off'
-      return (m.cue ?? 'off') === want ? null : fetch(`/api/features/mics/${m.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cue: want }) })
-    }).filter(Boolean))
-  }, [mics])
-  const goto = (idx: number | null) => { update({ activeIndex: idx }); applyCues(segments, idx) }
+  // Just move the playhead — the server re-cues the mapped mics.
+  const goto = (idx: number | null) => update({ activeIndex: idx })
   const move = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= segments.length) return; const c = [...segments]; [c[i], c[j]] = [c[j], c[i]]; setSegments(c) }
   const onImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return

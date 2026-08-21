@@ -146,10 +146,12 @@ export class WebServer {
       // Setting the active position (re)starts that segment's timer; clearing it
       // (stop) clears the clock. Only a request that actually moves the playhead
       // touches this, so editing people/times never resets a running timer.
-      if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'activeIndex')) {
-        data.activeStartedAt = req.body.activeIndex == null ? null : Date.now()
-      }
+      const moved = req.body && Object.prototype.hasOwnProperty.call(req.body, 'activeIndex')
+      if (moved) data.activeStartedAt = req.body.activeIndex == null ? null : Date.now()
       this.store.putService(req.params.id, name, data, sortOrder)
+      // Moving the playhead re-cues mics server-side (the single source of truth,
+      // so OSC and every client behave identically).
+      if (moved) this.applyCues({ segments: data.segments }, data.activeIndex)
       this.publishServices()
       res.json({ ok: true, services: this.store.listServices() })
     })
@@ -464,6 +466,7 @@ export class WebServer {
   publishServices() {
     try { this.connectorEngine?.hub?.publish('feature:services', { services: this.store?.listServices() ?? [] }) }
     catch { /* hub optional (engine may be absent) */ }
+    this.pushCompanionRunsheet()
   }
 
   /** Push the mic definitions (incl. their live cue) onto the hub, so a cue
@@ -472,6 +475,7 @@ export class WebServer {
   publishMics() {
     try { this.connectorEngine?.hub?.publish('feature:mics', { mics: this.store?.listMics() ?? [] }) }
     catch { /* hub optional */ }
+    this.pushCompanionMics()
   }
 
   /** Push the recorder list (which devices are tagged record/playback) so the
@@ -487,6 +491,107 @@ export class WebServer {
   publishInstances() {
     try { this.connectorEngine?.hub?.publish('sys:instances', { instances: this.connectorEngine?.listInstances() ?? [] }) }
     catch { /* hub optional */ }
+  }
+
+  // ---- Runsheet / mic-cue engine (server-authoritative, drives OSC + UI) ----
+  _isHeader(s) { return s?.kind === 'header' }
+  _nextItemIndex(segs, from) { let i = from == null ? -1 : from; do { i++ } while (i < segs.length && this._isHeader(segs[i])); return i < segs.length ? i : null }
+  _prevItemIndex(segs, from) { let i = from == null ? segs.length : from; do { i-- } while (i >= 0 && this._isHeader(segs[i])); return i >= 0 ? i : null }
+  _runningService() { const svcs = this.store?.listServices() ?? []; return svcs.find((s) => s.activeIndex != null) ?? svcs[0] }
+  _segTitle(s) { return s ? (s.titleOverride?.trim() ? s.titleOverride : s.title) : '' }
+
+  /** Set each mapped mic's cue from the now (live) / next-item (standby) segments
+   *  of a service — the single source of truth for cue automation. */
+  applyCues(svc, idx) {
+    if (!this.store) return
+    const segs = svc?.segments ?? []
+    const now = new Set(idx != null ? (segs[idx]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
+    const nIdx = this._nextItemIndex(segs, idx)
+    const next = new Set(idx != null && nIdx != null ? (segs[nIdx]?.people ?? []).map((p) => p.micId).filter(Boolean) : [])
+    let changed = false
+    for (const m of this.store.listMics()) {
+      const want = now.has(m.id) ? 'live' : next.has(m.id) ? 'standby' : 'off'
+      if ((m.cue ?? 'off') !== want) { const { id, label = 'Mic', sortOrder = 0, ...data } = m; this.store.putMic(id, label, { ...data, cue: want }, sortOrder); changed = true }
+    }
+    if (changed) this.publishMics()
+  }
+
+  /** Move a service's playhead, re-cue mics, stamp the timer and broadcast. */
+  setActiveIndex(svcId, idx) {
+    const svc = this.store?.listServices().find((s) => s.id === svcId)
+    if (!svc) return
+    const { id, name = 'Service', sortOrder = 0, ...data } = svc
+    this.store.putService(id, name, { ...data, activeIndex: idx, activeStartedAt: idx == null ? null : Date.now() }, sortOrder)
+    this.applyCues({ ...svc, activeIndex: idx }, idx)
+    this.publishServices()
+  }
+
+  /** Step the running runsheet forward/back one item (headers skipped). */
+  advanceRunsheet(dir) {
+    const svc = this._runningService()
+    if (!svc) return
+    const segs = svc.segments ?? []
+    const idx = svc.activeIndex ?? null
+    const n = idx == null ? this._nextItemIndex(segs, null)
+      : dir > 0 ? this._nextItemIndex(segs, idx) : this._prevItemIndex(segs, idx)
+    if (n == null) return // already at an end
+    this.setActiveIndex(svc.id, n)
+  }
+
+  /** Set one mic's cue directly; 'toggle' cycles off → standby → live → off. */
+  setMicCue(micId, action) {
+    const mic = this.store?.listMics().find((m) => m.id === micId)
+    if (!mic) throw new Error(`no mic '${micId}'`)
+    const cur = mic.cue ?? 'off'
+    const cue = action === 'toggle' ? (cur === 'off' ? 'standby' : cur === 'standby' ? 'live' : 'off')
+      : ['live', 'standby', 'off'].includes(action) ? action : null
+    if (!cue) throw new Error(`bad mic cue action '${action}'`)
+    const { id, label = 'Mic', sortOrder = 0, ...data } = mic
+    this.store.putMic(id, label, { ...data, cue }, sortOrder)
+    this.publishMics()
+  }
+
+  /** Handle a /sil/* OSC address (parts already split on '/'). */
+  async handleOsc(parts, _args) {
+    const [, section, ...rest] = parts // parts[0] === 'sil'
+    if (section === 'runsheet') {
+      if (rest[0] === 'next') return this.advanceRunsheet(1)
+      if (rest[0] === 'back' || rest[0] === 'prev') return this.advanceRunsheet(-1)
+      if (rest[0] === 'stop') { const s = this._runningService(); if (s) this.setActiveIndex(s.id, null); return }
+      throw new Error(`unknown /sil/runsheet/${rest[0] ?? ''}`)
+    }
+    if (section === 'miccue') { this.setMicCue(rest[0], rest[1]); return }
+    if (section === 'surfaces') {
+      // /sil/surfaces/<browserId>/<surfaceId>/<edge>_drawer/<action>
+      const [browserId, surfaceId, target, action] = rest
+      if (!browserId || !target || !action) throw new Error('surface control needs browser id, target and action')
+      this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { surfaceId: surfaceId ?? null, target, action, at: Date.now() })
+      return
+    }
+    throw new Error(`unknown /sil/${section ?? ''}`)
+  }
+
+  /** Push runsheet + mic status to Companion as custom variables. */
+  pushCompanionRunsheet() {
+    const o = this.oscServer; if (!o?.sendCompanionVar) return
+    const svc = this._runningService()
+    const segs = svc?.segments ?? []
+    const idx = svc?.activeIndex ?? null
+    const now = idx != null ? segs[idx] ?? null : null
+    const nIdx = idx != null ? this._nextItemIndex(segs, idx) : this._nextItemIndex(segs, null)
+    const next = nIdx != null ? segs[nIdx] ?? null : null
+    o.sendCompanionVar('runsheet_service', svc?.name ?? '')
+    o.sendCompanionVar('runsheet_now', this._segTitle(now))
+    o.sendCompanionVar('runsheet_next', this._segTitle(next))
+    o.sendCompanionVar('runsheet_now_time', now?.time ?? '')
+    o.sendCompanionVar('runsheet_running', idx != null ? 'true' : 'false')
+  }
+  pushCompanionMics() {
+    const o = this.oscServer; if (!o?.sendCompanionVar) return
+    for (const m of this.store?.listMics() ?? []) {
+      o.sendCompanionVar(`mic_${m.id}_cue`, m.cue ?? 'off')
+      o.sendCompanionVar(`mic_${m.id}_name`, m.label ?? '')
+    }
   }
 
   /** Live ProPresenter -> Services link. Every few seconds, each service with a

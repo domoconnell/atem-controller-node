@@ -250,7 +250,7 @@ function RunsheetControl({ config, title }: WidgetProps) {
   const next = segs[idx != null ? (nextItemIndex(segs, idx) ?? -1) : (first ?? -1)] ?? null
   const running = idx != null
   // PATCH the position; the server pushes the new state to every widget over WS.
-  const go = (n: number | null) => { if (svc) gotoIndex(svc.id, n, mics, segs) }
+  const go = (n: number | null) => { if (svc) gotoIndex(svc.id, n) }
   return (
     <div className="h-full flex flex-col p-2.5">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground pb-1.5 truncate">{title}</div> : null}

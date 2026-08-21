@@ -57,6 +57,7 @@ const sennheiser = new SennheiserMonitor()
 
 const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser, connectorEngine, store })
 oscServer.attachVerifier(verifier)
+oscServer.attachWeb(web) // /sil/* runsheet, mic cue, surface control
 
 oscServer.open()
 web.start()

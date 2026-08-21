@@ -22,6 +22,12 @@ import { wire, short } from './wire.js'
  *   /hyperdeck/clip <id>
  *   /reload                          - re-read looks/ and macros/ from disk
  *
+ * Stage It surface/feature control (handled by the web server, which owns the
+ * store + realtime hub — see WebServer.handleOsc):
+ *   /sil/runsheet/next | /sil/runsheet/back | /sil/runsheet/stop
+ *   /sil/miccue/<mic_id>/toggle|live|standby|off
+ *   /sil/surfaces/<browser_id>/<surface_id>/<edge>_drawer/open|close|toggle
+ *
  * Feedback (pushed to every config.osc.feedback target on change):
  *   /status/currentLook <name>
  *   /status/busy <0|1> <macroName>
@@ -38,6 +44,8 @@ export class OscServer {
     this.looks = looks
     this.sequencer = sequencer
     this.hyperdeck = hyperdeck
+
+    this.web = null // set via attachWeb — for /sil/* commands
 
     this.port = new osc.UDPPort({
       localAddress: '0.0.0.0',
@@ -90,6 +98,9 @@ export class OscServer {
    *   atemcn_verify       - 'ok' | 'DIVERGED' after each transition (hardware
    *                          state vs simulator prediction), atemcn_verify_detail
    */
+  /** The web server handles /sil/* (runsheet, mic cue, surface control). */
+  attachWeb(web) { this.web = web }
+
   attachVerifier(verifier) {
     this.verifier = verifier
     verifier.on('verified', (r) => {
@@ -341,6 +352,12 @@ export class OscServer {
         this.looks.loadAll()
         this.sequencer.loadAll()
         return
+
+      case 'sil':
+        // Stage It runsheet / mic-cue / surface control — the web server owns
+        // the store + hub, so it handles these.
+        if (this.web?.handleOsc) { await this.web.handleOsc(parts, args); return }
+        break
     }
 
     throw new Error(`Unknown OSC address '${address}'`)
