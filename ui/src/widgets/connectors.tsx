@@ -4,6 +4,7 @@ import { registerWidget, type WidgetDef, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
 import { statusTopic } from '@/lib/topics'
 import { cn } from '@/lib/utils'
+import { ReceiverCard } from './mics'
 import {
   Mic, MicOff, CloudSun, Cpu, Activity, Volume2, Disc3,
   SlidersHorizontal, Wifi, MessageSquare, Timer, Play, Film, Video,
@@ -107,33 +108,19 @@ function connector(d: ConnDef) {
 interface Ch { id: string; name?: string; frequency?: number; rf?: number | null; af?: number | null; battery?: number | null; ant?: number; mute?: boolean }
 function batTone(b: number | null | undefined): Tone { return b == null ? 'muted' : b <= 20 ? 'alarm' : b <= 50 ? 'busy' : 'live' }
 
-function ChannelRow({ ch, fallback }: { ch: Ch; fallback: string }) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-semibold truncate">{ch.name?.trim() || fallback}</span>
-        <span className="text-[10px] font-mono text-muted-foreground/70 shrink-0">{ch.frequency ? `${(ch.frequency / 1000).toFixed(3)}` : ''}</span>
-      </div>
-      <div className="flex items-center gap-1.5"><span className="text-[8px] w-3 text-muted-foreground">RF</span><Bar value={ch.rf ?? 0} kind="rf" /></div>
-      <div className="flex items-center gap-1.5"><span className="text-[8px] w-3 text-muted-foreground">AF</span><Bar value={ch.af ?? 0} /></div>
-      <div className="flex items-center justify-between text-[10px]">
-        <span className={cn('tabular-nums', batTone(ch.battery) === 'alarm' ? 'text-destructive' : batTone(ch.battery) === 'busy' ? 'text-busy' : ch.battery == null ? 'text-muted-foreground/50' : 'text-live')}>{ch.battery != null ? `${ch.battery}%` : 'tx off'}</span>
-        <span className="flex items-center gap-2">
-          {ch.mute && <span className="text-destructive">mute</span>}
-          {ch.ant ? <span className="text-muted-foreground/60">ant {ch.ant === 1 ? 'A' : 'B'}</span> : null}
-        </span>
-      </div>
-    </div>
-  )
+/** One receiver's channels as tinted status cards (shared with the mics look). */
+function ReceiverCards({ id, name }: { id: string; name: string }) {
+  const d = useStream(id, 'channels') as { channels?: Ch[]; online?: boolean } | null
+  const chans = d?.channels ?? []
+  const online = !!d?.online
+  if (chans.length === 0) return <ReceiverCard ch={{ id: 'x' }} online={false} name={name} />
+  return <>{chans.map((ch) => <ReceiverCard key={ch.id} ch={ch} online={online} name={chans.length > 1 ? `${name} · ${ch.id}` : name} />)}</>
 }
 function MicPanel({ instanceId, title }: WidgetProps) {
-  const d = useStream(instanceId, 'channels') as { channels?: Ch[]; online?: boolean } | null
-  const chans = d?.channels ?? []
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
-      <div className={cn('flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-2.5', !d?.online && 'opacity-50')}>
-        {chans.length === 0 && <div className="text-[11px] text-muted-foreground/50">{d?.online ? 'No channels.' : 'Offline.'}</div>}
-        {chans.map((ch) => <ChannelRow key={ch.id} ch={ch} fallback={title} />)}
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(190px,1fr))] content-start">
+        <ReceiverCards id={instanceId ?? ''} name={title || 'Receiver'} />
       </div>
     </div>
   )
@@ -155,22 +142,10 @@ function MicStrip({ instanceId, title }: WidgetProps) {
 function MicRack({ instances = [], title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(150px,1fr))] content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(190px,1fr))] content-start">
         {instances.length === 0 && <div className="text-[11px] text-muted-foreground/50">No receivers.</div>}
-        {instances.map((i) => (
-          <div key={i.id} className="rounded-lg border border-border/60 p-2"><MicPanelInline id={i.id} name={i.name} /></div>
-        ))}
+        {instances.map((i) => <ReceiverCards key={i.id} id={i.id} name={i.name} />)}
       </div>
-    </div>
-  )
-}
-function MicPanelInline({ id, name }: { id: string; name: string }) {
-  const d = useStream(id, 'channels') as { channels?: Ch[]; online?: boolean } | null
-  const chans = d?.channels ?? []
-  return (
-    <div className={cn('space-y-1.5', !d?.online && 'opacity-40')}>
-      {chans.length === 0 && <div className="text-[11px] text-muted-foreground/60">{name}</div>}
-      {chans.map((ch) => <ChannelRow key={ch.id} ch={ch} fallback={name} />)}
     </div>
   )
 }

@@ -53,6 +53,7 @@ function PersonMini({ person, mics }: { person: Person; mics: MicObj[] }) {
     <span className="inline-flex items-center gap-1 text-[11px] whitespace-nowrap">
       {person.lead && <Star className="size-2.5 shrink-0 fill-current text-primary" />}
       <span className={cn('truncate', person.lead && 'font-semibold')}>{person.name || '—'}</span>
+      {mic && <span className="shrink-0 text-[10px] font-semibold text-foreground/80 rounded bg-muted/50 px-1 py-px">{mic.label}</span>}
       {mic && <span className={cn('text-[8px] font-black uppercase tracking-wide rounded px-1 py-px', CUE[live.cue].c)}>{CUE[live.cue].l}</span>}
       {mic && live.muted && <MicOff className="size-2.5 shrink-0 text-destructive" />}
       {mic && live.online && live.ch?.battery != null && <span className={cn('text-[9px] font-bold tabular-nums', batTint(live.ch.battery))}>{live.ch.battery}%</span>}

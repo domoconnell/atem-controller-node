@@ -18,7 +18,7 @@ import { useMeasure } from '@/components/surfaces/use-measure'
 import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Pencil, Save, Eye, Trash2, ChevronDown, ExternalLink, X, Loader2, Check } from 'lucide-react'
+import { Plus, Pencil, Save, Eye, Trash2, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, X, Loader2, Check } from 'lucide-react'
 
 const Grid = dynamic(() => import('@/components/surfaces/grid'), { ssr: false })
 type CType = ConnectorType & { streams?: { id: string; label: string; fields?: { id: string; label?: string }[] }[] }
@@ -111,6 +111,11 @@ export default function SurfacesPage() {
   }
   const removeWidget = (t: Target, i: string) => { setRegion(t, (w) => w.filter((x) => x.i !== i)); if (t === 'main') setSurface((s) => ({ ...s, main: { ...s.main, layout: s.main.layout.filter((l) => l.i !== i) } })); setSel(null) }
   const patchWidget = (t: Target, i: string, patch: Partial<Placement>) => setRegion(t, (w) => w.map((x) => x.i === i ? { ...x, ...patch, config: { ...x.config, ...(patch.config ?? {}) } } : x))
+  const moveWidget = (t: Target, i: string, dir: -1 | 1) => setRegion(t, (w) => {
+    const idx = w.findIndex((x) => x.i === i); const j = idx + dir
+    if (idx < 0 || j < 0 || j >= w.length) return w
+    const c = [...w];[c[idx], c[j]] = [c[j], c[idx]]; return c
+  })
 
   const selectedPlacement = sel ? (sel.region === 'main' ? surface.main.widgets : regionOf(sel.region)?.widgets ?? []).find((w) => w.i === sel.i) ?? null : null
   const disp = displayDef(surface.display)
@@ -149,8 +154,8 @@ export default function SurfacesPage() {
               onLayout={(l) => setSurface((s) => ({ ...s, main: { ...s.main, layout: l } }))} />
           </main>
           {edit && sel && selectedPlacement && (
-            <ConfigPanel key={sel.i} placement={selectedPlacement} instances={instances} types={types}
-              onChange={(patch) => patchWidget(sel.region, sel.i, patch)} onClose={() => setSel(null)} />
+            <ConfigPanel key={sel.i} placement={selectedPlacement} instances={instances} types={types} region={sel.region}
+              onChange={(patch) => patchWidget(sel.region, sel.i, patch)} onMove={(dir) => moveWidget(sel.region, sel.i, dir)} onClose={() => setSel(null)} />
           )}
         </div>
 
@@ -203,7 +208,8 @@ function RegionStrip({ region, surface, edit, sel, instances, onSelect, onRemove
       {widgets.length === 0 && <div className="text-[10px] text-muted-foreground/40 grid place-items-center w-full uppercase tracking-wider">{region}</div>}
       {widgets.map((p) => (
         <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) onSelect(region, p.i) }}
-          className={cn('relative', strip ? 'flex-1 min-w-0 h-full' : horizontal ? 'w-52 h-full shrink-0' : 'w-full h-24 shrink-0',
+          style={strip ? { flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 } : undefined}
+          className={cn('relative', strip ? 'min-w-0 h-full' : horizontal ? 'w-52 h-full shrink-0' : 'w-full h-24 shrink-0',
             edit && sel?.i === p.i && 'ring-1 ring-primary rounded-lg')}>
           <WidgetView p={p} instances={instances} />
           {edit && <button onClick={(e) => { e.stopPropagation(); onRemove(region, p.i) }} className="absolute top-0.5 right-0.5 p-0.5 rounded bg-background/80 hover:text-destructive z-10"><X className="size-3" /></button>}
@@ -352,9 +358,11 @@ const MODES = ['instance', 'overview'] as const
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 function F({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block space-y-1"><span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>{children}</label> }
 
-function ConfigPanel({ placement, instances, types, onChange, onClose }: {
-  placement: Placement; instances: Instance[]; types: CType[]; onChange: (patch: Partial<Placement>) => void; onClose: () => void
+function ConfigPanel({ placement, instances, types, region, onChange, onMove, onClose }: {
+  placement: Placement; instances: Instance[]; types: CType[]; region: Target; onChange: (patch: Partial<Placement>) => void; onMove: (dir: -1 | 1) => void; onClose: () => void
 }) {
+  const isStrip = region === 'header' || region === 'footer'
+  const stripW = (placement.config.stripW as number) || 1
   const def = getWidget(placement.widgetType)
   const inst = instances.find((i) => i.id === placement.instanceId)
   const typeId = inst?.typeId ?? (placement.config.typeId as string | undefined)
@@ -370,6 +378,22 @@ function ConfigPanel({ placement, instances, types, onChange, onClose }: {
     <aside className="w-64 shrink-0 border-l border-border/70 overflow-y-auto p-4 space-y-3 bg-background relative z-20">
       <div className="flex items-center justify-between"><h3 className="text-[12px] font-bold uppercase tracking-wider">{def?.label}</h3><button onClick={onClose} title="Close (deselect widget)" className="p-1 -mr-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent"><X className="size-3.5" /></button></div>
       <F label="Title"><input value={placement.title ?? ''} placeholder={def?.label} onChange={(e) => onChange({ title: e.target.value })} className={sc} /></F>
+      {isStrip && (
+        <>
+          <F label={`Width · ${stripW}×`}>
+            <div className="flex items-center gap-2">
+              <input type="range" min={1} max={6} step={1} value={stripW} onChange={(e) => set('stripW', Number(e.target.value))} className="flex-1 accent-primary" />
+              <span className="text-[12px] tabular-nums w-8 text-right">{stripW}×</span>
+            </div>
+          </F>
+          <F label="Order">
+            <div className="flex gap-2">
+              <button onClick={() => onMove(-1)} className="flex-1 inline-flex items-center justify-center gap-1 text-[12px] rounded-md py-1.5 border border-border hover:bg-accent"><ChevronLeft className="size-3.5" /> Left</button>
+              <button onClick={() => onMove(1)} className="flex-1 inline-flex items-center justify-center gap-1 text-[12px] rounded-md py-1.5 border border-border hover:bg-accent">Right <ChevronRight className="size-3.5" /></button>
+            </div>
+          </F>
+        </>
+      )}
       {def?.feature === 'mics' && (
         <F label={`Mics${micIds.length ? ` · ${micIds.length}` : ''}`}>
           <div className="max-h-52 overflow-y-auto border border-border rounded-md p-1.5 space-y-0.5">
