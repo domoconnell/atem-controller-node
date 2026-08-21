@@ -78,9 +78,9 @@ An **internal** feature (not a connection) — its **own top-level app**.
 - [x] "Now / Next" engine: manual Start/next/prev/stop; the now segment's mics
   go LIVE, the next segment's go STANDBY, the rest OFF (drives mic.cue). Verified.
 - [ ] Auto-advance by time / segment timers.
-- [ ] Widgets (NEXT):
-  - current / next segment + segment timer(s)
-  - the **people + mics** widget, e.g.:
+- [x] **Now/Next widget** (runsheet-nownext): NOW + NEXT segment with each
+  person + mic status (cue · mute · RF · battery). Auto-follows the running
+  service. Matches the sketch:
     ```
     Now: Welcome
       Dan:    Mic 1 · LIVE   · UNMUTED · 99% · -5 dB

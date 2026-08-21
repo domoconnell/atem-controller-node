@@ -21,37 +21,42 @@ export function useMicDefs(): MicObj[] {
 
 interface Ch { id: string; name?: string; rf?: number | null; af?: number | null; battery?: number | null }
 interface DChan { channel: number; muted: boolean }
-const CUE: Record<CueState, { l: string; c: string }> = {
+export const CUE: Record<CueState, { l: string; c: string }> = {
   live: { l: 'LIVE', c: 'bg-live text-black' }, standby: { l: 'SB', c: 'bg-busy text-black' }, off: { l: 'OFF', c: 'bg-muted text-muted-foreground' },
 }
-const batTint = (b: number | null | undefined) => b == null ? 'text-muted-foreground/40' : b <= 20 ? 'text-destructive' : b <= 50 ? 'text-busy' : 'text-live'
+export const batTint = (b: number | null | undefined) => b == null ? 'text-muted-foreground/40' : b <= 20 ? 'text-destructive' : b <= 50 ? 'text-busy' : 'text-live'
 const selected = (config: Record<string, unknown>, defs: MicObj[]) =>
   ((config.micIds as string[] | undefined) ?? []).map((id) => defs.find((m) => m.id === id)).filter((m): m is MicObj => !!m)
 
 /** Live data hook for one mic (Sennheiser channel + DiGiCo channel). */
-function useMicLive(mic: MicObj) {
+export function useMicLive(mic: MicObj) {
   const senn = useStream(mic.sennheiserInstanceId ?? null, 'channels') as { channels?: Ch[]; online?: boolean } | null
   const ch = senn?.channels?.find((c) => c.id === mic.sennheiserChannel) ?? senn?.channels?.[0]
   const dig = useStream(mic.digicoInstanceId ?? null, 'channels') as { channels?: DChan[] } | null
   const dch = mic.digicoChannel != null ? dig?.channels?.find((c) => c.channel === mic.digicoChannel) : undefined
   return { online: !!senn?.online, ch, muted: dch?.muted as boolean | undefined, cue: (mic.cue ?? 'off') as CueState }
 }
-function MiniBar({ value, kind }: { value: number | null | undefined; kind: 'rf' | 'af' }) {
+export function MiniBar({ value, kind }: { value: number | null | undefined; kind: 'rf' | 'af' }) {
   const v = Math.max(0, Math.min(1, value ?? 0))
   const c = kind === 'rf' ? 'bg-[#2dd4bf]' : v > 0.88 ? 'bg-destructive' : v > 0.7 ? 'bg-busy' : 'bg-live'
   return <span className="w-6 h-1 rounded-full bg-muted/40 overflow-hidden inline-block"><span className={cn('block h-full rounded-full', c)} style={{ width: `${v * 100}%` }} /></span>
 }
 
-/** One mic as a compact strip cell: cue · name · mute · battery · rf/af. */
+/** One mic as a compact strip cell: cue · name · mute · rf/af · battery. */
 function StripCell({ mic }: { mic: MicObj }) {
   const { online, ch, muted, cue } = useMicLive(mic)
   return (
-    <div className="flex-1 min-w-0 flex items-center gap-1.5 px-1.5 justify-center" title={mic.label}>
+    <div className="flex-1 min-w-0 flex items-center gap-1.5 px-2 justify-center" title={mic.label}>
       <span className={cn('shrink-0 text-[9px] font-black uppercase tracking-wide rounded px-1 py-0.5', CUE[cue].c)}>{CUE[cue].l}</span>
-      <span className="text-[11px] font-semibold truncate">{mic.label}</span>
+      <span className="text-[11px] font-semibold truncate min-w-0">{mic.label}</span>
       {muted && <MicOff className="size-3 shrink-0 text-destructive" />}
-      {online && <span className="hidden sm:flex items-center gap-0.5 shrink-0"><MiniBar value={ch?.rf} kind="rf" /><MiniBar value={ch?.af} kind="af" /></span>}
-      {online && ch?.battery != null && <span className={cn('text-[10px] font-bold tabular-nums shrink-0', batTint(ch.battery))}>{ch.battery}%</span>}
+      {online ? (
+        <span className="shrink-0 flex items-center gap-1.5">
+          <span className="flex items-center gap-0.5"><span className="text-[7px] font-bold uppercase text-muted-foreground/60">RF</span><MiniBar value={ch?.rf} kind="rf" /></span>
+          <span className="flex items-center gap-0.5"><span className="text-[7px] font-bold uppercase text-muted-foreground/60">AF</span><MiniBar value={ch?.af} kind="af" /></span>
+          {ch?.battery != null && <span className={cn('text-[10px] font-bold tabular-nums', batTint(ch.battery))}>{ch.battery}%</span>}
+        </span>
+      ) : <span className="text-[9px] uppercase tracking-wider text-muted-foreground/40 shrink-0">off</span>}
     </div>
   )
 }
