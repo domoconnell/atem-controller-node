@@ -81,6 +81,60 @@ export class Engine {
     return out
   }
 
+  /**
+   * Wire the self-managing legacy stacks (ATEM / HyperDeck / ProPresenter /
+   * Sennheiser) into the same hub + status aggregate the supervisor-run
+   * connectors use. They keep owning their own reconnection (so the supervisor
+   * lifecycle never fights them and offline stays offline, not amber); the
+   * engine is simply the single place every connector is wired now, instead of
+   * an ad-hoc bridge in index.js. The instance ids match the migration.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  attachLegacy(legacy: { atem?: any; hyperdeck?: any; propresenter?: any; sennheiser?: any }): void {
+    const { atem, hyperdeck, propresenter, sennheiser } = legacy
+    const st = (id: string, ok: boolean, degraded = false) => this.setExternalStatus(id, ok ? 'online' : degraded ? 'degraded' : 'offline')
+
+    if (sennheiser) {
+      const publish = () => {
+        const snap = sennheiser.snapshot()
+        const insts = this.store.listInstances().filter((i) => i.typeId === 'sennheiser').sort((a, b) => a.sortOrder - b.sortOrder)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(snap.devices ?? []).forEach((dev: any, idx: number) => {
+          const inst = insts[idx]; if (!inst) return
+          this.hub.publish(buildTopic(inst.id, 'channels'), { channels: dev.channels ?? [], deviceName: dev.deviceName, product: dev.product, online: dev.online })
+          st(inst.id, dev.online, dev.reachable)
+        })
+      }
+      sennheiser.on('update', publish); sennheiser.on('presence', publish)
+    }
+    if (atem) {
+      const publish = () => {
+        const snap = atem.snapshot()
+        const me = snap.mixEffects?.[atem.me] ?? snap.mixEffects?.[0] ?? null
+        this.hub.publish(buildTopic('atem-1', 'program'), { program: me?.programInput ?? null, preview: me?.previewInput ?? null, connected: snap.connected || snap.simulated, simulated: snap.simulated })
+        st('atem-1', snap.connected || snap.simulated)
+      }
+      atem.on('stateChanged', publish); atem.on('connected', publish); atem.on('disconnected', publish); publish()
+    }
+    if (propresenter) {
+      const publish = () => {
+        const snap = propresenter.snapshot()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.hub.publish(buildTopic('propresenter-1', 'timers'), { timers: (snap.timers ?? []).map((t: any) => ({ name: t.name, seconds: Math.round(t.remaining ?? 0), state: t.state })) })
+        st('propresenter-1', snap.connected)
+      }
+      propresenter.on('update', publish); publish()
+    }
+    if (hyperdeck) {
+      const publish = () => {
+        const snap = hyperdeck.snapshot()
+        this.hub.publish(buildTopic('hyperdeck-1', 'transport'), { ...(snap.transport ?? {}) })
+        st('hyperdeck-1', snap.connected)
+      }
+      hyperdeck.on('transport', publish); hyperdeck.on('connected', publish); hyperdeck.on('disconnected', publish); publish()
+    }
+  }
+
   async start(): Promise<void> {
     // Remove any connections of excluded types left in the store (e.g. a
     // previously-seeded demo device).
