@@ -216,12 +216,22 @@ class QLabConnector implements Connector<QLabConfig> {
       assertOk(reply, 'workspace connect')
     }
 
-    // Pushed updates are what keeps the playhead honest without polling a
-    // show file that may hold thousands of cues.
-    assertOk(
-      await this.query(`/workspace/${workspace.id}/updates`, [{ type: 'i', value: 1 }]),
-      'enable updates',
-    )
+    // Ask QLab to push updates (playhead moves, cue-list edits) to this
+    // connection. The connection-level /updates is what QLab 5 honours; it does
+    // not reply, and it actively *errors* on the workspace-scoped form this used
+    // to await — which stopped the connector ever coming online. We now send
+    // both forms and wait for neither: the root one drives real QLab 5, the
+    // workspace-scoped one keeps older builds (and the simulator) working.
+    // Updates are only an optimisation anyway — the playhead is read on connect
+    // and the running-cue poll keeps timing live — so this must never fail the
+    // handshake.
+    for (const address of ['/updates', `/workspace/${workspace.id}/updates`]) {
+      try {
+        this.socket?.write(slipEncode(encodeOscMessage(address, [{ type: 'i', value: 1 }])))
+      } catch (error) {
+        ctx.logger.debug({ err: error, address }, 'could not enable QLab updates')
+      }
+    }
 
     ctx.setStatus('online')
 
