@@ -71,7 +71,7 @@ function StripBrand({ config }: WidgetProps) {
   return (
     <div className={cn('h-full w-full flex items-center px-3 rounded-lg overflow-hidden text-foreground/90',
       align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center')}>
-      <Brand variant={icon ? 'icon' : 'full'} className={icon ? 'h-8 w-8' : 'h-7 w-[150px]'} />
+      <Brand variant={icon ? 'icon' : 'full'} className={icon ? 'h-4 w-4' : 'h-4 w-[84px]'} />
     </div>
   )
 }
