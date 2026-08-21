@@ -132,6 +132,41 @@ export class WebServer {
     // Companion reference in Settings).
     app.get('/api/surface-clients', (_req, res) => res.json({ ok: true, clients: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c) }))
 
+    // ---- Companion module API: one poll for state + REST command endpoints ----
+    app.get('/api/companion/state', (_req, res) => {
+      const svc = this._runningService()
+      const segs = svc?.segments ?? []
+      const idx = svc?.activeIndex ?? null
+      const now = idx != null ? segs[idx] ?? null : null
+      const nIdx = idx != null ? this._nextItemIndex(segs, idx) : this._nextItemIndex(segs, null)
+      const next = nIdx != null ? segs[nIdx] ?? null : null
+      res.json({
+        ok: true,
+        mics: (this.store?.listMics() ?? []).map((m) => ({ id: m.id, label: m.label, cue: m.cue ?? 'off' })),
+        surfaces: (this.store?.listSurfaces() ?? []).map((s) => ({ id: s.id, name: s.name })),
+        displays: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c),
+        runsheet: { service: svc?.name ?? null, running: idx != null, now: this._segTitle(now), next: this._segTitle(next), nowTime: now?.time ?? null },
+      })
+    })
+    app.post('/api/companion/runsheet/:action', (req, res) => {
+      const a = req.params.action
+      if (a === 'next') this.advanceRunsheet(1)
+      else if (a === 'back' || a === 'prev') this.advanceRunsheet(-1)
+      else if (a === 'stop') { const s = this._runningService(); if (s) this.setActiveIndex(s.id, null) }
+      else return res.status(400).json({ ok: false, error: `bad action ${a}` })
+      res.json({ ok: true })
+    })
+    app.post('/api/companion/miccue/:id/:action', (req, res) => {
+      try { this.setMicCue(req.params.id, req.params.action); res.json({ ok: true }) }
+      catch (e) { res.status(400).json({ ok: false, error: e.message }) }
+    })
+    app.post('/api/companion/surface-drawer', (req, res) => {
+      const { browserId, surfaceId, edge = 'left', action } = req.body ?? {}
+      if (!browserId || !action) return res.status(400).json({ ok: false, error: 'browserId and action required' })
+      this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { surfaceId: surfaceId ?? null, target: `${edge}_drawer`, action, at: Date.now() })
+      res.json({ ok: true })
+    })
+
     // ---- Runsheet services (timed segments with people + mics) ----
     app.get('/api/features/services', (_req, res) => res.json({ ok: true, services: this.store?.listServices() ?? [] }))
     app.post('/api/features/services', (req, res) => {

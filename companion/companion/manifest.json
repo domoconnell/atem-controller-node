@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+  "type": "connection",
+  "id": "stageit",
+  "name": "stageit",
+  "shortname": "Stage It",
+  "description": "Control Stage It Live — runsheet, mic cues and surface drawers — with live status feedback.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "git+https://github.com/stageit/companion-module-stageit.git",
+  "bugs": "https://github.com/stageit/companion-module-stageit/issues",
+  "maintainers": [
+    { "name": "Stage It", "email": "dev@stageit.live" }
+  ],
+  "runtime": {
+    "type": "node22",
+    "api": "nodejs-ipc",
+    "apiVersion": "0.0.0",
+    "entrypoint": "../src/main.js"
+  },
+  "legacyIds": [],
+  "manufacturer": "Stage It",
+  "products": ["Stage It Live"],
+  "keywords": ["stageit", "runsheet", "mics", "production"]
+}

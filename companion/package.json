@@ -1,0 +1,12 @@
+{
+  "name": "companion-module-stageit",
+  "version": "1.0.0",
+  "main": "src/main.js",
+  "license": "MIT",
+  "dependencies": {
+    "@companion-module/base": "~1.11.0"
+  },
+  "scripts": {
+    "dev": "echo 'Point Companion Developer modules path at this folder'"
+  }
+}
