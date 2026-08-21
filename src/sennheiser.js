@@ -86,14 +86,16 @@ export function parseG34Line(line, ch) {
  */
 const LEGACY_PORT = 8133
 const LEGACY_TOKEN = Buffer.from('4f1ff1ca', 'hex') // observed WSM subscribe opcode
-// Meter-frame byte offsets (~41-byte frame, magic 29f8f7ca), mapped from a
-// mic-on capture: byte[19] RF, bytes[24]/[22] AF level, byte[17] AF peak-hold
-// (all /255), byte[16] antenna A/B, byte[18] battery bars (see SENNHEISER-NOTES).
-const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17, ant: 16, battery: 18 }
+// Meter-frame byte offsets (magic 29f8f7ca), mapped from mic-on captures:
+// byte[19] RF, bytes[24]/[22] AF level, byte[17] AF peak-hold (all /255),
+// byte[16] antenna A/B. byte[12] = battery: 0 = tx off / no signal, else 1..4
+// where 4 = full; the receiver's 3-bar gauge is (byte-1) - confirmed live at
+// 4→3 bars (full) and 3→2 bars. (byte[18] was an earlier wrong guess - it sits
+// at 3 in both the 3-bar and 2-bar states, so it isn't the battery.)
+const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17, ant: 16, battery: 12 }
 // Config-block offsets (~135-byte frame, magic c8fcf7ca), decoded by changing
 // each value in WSM and diffing the capture (scratch/SENNHEISER-NOTES.md):
 const LEG_CFG = { name: [12, 20], freq: 20, afOut: 26, squelch: 29 }
-const LEG_BATTERY_BARS_MAX = 3 // G3 gauge is 3 bars (WSM): 3 bars = full = 100%
 
 export function buildLegacySubscribe(ip) {
   const oct = Buffer.from(ip.split('.').map(Number))
@@ -133,7 +135,7 @@ export function parseLegacyFrame(buf) {
       af: Math.max(buf[LEG.af], buf[LEG.af2]) / 255,
       afPeak: buf[LEG.afPeak] / 255,
       ant: buf[LEG.ant] === 2 ? 2 : buf[LEG.ant] === 1 ? 1 : undefined,
-      batteryBars: buf[LEG.battery],
+      batteryRaw: buf[LEG.battery], // 0 = tx off / no signal, 1..4 = level (4 = full)
     }
   }
   return { mac, kind: 'control', raw: buf.toString('hex') }
@@ -326,10 +328,16 @@ export class SennheiserMonitor extends EventEmitter {
       ch.rf = f.rf; ch.af = f.af; ch.afPeak = f.afPeak
       ch.rf1 = Math.round(f.rf * 100); ch.rf2 = 0 // so the card's RF read-out renders like the other G3s
       if (f.ant) ch.ant = f.ant
-      // Battery bars -> % on the G3's 3-bar gauge (3 bars = full).
-      ch.batteryBars = f.batteryBars
-      ch.battery = Math.min(100, Math.round((f.batteryBars / LEG_BATTERY_BARS_MAX) * 100))
-      ch.batteryPending = false
+      // byte[12]: 0 = tx off / no signal; 1..4 = level, 4 = full. The receiver's
+      // 3-bar gauge is (raw-1), so map that onto a %. Only clear on a genuine 0.
+      if (f.batteryRaw > 0) {
+        const bars = Math.min(3, f.batteryRaw - 1)
+        ch.batteryBars = bars
+        ch.battery = Math.round((bars / 3) * 100)
+        ch.batteryPending = false
+      } else {
+        ch.batteryBars = null; ch.battery = null
+      }
       changed = true
     }
     if (changed) this._markDirty()

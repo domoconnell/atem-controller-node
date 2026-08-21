@@ -130,9 +130,14 @@ UDP payload (verified by changing each in WSM and diffing):
 `29 f8 f7 ca 00 <MAC 6B> 01` then meter bytes. Diversity means alternate frames
 carry the other antenna, so single meter bytes swing frame-to-frame.
 
-- **byte[18] = BATTERY (bars).** Parks at **3** (matched WSM "3 bars"; 1590/1820
-  frames, dips to 0/1/2 only on antenna switches). Gauge is **3 bars max** (WSM), so 3 bars = full = 100% (byte6/2 %s: 3→100, 2→67, 1→33). Drain reading: byte[18] should park at 2 when WSM shows 2 bars. NB the earlier byte[12]-battery guess was wrong — byte[12] is the
-  RF-lock flag (4 = locked, 0 = brief unlock), which read 4 on a full pack.
+- **byte[12] = BATTERY** (CORRECTED 2026-08-21 from a live drain). 0 = tx off /
+  no signal; 1..4 = level, 4 = full. The receiver's 3-bar gauge is (byte-1):
+  confirmed live at 4→3 bars (full) and 3→2 bars. Map to % as (byte-1)/3 →
+  100/67/33/0%. **byte[18] was a wrong guess** — it parks at 3 in BOTH the 3-bar
+  and 2-bar states, so it never tracked the gauge (the app showed 100% at 2
+  bars). Found by diffing per-byte modes of a 3-bar capture vs a live 2-bar
+  poll: only byte[12] moved (4→3). byte[12] can blip to 0 on an RF unlock, so
+  treat 0 as "no reading", not necessarily a flat pack.
 - byte[16] = antenna (0/1/2), byte[17]/[19] = RF/AF meters for the active
   antenna (0..~250, /255), byte[20] ≈ RF-quality bars (mostly 4). Re-derive the
   exact RF-vs-AF split against a talk/silent capture if the meters look off
