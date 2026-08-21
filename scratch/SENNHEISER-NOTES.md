@@ -98,6 +98,45 @@ protocol on **UDP 8133**, reverse-engineered from a WSM packet capture
   Frequency is NOT in the telemetry/identity frames we captured, but WSM reads
   AND writes it, so a config read/set exchange exists that we haven't captured
   yet (our subscribe only elicits the telemetry stream). See todo.md.
+
+### CONFIG block decoded (WSM capture 2026-08-21, `/tmp/wsm73.pcap`)
+
+The **config read/set exchange** was captured while WSM changed known values on
+.73. The device answers with a **135-byte config block**, magic `c8fcf7ca` +
+`00` + `<MAC 6B>` + `01`, then the settings. Confirmed field offsets into the
+UDP payload (verified by changing each in WSM and diffing):
+
+| offset | field | encoding | evidence |
+|---|---|---|---|
+| **12–19** | **Name** | 8 bytes, ASCII, space-padded | `ew300 G3` → `ZZTEST9 ` |
+| **20–23** | **Frequency** | little-endian uint32, **kHz** | `24 41 09 00`=606500 → `63 43 09 00`=607075 (606.500→607.075 MHz) |
+| **26** | **AF out (dB)** | `AF_dB = (byte − 8) × 3` | 0x0e=14→18 dB, 0x08=8→0 dB (2-point fit) |
+| **29** | **Squelch (dB)** | `sq_dB = 5 + 2 × byte` | byte6→17, byte0→5 (2-point fit, CONFIRMED) |
+| 42–~62 | matched-TX name | ASCII, `"no data"` when no TX paired | — |
+| 61–72 | secondary label | ASCII (`ew300 G3e945`) | — |
+
+- **The real device name is `ew300 G3`** (factory default — .73 was never
+  renamed), so the Mics app can now show the stored name instead of the config
+  label `RX .73`.
+- **Writes** (WSM → device): name via `b1f8f7ca` + `<reqIP 4B>` + name@offset8;
+  frequency via a 17-byte `…cd` + `<reqIP>` + `15 01` + `<freq LE uint32 kHz>` +
+  `010101`; AF/squelch via `b1f8f7ca` full-config-image pushes carrying the new
+  byte at the same [26]/[29] slots. (Only reading is needed for the monitor.)
+- **What triggers the config dump:** the subscribe variant ending `010001010101`
+  (vs `000001010101` for telemetry-only) — after it the device sends the
+  `c8fcf7ca` config block plus RF-scan blocks (`f9`/`f7` 110/785/1297-byte).
+### Telemetry meter frame (41 bytes, magic `29f8f7ca`) — TX-ON capture 2026-08-21
+
+`29 f8 f7 ca 00 <MAC 6B> 01` then meter bytes. Diversity means alternate frames
+carry the other antenna, so single meter bytes swing frame-to-frame.
+
+- **byte[18] = BATTERY (bars).** Parks at **3** (matched WSM "3 bars"; 1590/1820
+  frames, dips to 0/1/2 only on antenna switches). Gauge is **3 bars max** (WSM), so 3 bars = full = 100% (byte6/2 %s: 3→100, 2→67, 1→33). Drain reading: byte[18] should park at 2 when WSM shows 2 bars. NB the earlier byte[12]-battery guess was wrong — byte[12] is the
+  RF-lock flag (4 = locked, 0 = brief unlock), which read 4 on a full pack.
+- byte[16] = antenna (0/1/2), byte[17]/[19] = RF/AF meters for the active
+  antenna (0..~250, /255), byte[20] ≈ RF-quality bars (mostly 4). Re-derive the
+  exact RF-vs-AF split against a talk/silent capture if the meters look off
+  (offsets shifted +1 vs the old 40-byte note).
 - **Identity beacon** (device → controller, 85 bytes, ASCII): e.g.
   `Model=EM300G3   ID=001B667A8EDB   IPA=10.10.10.73`. We parse Model/ID/IPA.
 - **Verified** against the real .73: subscribing from a fresh IP (10.10.10.200

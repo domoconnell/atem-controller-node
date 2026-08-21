@@ -2,7 +2,7 @@
 import type { SennChannel, SennDevice } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SegMeter, Battery, Antenna } from './meters'
-import { MicOff, Radio, AlertTriangle } from 'lucide-react'
+import { MicOff, Radio } from 'lucide-react'
 
 const FAMILY = {
   ewdx: { label: 'EW-DX', accent: 'text-[#2dd4bf] border-[#2dd4bf]/30 bg-[#2dd4bf]/5' },
@@ -37,11 +37,11 @@ function MuteCard({ dev }: { dev: SennDevice }) {
         <span className={cn('ml-auto shrink-0 text-[9px] font-bold uppercase tracking-[0.1em] rounded px-1.5 py-0.5 border', fam.accent)}>{fam.label}</span>
       </div>
       <div className="flex items-center gap-2 text-busy">
-        <AlertTriangle className="size-3.5 shrink-0" />
-        <span className="text-[12px] font-semibold leading-tight">Present — no telemetry</span>
+        <Radio className="size-3.5 shrink-0 animate-pulse" />
+        <span className="text-[12px] font-semibold leading-tight">Connecting…</span>
       </div>
       <p className="text-[10.5px] leading-snug text-muted-foreground">
-        Reachable on the network but not answering the control protocol. Firmware likely predates v1.7 — update to expose RF / AF / battery.
+        Reachable on the network — waiting for telemetry from the receiver.
       </p>
       <div className="flex items-center gap-2 pt-0.5 border-t border-border/40">
         <span className="inline-flex items-center gap-1.5 text-[10px] text-live"><Radio className="size-3" />link up</span>

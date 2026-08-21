@@ -78,20 +78,27 @@ export function parseG34Line(line, ch) {
  * WSM packet capture. UDP port 8133. WSM sends an 18-byte subscribe carrying
  * its own IP; the receiver then streams 40-byte frames to <requesterIP>:8133
  * (~12/s). Frame layout: [0-2 type][3]=0xca magic [4]=00 [5-10]=device MAC
- * [11]=01 ... [15] status ... [27-39] RF/AF state bytes. Two frame types seen:
- * byte[2]=0xf7 telemetry, 0xf1 control/identity. The meter byte mapping needs
- * a transmitter-on capture to finish (see scratch/SENNHEISER-NOTES.md); for now
- * we decode presence + MAC, which already turns a dead unit into a live one.
+ * [11]=01 then state bytes. Frame types (distinguished by magic byte[0] +
+ * length): identity beacon (ASCII "Model="), ~41-byte meter frame (magic 0x29,
+ * RF/AF/antenna/battery), and a ~135-byte config block (magic 0xc8) carrying
+ * name / frequency / AF-out / squelch. All offsets decoded from WSM captures
+ * (scratch/SENNHEISER-NOTES.md), so a legacy .73 now presents like a full G3.
  */
 const LEGACY_PORT = 8133
 const LEGACY_TOKEN = Buffer.from('4f1ff1ca', 'hex') // observed WSM subscribe opcode
-// Telemetry byte offsets, mapped from a mic-on capture (scratch/captures/
-// g3legacy-micon-calibration.json): byte[19] RF (never zero while TX on),
-// bytes[24]/[22] AF level (zero in silence), byte[17] AF peak-hold. Scaled /255.
-const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17, ant: 16 }
+// Meter-frame byte offsets (~41-byte frame, magic 29f8f7ca), mapped from a
+// mic-on capture: byte[19] RF, bytes[24]/[22] AF level, byte[17] AF peak-hold
+// (all /255), byte[16] antenna A/B, byte[18] battery bars (see SENNHEISER-NOTES).
+const LEG = { rf: 19, af: 24, af2: 22, afPeak: 17, ant: 16, battery: 18 }
+// Config-block offsets (~135-byte frame, magic c8fcf7ca), decoded by changing
+// each value in WSM and diffing the capture (scratch/SENNHEISER-NOTES.md):
+const LEG_CFG = { name: [12, 20], freq: 20, afOut: 26, squelch: 29 }
+const LEG_BATTERY_BARS_MAX = 3 // G3 gauge is 3 bars (WSM): 3 bars = full = 100%
 
 export function buildLegacySubscribe(ip) {
   const oct = Buffer.from(ip.split('.').map(Number))
+  // Trailing 01 00 01 01 01 01 is the "full config" variant: the device answers
+  // with the c8fcf7ca config block (name/freq/AF/squelch) as well as telemetry.
   return Buffer.concat([LEGACY_TOKEN, oct, oct, Buffer.from([0x01, 0x00, 0x01, 0x01, 0x01, 0x01])])
 }
 
@@ -104,17 +111,32 @@ export function parseLegacyFrame(buf) {
     const mac = id && id.length === 12 ? id.toLowerCase().match(/../g).join(':') : undefined
     return { kind: 'identity', model: g('Model'), mac, ip: g('IPA') }
   }
-  // 40-byte binary telemetry/control frame: [3]=0xca magic, [5-10]=MAC
+  // binary frames: [3]=0xca magic, [5-10]=MAC
   if (buf.length < 40 || buf[3] !== 0xca) return null
   const mac = [...buf.subarray(5, 11)].map((b) => b.toString(16).padStart(2, '0')).join(':')
-  if (buf[2] !== 0xf7) return { mac, kind: 'control', raw: buf.toString('hex') }
-  return {
-    mac, kind: 'telemetry', raw: buf.toString('hex'),
-    rf: buf[LEG.rf] / 255,
-    af: Math.max(buf[LEG.af], buf[LEG.af2]) / 255,
-    afPeak: buf[LEG.afPeak] / 255,
-    ant: buf[LEG.ant] === 2 ? 2 : buf[LEG.ant] === 1 ? 1 : undefined,
+  // 135-byte config block (magic c8fcf7ca): name / frequency / AF-out / squelch
+  if (buf[0] === 0xc8 && buf.length >= 130 && buf.length <= 150) {
+    return {
+      mac, kind: 'config',
+      name: buf.subarray(LEG_CFG.name[0], LEG_CFG.name[1]).toString('latin1').replace(/\0+/g, '').trim(),
+      frequency: buf.readUInt32LE(LEG_CFG.freq),  // kHz
+      afOut: (buf[LEG_CFG.afOut] - 8) * 3,         // dB
+      squelch: 5 + 2 * buf[LEG_CFG.squelch],       // dB
+    }
   }
+  // ~41-byte meter frame (also magic byte[2]=0xf7); guard by length so the
+  // larger RF-scan blocks (110/785/1297B) don't get read as meters.
+  if (buf[2] === 0xf7 && buf.length <= 48) {
+    return {
+      mac, kind: 'telemetry', raw: buf.toString('hex'),
+      rf: buf[LEG.rf] / 255,
+      af: Math.max(buf[LEG.af], buf[LEG.af2]) / 255,
+      afPeak: buf[LEG.afPeak] / 255,
+      ant: buf[LEG.ant] === 2 ? 2 : buf[LEG.ant] === 1 ? 1 : undefined,
+      batteryBars: buf[LEG.battery],
+    }
+  }
+  return { mac, kind: 'control', raw: buf.toString('hex') }
 }
 
 /** Best LAN IPv4 on the same /24 as `deviceIp` (what the device streams back to). */
@@ -292,12 +314,22 @@ export class SennheiserMonitor extends EventEmitter {
     if (f.kind === 'identity') {
       if (f.model && d.product !== f.model) { d.product = f.model; changed = true }
       ch.legacy = true
+    } else if (f.kind === 'config') {
+      ch.legacy = true
+      // The device's stored name (e.g. "ew300 G3"); a config.json `name` wins.
+      if (f.name && !d.cfgName && ch.name !== f.name) { ch.name = f.name; changed = true }
+      if (f.frequency && ch.frequency !== f.frequency) { ch.frequency = f.frequency; changed = true }
+      if (ch.squelch !== f.squelch) { ch.squelch = f.squelch; changed = true }
+      if (ch.afOut !== f.afOut) { ch.afOut = f.afOut; changed = true }
     } else if (f.kind === 'telemetry') {
       ch.legacy = true; ch.legacyRaw = f.raw
       ch.rf = f.rf; ch.af = f.af; ch.afPeak = f.afPeak
       ch.rf1 = Math.round(f.rf * 100); ch.rf2 = 0 // so the card's RF read-out renders like the other G3s
       if (f.ant) ch.ant = f.ant
-      ch.batteryPending = true // battery byte not yet identified (see todo.md)
+      // Battery bars -> % on the G3's 3-bar gauge (3 bars = full).
+      ch.batteryBars = f.batteryBars
+      ch.battery = Math.min(100, Math.round((f.batteryBars / LEG_BATTERY_BARS_MAX) * 100))
+      ch.batteryPending = false
       changed = true
     }
     if (changed) this._markDirty()
