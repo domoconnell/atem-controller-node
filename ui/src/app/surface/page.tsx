@@ -10,9 +10,23 @@ import '@/widgets/recorders'
 import '@/widgets/runsheet'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
-import { displayDef, gridDims, normaliseSurface, type Surface, type Layout } from '@/components/surfaces/model'
+import { displayDef, gridDims, normaliseSurface, type Surface, type Layout, type Edge } from '@/components/surfaces/model'
 import { Pullouts } from '@/components/surfaces/pullouts'
+import { useTopic } from '@/hooks/use-topic'
+import { realtime } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
+
+/** A stable per-browser id (localStorage) so OSC can target this exact display. */
+function useBrowserId(): string | null {
+  const [id, setId] = useState<string | null>(null)
+  useEffect(() => {
+    let v = localStorage.getItem('sil-browser-id')
+    if (!v) { v = Math.random().toString(36).slice(2, 10); localStorage.setItem('sil-browser-id', v) }
+    setId(v)
+  }, [])
+  return id
+}
+const EDGE_TARGETS: Record<string, Edge> = { left_drawer: 'left', right_drawer: 'right', top_drawer: 'top', bottom_drawer: 'bottom' }
 
 const Grid = dynamic(() => import('@/components/surfaces/grid'), { ssr: false })
 type IRef = { id: string; typeId: string; name: string }
@@ -45,6 +59,24 @@ export default function SurfaceViewer() {
   const [surface, setSurface] = useState<Surface | null>(null)
   const [missing, setMissing] = useState(false)
   const [instances, setInstances] = useState<IRef[]>([])
+  const [openEdge, setOpenEdge] = useState<Edge | null>(null)
+  const browserId = useBrowserId()
+
+  // Announce this display so OSC can target it (usr:surface:<browserId>).
+  useEffect(() => {
+    if (browserId && surface) realtime.register({ browserId, surfaceId: surface.id, surfaceName: surface.name })
+  }, [browserId, surface])
+
+  // Drawer control from OSC: { surfaceId, target: 'left_drawer', action }.
+  const control = useTopic(browserId ? `usr:surface:${browserId}` : null) as { surfaceId?: string | null; target?: string; action?: string; at?: number } | null
+  useEffect(() => {
+    if (!control?.target) return
+    const edge = EDGE_TARGETS[control.target]
+    if (!edge) return
+    if (control.surfaceId && surface && control.surfaceId !== surface.id) return
+    setOpenEdge((cur) => control.action === 'open' ? edge : control.action === 'close' ? (cur === edge ? null : cur) : (cur === edge ? null : edge))
+  }, [control, surface])
+
   useEffect(() => {
     fetch('/api/instances').then((r) => r.json()).then((b) => setInstances((b.instances ?? []).map((i: IRef) => ({ id: i.id, typeId: i.typeId, name: i.name })))).catch(() => {})
     const id = new URLSearchParams(window.location.search).get('s')
@@ -62,7 +94,8 @@ export default function SurfaceViewer() {
       </div>
       {surface.footer.enabled && <Strip widgets={surface.footer.widgets} instances={instances} />}
 
-      <Pullouts surface={surface} instances={instances} />
+      <Pullouts surface={surface} instances={instances} openEdge={openEdge} onOpenEdge={setOpenEdge} />
+      {browserId && <div className="absolute bottom-1 right-2 z-50 text-[9px] font-mono text-muted-foreground/30 tabular-nums pointer-events-none select-none">{browserId}</div>}
     </div>
   )
 }

@@ -9,7 +9,7 @@ import type { Recorder } from '@/widgets/recorders'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw } from 'lucide-react'
 
 type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
 const DOT: Record<ConnState, string> = { live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/30' }
@@ -182,7 +182,7 @@ export default function SettingsPage() {
                 { path: 'osc.listenPort', label: 'OSC command port (receive)', type: 'number', hint: 'Companion sends /goto, /sil here (default 9000)' },
                 { path: 'osc.feedback.0.host', label: 'Feedback target IP', hint: 'Usually the Companion machine' },
                 { path: 'osc.feedback.0.port', label: 'Feedback OSC port (send)', type: 'number', hint: 'Companion Generic OSC listener (default 9001)' },
-              ]} /></>)}
+              ]} /><CompanionReference /></>)}
               {sel.startsWith('c:') && (() => {
                 const typeId = sel.slice(2); const list = byType.get(typeId) ?? []; const meta = types.find((t) => t.typeId === typeId)
                 return (
@@ -283,5 +283,95 @@ function RecordersSettings({ instances }: { instances: Instance[] }) {
         {recorders.length === 0 && candidates.length > 0 && <div className="text-[12px] text-muted-foreground/60 px-1">No recorders yet — click <span className="text-foreground/70">Device</span> to add one.</div>}
       </div>
     </>
+  )
+}
+
+// ---- Companion OSC / variable reference ------------------------------------
+function CmdRow({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => { navigator.clipboard?.writeText(path).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200) }).catch(() => {}) }
+  return (
+    <button onClick={copy} className="group flex items-center gap-2 rounded-md border border-border/50 bg-input/30 px-2.5 py-1.5 hover:border-border text-left w-full">
+      <code className="text-[12px] font-mono text-foreground/90 truncate flex-1">{path}</code>
+      {copied ? <Check className="size-3.5 text-live shrink-0" /> : <Copy className="size-3.5 text-muted-foreground/40 group-hover:text-foreground shrink-0" />}
+    </button>
+  )
+}
+function RefSec({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-baseline gap-2"><h3 className="text-[12px] font-bold uppercase tracking-wider">{title}</h3>{sub && <span className="text-[11px] text-muted-foreground/60">{sub}</span>}</div>
+      <div className="space-y-1">{children}</div>
+    </div>
+  )
+}
+function VarRow({ name, desc }: { name: string; desc?: string }) {
+  return <div className="flex items-baseline gap-2 text-[12px] leading-relaxed"><code className="font-mono text-primary/90">{name}</code>{desc && <span className="text-muted-foreground/70 text-[11px]">{desc}</span>}</div>
+}
+interface SurfClient { browserId: string; surfaceId: string | null; surfaceName: string | null }
+function CompanionReference() {
+  const [cfg, setCfg] = useState<{ companion?: { varPrefix?: string }; osc?: { listenPort?: number } } | null>(null)
+  const [clients, setClients] = useState<SurfClient[]>([])
+  useEffect(() => { fetch('/api/config').then((r) => r.json()).then((b) => setCfg(b.config)).catch(() => {}) }, [])
+  const loadClients = useCallback(() => fetch('/api/surface-clients').then((r) => r.json()).then((b) => setClients(b.clients ?? [])).catch(() => {}), [])
+  useEffect(() => { loadClients() }, [loadClients])
+  const mics = ((useTopic('feature:mics') as { mics?: { id: string; label: string }[] } | null)?.mics) ?? []
+  const p = cfg?.companion?.varPrefix ?? 'sil_'
+  const oscPort = cfg?.osc?.listenPort ?? 9000
+  return (
+    <div className="mt-8 space-y-6 border-t border-border/50 pt-6">
+      <div>
+        <h2 className="text-[15px] font-bold">OSC commands</h2>
+        <p className="text-[12px] text-muted-foreground">Send to this machine on <span className="font-mono text-foreground/80">UDP :{oscPort}</span>. Click a path to copy it.</p>
+      </div>
+      <RefSec title="Runsheet" sub="global — no variables">
+        <CmdRow path="/sil/runsheet/next" /><CmdRow path="/sil/runsheet/back" /><CmdRow path="/sil/runsheet/stop" />
+      </RefSec>
+      <RefSec title="Mic cues" sub={`${mics.length} mic${mics.length === 1 ? '' : 's'} · toggle / live / standby / off`}>
+        {mics.length === 0 && <div className="text-[11px] text-muted-foreground/50">No mics yet — add them under Wireless Mics.</div>}
+        {mics.map((m) => (
+          <div key={m.id} className="space-y-1 pt-0.5">
+            <div className="text-[11px] text-muted-foreground">{m.label} <span className="text-muted-foreground/40 font-mono">{m.id}</span></div>
+            <div className="grid grid-cols-2 gap-1">{['toggle', 'live', 'standby', 'off'].map((a) => <CmdRow key={a} path={`/sil/miccue/${m.id}/${a}`} />)}</div>
+          </div>
+        ))}
+      </RefSec>
+      <RefSec title="Surface drawers" sub="target one browser display">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground/60">{clients.length} connected display{clients.length === 1 ? '' : 's'}</span>
+          <button onClick={loadClients} title="Refresh" className="p-1 rounded hover:bg-accent text-muted-foreground"><RefreshCw className="size-3" /></button>
+        </div>
+        {clients.length === 0 && <div className="text-[11px] text-muted-foreground/50">Open a surface in a browser (a TV, /surface?s=…) and it appears here with its id.</div>}
+        {clients.map((c) => (
+          <div key={c.browserId} className="space-y-1 pt-0.5">
+            <div className="text-[11px] text-muted-foreground">Browser <span className="font-mono text-foreground/70">{c.browserId}</span> → <span className="text-foreground/70">{c.surfaceName ?? c.surfaceId}</span></div>
+            <div className="grid grid-cols-3 gap-1">{['open', 'close', 'toggle'].map((a) => <CmdRow key={a} path={`/sil/surfaces/${c.browserId}/${c.surfaceId}/left_drawer/${a}`} />)}</div>
+          </div>
+        ))}
+        <div className="text-[11px] text-muted-foreground/50">Swap <span className="font-mono">left_drawer</span> for <span className="font-mono">right_drawer / top_drawer / bottom_drawer</span>.</div>
+      </RefSec>
+      <RefSec title="ATEM transitions" sub="looks & switcher">
+        <CmdRow path="/goto/<look>" /><CmdRow path="/goto/<look>/<seconds>" /><CmdRow path="/transition/auto" /><CmdRow path="/usk/<1-4>/toggle" /><CmdRow path="/stop" />
+      </RefSec>
+      <div className="pt-2">
+        <h2 className="text-[15px] font-bold">Variables we push to Companion</h2>
+        <p className="text-[12px] text-muted-foreground">Create these custom variables in Companion (prefix <code className="font-mono text-primary/90">{p}</code>); they update live on change.</p>
+      </div>
+      <RefSec title="ATEM">
+        {['active_look', 'transitioning', 'going_to', 'coming_from'].map((v) => <VarRow key={v} name={p + v} />)}
+      </RefSec>
+      <RefSec title="Runsheet">
+        <VarRow name={p + 'runsheet_service'} desc="running service" />
+        <VarRow name={p + 'runsheet_now'} desc="current segment" />
+        <VarRow name={p + 'runsheet_next'} desc="next segment" />
+        <VarRow name={p + 'runsheet_now_time'} desc="planned time of current" />
+        <VarRow name={p + 'runsheet_running'} desc="true / false" />
+      </RefSec>
+      <RefSec title="Mics" sub="one pair per mic">
+        <VarRow name={`${p}mic_<id>_cue`} desc="live / standby / off" />
+        <VarRow name={`${p}mic_<id>_name`} desc="label" />
+        {mics.slice(0, 4).map((m) => <VarRow key={m.id} name={`${p}mic_${m.id}_cue`} desc={m.label} />)}
+      </RefSec>
+    </div>
   )
 }

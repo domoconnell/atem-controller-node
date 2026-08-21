@@ -24,6 +24,7 @@ class Realtime {
       this.open = true
       const topics = [...this.refs.keys()]
       if (topics.length) ws.send(JSON.stringify({ t: 'sub', topics }))
+      if (this.reg) ws.send(JSON.stringify({ t: 'register', data: this.reg }))
     }
     ws.onmessage = (ev) => {
       let m: { t?: string; topic?: string; data?: unknown }
@@ -61,6 +62,15 @@ class Realtime {
   command(instanceId: string, command: string, input?: unknown) {
     this.ensure()
     this.ws?.send(JSON.stringify({ t: 'cmd', id: `c${Date.now()}`, instanceId, command, input }))
+  }
+
+  /** Register this browser as a surface display so it can be targeted by OSC
+   *  (and listed in Settings). Re-sent on reconnect. */
+  private reg: Record<string, unknown> | null = null
+  register(data: Record<string, unknown>) {
+    this.reg = data
+    this.ensure()
+    if (this.open) this.ws?.send(JSON.stringify({ t: 'register', data }))
   }
 }
 

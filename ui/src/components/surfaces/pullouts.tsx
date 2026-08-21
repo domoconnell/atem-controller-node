@@ -13,15 +13,20 @@ const CLOSE_ICON = { left: ChevronLeft, right: ChevronRight, top: ChevronUp, bot
  *  in over the surface (never covering the whole thing). Shared by the
  *  designer (editable) and the viewer (read-only). Absolutely positioned, so
  *  the host must be `relative`. */
-export function Pullouts({ surface, instances, edit, sel, onSelect, onRemove }: {
+export function Pullouts({ surface, instances, edit, sel, onSelect, onRemove, openEdge, onOpenEdge }: {
   surface: Surface
   instances: { id: string; typeId: string; name: string }[]
   edit?: boolean
   sel?: { region: string; i: string } | null
   onSelect?: (region: Edge, i: string) => void
   onRemove?: (region: Edge, i: string) => void
+  /** Controlled open edge (e.g. driven by OSC); falls back to internal state. */
+  openEdge?: Edge | null
+  onOpenEdge?: (e: Edge | null) => void
 }) {
-  const [open, setOpen] = useState<Edge | null>(null)
+  const [internal, setInternal] = useState<Edge | null>(null)
+  const open = openEdge !== undefined ? openEdge : internal
+  const setOpen = (e: Edge | null) => { if (onOpenEdge) onOpenEdge(e); else setInternal(e) }
   return (
     <>
       {EDGES.filter((e) => surface.pullouts[e].enabled).map((e) => {

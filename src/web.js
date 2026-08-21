@@ -128,6 +128,10 @@ export class WebServer {
     })
     app.delete('/api/features/recorders/:id', (req, res) => { this.store?.deleteRecorder(req.params.id); this.publishRecorders(); res.json({ ok: true, recorders: this.store?.listRecorders() ?? [] }) })
 
+    // Surface displays that have announced themselves (for OSC targeting + the
+    // Companion reference in Settings).
+    app.get('/api/surface-clients', (_req, res) => res.json({ ok: true, clients: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c) }))
+
     // ---- Runsheet services (timed segments with people + mics) ----
     app.get('/api/features/services', (_req, res) => res.json({ ok: true, services: this.store?.listServices() ?? [] }))
     app.post('/api/features/services', (req, res) => {
@@ -384,8 +388,16 @@ export class WebServer {
           if (msg.t === 'sub' && Array.isArray(msg.topics)) this.connectorEngine.hub.subscribe(sub, msg.topics)
           else if (msg.t === 'unsub' && Array.isArray(msg.topics)) this.connectorEngine.hub.unsubscribe(sub, msg.topics)
           else if (msg.t === 'cmd') this.connectorEngine.command(msg.instanceId, msg.command, msg.input).then((r) => ws.send(JSON.stringify({ t: 'ack', id: msg.id, ...r }))).catch(() => {})
+          else if (msg.t === 'register' && msg.data && typeof msg.data.browserId === 'string') {
+            // A surface display announcing itself, so OSC can target it and
+            // Settings can list which browser is showing which surface.
+            ;(this.surfaceClients ??= new Map()).set(msg.data.browserId, { browserId: msg.data.browserId, surfaceId: msg.data.surfaceId ?? null, surfaceName: msg.data.surfaceName ?? null, since: Date.now(), _ws: ws })
+          }
         })
-        ws.on('close', () => this.connectorEngine.hub.removeSubscriber(sub))
+        ws.on('close', () => {
+          this.connectorEngine.hub.removeSubscriber(sub)
+          if (this.surfaceClients) for (const [k, v] of this.surfaceClients) if (v._ws === ws) this.surfaceClients.delete(k)
+        })
       }
     })
     // Mic meters are a high-rate side-channel like the wire log - pushed on
