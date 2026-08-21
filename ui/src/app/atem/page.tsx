@@ -168,7 +168,7 @@ export default function Page() {
         )}
 
         {state && <RecordDialog open={recordOpen} onOpenChange={setRecordOpen} state={state} locked={locked} />}
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} state={state} />
 
         <WireLog lines={wire} version={wireVersion} onClear={clearWire} />
 

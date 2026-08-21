@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { config, projectRoot } from './config.js'
+import { config, projectRoot, applyConfigUpdate } from './config.js'
 import { AtemController } from './atem.js'
 import { Animator } from './animator.js'
 import { LookStore } from './looks.js'
@@ -19,15 +19,9 @@ console.log(`  HyperDeck ${config.hyperdeck.ip}:${config.hyperdeck.port}`)
 const atem = new AtemController()
 const animator = new Animator(atem)
 const hyperdeck = new HyperDeck()
-const looks = new LookStore(atem, hyperdeck)
-const engine = new TransitionEngine(atem, hyperdeck)
-const sequencer = new Sequencer(atem, animator, looks, hyperdeck, engine)
-const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
-const propresenter = new ProPresenter()
-const verifier = new Verifier(atem, sequencer, engine, looks)
-const sennheiser = new SennheiserMonitor()
 // Connector engine (the new unified backend): SQLite store + the vendored
-// connector library. Runs alongside the ATEM stack during the migration.
+// connector library. Created BEFORE the LookStore so looks (and other state)
+// load from the DB, which is now the source of truth.
 let store = null, connectorEngine = null
 try {
   const { Store } = await import('../server/db/store.ts')
@@ -36,10 +30,30 @@ try {
   store = new Store(process.env.SIL_DB || path.join(projectRoot, 'data', 'stageit.db'))
   const { summary } = migrateJson(store, projectRoot)
   if (Object.values(summary).some((n) => n > 0)) console.log('[store] migrated JSON ->', JSON.stringify(summary))
+  // Behavioural settings (SuperSource / animation / transition) are the source
+  // of truth in the DB now. Seed them from config.json on first run / older DBs
+  // that predate this, then overlay ONLY these sections onto the live config so
+  // every module reading `config.*` sees the DB values - and edits apply live.
+  // (Boot/port sections like web/osc stay config.json-driven; overlaying them
+  // would clobber the port, and migrate always reads the real config.json.)
+  const behavioural = {}
+  for (const key of ['supersource', 'animation', 'transition']) {
+    if (store.getSetting(key, undefined) === undefined && config[key] !== undefined) store.setSetting(key, config[key])
+    const v = store.getSetting(key, config[key]); if (v !== undefined) behavioural[key] = v
+  }
+  applyConfigUpdate(behavioural)
   connectorEngine = new Engine(store)
 } catch (e) {
   console.error('[engine] failed to initialise connector engine:', e.message)
 }
+
+const looks = new LookStore(atem, hyperdeck, store)
+const engine = new TransitionEngine(atem, hyperdeck)
+const sequencer = new Sequencer(atem, animator, looks, hyperdeck, engine)
+const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
+const propresenter = new ProPresenter()
+const verifier = new Verifier(atem, sequencer, engine, looks)
+const sennheiser = new SennheiserMonitor()
 
 const web = new WebServer({ atem, animator, looks, sequencer, hyperdeck, oscServer, engine, propresenter, verifier, sennheiser, connectorEngine, store })
 oscServer.attachVerifier(verifier)

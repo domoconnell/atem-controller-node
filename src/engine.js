@@ -28,11 +28,14 @@ export class TransitionEngine {
   constructor(atemController, hyperdeck) {
     this.atem = atemController
     this.hyperdeck = hyperdeck
-    this.ssInput = config.supersource.ssInput ?? 6000
-    // Zero-indexed box that carries the "main display" feed, used when no
-    // live box already carries the incoming program source.
-    this.displayBox = config.supersource.displayBox ?? 3
   }
+
+  // Read live from the settings-backed config so a change in ATEM Transitions
+  // settings applies to the next transition without a restart.
+  get ssInput() { return config.supersource.ssInput ?? 6000 }
+  // Zero-indexed box that carries the "main display" feed, used when no live
+  // box already carries the incoming program source.
+  get displayBox() { return config.supersource.displayBox ?? 3 }
 
   plan(target, opts = {}) {
     const steps = []

@@ -39,8 +39,6 @@ export class AtemController extends EventEmitter {
     this.atem = this._realLogged   // whichever backend is active (wire-logged)
     this.simulated = false
     this.connected = false
-    this.ssrcId = config.supersource.id
-    this.me = config.supersource.me
     // Runtime config: seeded from config.json, overridable from Settings via
     // reconfigure() (the SQLite instance is the live source of truth).
     this.cfg = { ...config.atem }
@@ -70,6 +68,12 @@ export class AtemController extends EventEmitter {
     })
     this.real.on('error', (e) => console.error('[atem] error:', e))
   }
+
+  // SuperSource id and main M/E are behavioural settings read live from the
+  // settings-backed config, so a change in ATEM Transitions settings takes
+  // effect immediately (no restart / no cached constructor value).
+  get ssrcId() { return config.supersource.id }
+  get me() { return config.supersource.me }
 
   async connect() {
     this._scheduleSimFallback()
@@ -428,7 +432,15 @@ export class AtemController extends EventEmitter {
       if (input) inputs[id] = input.longName || input.shortName || String(id)
     }
     const mediaPlayers = this.getMediaPlayers().map((mp) => (mp ? { index: mp.index, sourceType: mp.sourceType, name: mp.name } : null))
-    return { connected: this.connected, simulated: this.simulated, boxes, mixEffects: mes, inputs, mediaPlayers }
+    // Available hardware options, for the Settings dropdowns (only meaningful
+    // while connected): how many SuperSources / M/Es / boxes this switcher has.
+    const ss = this.state?.video?.superSources
+    const options = {
+      superSourceCount: Math.max(1, Object.keys(ss ?? {}).length),
+      meCount: Math.max(1, (this.state?.video?.mixEffects ?? []).length),
+      boxCount: ss?.[this.ssrcId]?.boxes?.length ?? 4,
+    }
+    return { connected: this.connected, simulated: this.simulated, boxes, mixEffects: mes, inputs, mediaPlayers, options }
   }
 }
 

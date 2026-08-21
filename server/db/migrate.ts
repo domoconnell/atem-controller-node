@@ -22,8 +22,9 @@ export function migrateJson(store: Store, projectRoot: string): { migrated: bool
   const configPath = path.join(projectRoot, 'config.json')
   if (existsSync(configPath)) {
     const c = readJson(configPath) as Json & Record<string, any>
-    // Global (non-device) settings
-    for (const key of ['web', 'osc', 'companion', 'wireLog', 'wireConsole']) {
+    // Global (non-device) settings, incl. the ATEM Transitions behaviour
+    // (SuperSource / animation / transition) which is DB-backed and live-edited.
+    for (const key of ['web', 'osc', 'companion', 'wireLog', 'wireConsole', 'supersource', 'animation', 'transition']) {
       if (c[key] !== undefined) { store.setSetting(key, c[key]); summary.settings++ }
     }
     // ATEM connection (engine params fold into its config)

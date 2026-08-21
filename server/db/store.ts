@@ -106,6 +106,7 @@ export class Store {
   deletePreset(name: string) { this.db.prepare('DELETE FROM renderer_presets WHERE name=?').run(name) }
   getAcceptance(): Json { const out: Json = {}; for (const r of this.db.prepare('SELECT pair_key,data_json FROM acceptance').all() as any[]) out[r.pair_key] = JSON.parse(r.data_json); return out }
   putAcceptance(pairKey: string, data: Json) { this.db.prepare(`INSERT INTO acceptance(pair_key,data_json,updated_at) VALUES (?,?,?) ON CONFLICT(pair_key) DO UPDATE SET data_json=excluded.data_json,updated_at=excluded.updated_at`).run(pairKey, JSON.stringify(data), now()) }
+  deleteAcceptance(pairKey: string) { this.db.prepare('DELETE FROM acceptance WHERE pair_key=?').run(pairKey) }
 
   // ---- metrics (time-series) ----
   recordMetric(instanceId: string, metric: string, ts: number, value: number) {

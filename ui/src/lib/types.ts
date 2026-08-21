@@ -86,6 +86,7 @@ export interface Snapshot {
     mixEffects: (MixEffectLive | null)[]
     inputs: Record<string, string>
     mediaPlayers?: ({ index: number; sourceType: string; name: string } | null)[]
+    options?: { superSourceCount: number; meCount: number; boxCount: number }
   }
   hyperdeck: { connected: boolean; transport: Record<string, string> }
   currentLook: string | null

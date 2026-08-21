@@ -16,10 +16,11 @@ import { looksDir } from './config.js'
  * macros can pick the right choreography.
  */
 export class LookStore extends EventEmitter {
-  constructor(atemController, hyperdeck) {
+  constructor(atemController, hyperdeck, store = null) {
     super()
     this.atem = atemController
     this.hyperdeck = hyperdeck
+    this.store = store // SQLite store = source of truth; JSON files kept as a backup
     this.looks = new Map()
     this.currentLook = null
     if (!existsSync(looksDir)) mkdirSync(looksDir, { recursive: true })
@@ -28,6 +29,14 @@ export class LookStore extends EventEmitter {
 
   loadAll() {
     this.looks.clear()
+    if (this.store) {
+      for (const row of this.store.listLooks()) {
+        const look = this._normalize(row) // row = {slug, name, ...data}
+        this.looks.set(look.name ?? row.slug, look)
+      }
+      console.log(`[looks] loaded ${this.looks.size} look(s) from DB`)
+      return
+    }
     for (const f of readdirSync(looksDir)) {
       if (!f.endsWith('.json')) continue
       try {
@@ -37,7 +46,7 @@ export class LookStore extends EventEmitter {
         console.error(`[looks] failed to load ${f}:`, e.message)
       }
     }
-    console.log(`[looks] loaded ${this.looks.size} look(s)`)
+    console.log(`[looks] loaded ${this.looks.size} look(s) from JSON`)
   }
 
   /** Upgrade look files captured by earlier versions to the current shape. */
@@ -96,7 +105,8 @@ export class LookStore extends EventEmitter {
       },
     }
     this.looks.set(name, look)
-    writeFileSync(path.join(looksDir, `${slug(name)}.json`), JSON.stringify(look, null, 2))
+    if (this.store) this.store.putLook(name, name, look) // DB is the source of truth
+    try { writeFileSync(path.join(looksDir, `${slug(name)}.json`), JSON.stringify(look, null, 2)) } catch { /* backup only */ }
     console.log(`[looks] captured '${name}'`)
     this.emit('changed')
     return look
@@ -116,6 +126,7 @@ export class LookStore extends EventEmitter {
   delete(name) {
     if (!this.looks.has(name)) return false
     this.looks.delete(name)
+    if (this.store) this.store.deleteLook(slug(name))
     const f = path.join(looksDir, `${slug(name)}.json`)
     if (existsSync(f)) rmSync(f)
     console.log(`[looks] deleted '${name}'`)

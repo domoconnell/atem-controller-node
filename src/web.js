@@ -86,7 +86,12 @@ export class WebServer {
     app.delete('/api/surfaces/:id', (req, res) => { this.store?.deleteSurface(req.params.id); res.json({ ok: true }) })
     app.put('/api/settings', (req, res) => {
       if (!this.store) return res.status(503).json({ ok: false, error: 'store unavailable' })
-      for (const [k, v] of Object.entries(req.body ?? {})) this.store.setSetting(k, v)
+      const body = req.body ?? {}
+      for (const [k, v] of Object.entries(body)) this.store.setSetting(k, v)
+      // Apply behavioural sections (supersource/animation/transition/companion…)
+      // to the live config so they take effect immediately - no restart.
+      try { applyConfigUpdate(body) } catch { /* non-config keys (e.g. atemTransitions selectors) - stored only */ }
+      this.scheduleBroadcast()
       res.json({ ok: true, settings: this.store.allSettings() })
     })
     app.get('/api/instances', (_req, res) => res.json({ ok: true, instances: this.connectorEngine?.listInstances() ?? [] }))
@@ -127,39 +132,30 @@ export class WebServer {
     app.get('/api/status', (_req, res) => res.json(this.snapshot()))
 
     // ---- Renderer presets (bookmarks for the /r/ builder) ---------------
+    // DB-backed (the store is the source of truth); JSON file only as a
+    // fallback when the store failed to initialise.
     const presetsFile = path.join(projectRoot, 'data', 'renderer-presets.json')
-    const loadPresets = () => {
-      try { return JSON.parse(readFileSync(presetsFile, 'utf8')) } catch { return [] }
-    }
-    const savePresets = (list) => {
-      mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
-      writeFileSync(presetsFile, JSON.stringify(list, null, 2) + '\n')
-    }
+    const jsonPresets = () => { try { return JSON.parse(readFileSync(presetsFile, 'utf8')) } catch { return [] } }
+    const loadPresets = () => (this.store ? this.store.listPresets() : jsonPresets()).sort((a, b) => a.name.localeCompare(b.name))
     app.get('/api/renderer-presets', (_req, res) => res.json({ ok: true, presets: loadPresets() }))
     app.post('/api/renderer-presets', (req, res) => {
       const { name, query } = req.body ?? {}
       if (!name || typeof query !== 'string') return res.status(400).json({ ok: false, error: 'name and query required' })
-      const list = loadPresets().filter((p) => p.name !== name)
-      list.push({ name: String(name).trim(), query, savedAt: new Date().toISOString() })
-      list.sort((a, b) => a.name.localeCompare(b.name))
-      savePresets(list)
-      res.json({ ok: true, presets: list })
+      const preset = { name: String(name).trim(), query, savedAt: new Date().toISOString() }
+      if (this.store) this.store.putPreset(preset.name, preset)
+      else { const list = jsonPresets().filter((p) => p.name !== preset.name); list.push(preset); mkdirSync(path.join(projectRoot, 'data'), { recursive: true }); writeFileSync(presetsFile, JSON.stringify(list, null, 2) + '\n') }
+      res.json({ ok: true, presets: loadPresets() })
     })
     app.delete('/api/renderer-presets/:name', (req, res) => {
-      const list = loadPresets().filter((p) => p.name !== req.params.name)
-      savePresets(list)
-      res.json({ ok: true, presets: list })
+      if (this.store) this.store.deletePreset(req.params.name)
+      else { mkdirSync(path.join(projectRoot, 'data'), { recursive: true }); writeFileSync(presetsFile, JSON.stringify(jsonPresets().filter((p) => p.name !== req.params.name), null, 2) + '\n') }
+      res.json({ ok: true, presets: loadPresets() })
     })
 
     // ---- Timer layouts (full-frame designs for ProPresenter) -----------
     const layoutsFile = path.join(projectRoot, 'data', 'timer-layouts.json')
-    const loadLayouts = () => {
-      try { return JSON.parse(readFileSync(layoutsFile, 'utf8')) } catch { return [] }
-    }
-    const saveLayouts = (list) => {
-      mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
-      writeFileSync(layoutsFile, JSON.stringify(list, null, 2) + '\n')
-    }
+    const jsonLayouts = () => { try { return JSON.parse(readFileSync(layoutsFile, 'utf8')) } catch { return [] } }
+    const loadLayouts = () => (this.store ? this.store.listTimerLayouts() : jsonLayouts()).sort((a, b) => a.name.localeCompare(b.name))
     app.get('/api/layouts', (_req, res) => res.json({ ok: true, layouts: loadLayouts() }))
     app.get('/api/layouts/:id', (req, res) => {
       const layout = loadLayouts().find((l) => l.id === req.params.id)
@@ -171,20 +167,21 @@ export class WebServer {
       if (!layout?.id || !layout?.name || !Array.isArray(layout.elements)) {
         return res.status(400).json({ ok: false, error: 'id, name and elements[] required' })
       }
-      const list = loadLayouts().filter((l) => l.id !== layout.id)
-      list.push({ ...layout, updatedAt: new Date().toISOString() })
-      list.sort((a, b) => a.name.localeCompare(b.name))
-      saveLayouts(list)
-      res.json({ ok: true, layouts: list })
+      const rec = { ...layout, updatedAt: new Date().toISOString() }
+      if (this.store) this.store.putTimerLayout(rec.id, rec.name, rec)
+      else { const list = jsonLayouts().filter((l) => l.id !== rec.id); list.push(rec); mkdirSync(path.join(projectRoot, 'data'), { recursive: true }); writeFileSync(layoutsFile, JSON.stringify(list, null, 2) + '\n') }
+      res.json({ ok: true, layouts: loadLayouts() })
     })
     app.delete('/api/layouts/:id', (req, res) => {
-      saveLayouts(loadLayouts().filter((l) => l.id !== req.params.id))
+      if (this.store) this.store.deleteTimerLayout(req.params.id)
+      else { mkdirSync(path.join(projectRoot, 'data'), { recursive: true }); writeFileSync(layoutsFile, JSON.stringify(jsonLayouts().filter((l) => l.id !== req.params.id), null, 2) + '\n') }
       res.json({ ok: true })
     })
 
     // ---- Acceptance results (office test session notes) ----------------
     const acceptFile = path.join(projectRoot, 'data', 'acceptance.json')
-    const loadAccept = () => { try { return JSON.parse(readFileSync(acceptFile, 'utf8')) } catch { return {} } }
+    const jsonAccept = () => { try { return JSON.parse(readFileSync(acceptFile, 'utf8')) } catch { return {} } }
+    const loadAccept = () => (this.store ? this.store.getAcceptance() : jsonAccept())
     app.get('/api/acceptance', (_req, res) => res.json({ ok: true, results: loadAccept() }))
     app.get('/api/verify', (_req, res) => res.json({ ok: true, ...(this.verifier?.snapshot() ?? { results: [] }) }))
     app.post('/api/acceptance', (req, res) => {
@@ -192,18 +189,15 @@ export class WebServer {
       if (!from || !to || !['clean', 'issue', 'skip', 'clear'].includes(verdict)) {
         return res.status(400).json({ ok: false, error: 'from, to, verdict (clean|issue|skip|clear) required' })
       }
-      const all = loadAccept()
       const key = `${from}→${to}`
-      // attach the most recent hardware verification for this pair, if any
       const v = (this.verifier?.results ?? []).find((r) => r.to === to && (r.from === from || r.from == null))
-      if (verdict === 'clear') delete all[key]
-      else all[key] = {
+      const record = verdict === 'clear' ? null : {
         from, to, verdict, note: note ?? '', at: new Date().toISOString(),
         verify: v ? { ok: v.ok, diffs: v.diffs, simGrade: v.simGrade, simulated: v.simulated } : null,
       }
-      mkdirSync(path.join(projectRoot, 'data'), { recursive: true })
-      writeFileSync(acceptFile, JSON.stringify(all, null, 2) + '\n')
-      res.json({ ok: true, results: all })
+      if (this.store) { if (record) this.store.putAcceptance(key, record); else this.store.deleteAcceptance(key) }
+      else { const all = jsonAccept(); if (record) all[key] = record; else delete all[key]; mkdirSync(path.join(projectRoot, 'data'), { recursive: true }); writeFileSync(acceptFile, JSON.stringify(all, null, 2) + '\n') }
+      res.json({ ok: true, results: loadAccept() })
     })
 
     // ---- ProPresenter timers: snapshot + SSE stream --------------------
