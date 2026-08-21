@@ -4,6 +4,7 @@ import { registerWidget, type WidgetProps } from './registry'
 import { useTopic } from '@/hooks/use-topic'
 import { cn } from '@/lib/utils'
 import { Clock, Circle, Video, Film, Mic, Timer, Volume2, Play, Disc3, Wifi, SlidersHorizontal, CloudSun, Activity, Cpu, MessageSquare } from 'lucide-react'
+import { Brand } from '@/components/brand'
 
 const TYPE_ICON: Record<string, React.ElementType> = {
   atem: Video, hyperdeck: Film, sennheiser: Mic, propresenter: Timer, smaart: Volume2,
@@ -60,3 +61,22 @@ function StripClock({ title }: WidgetProps) {
   return <Frame icon={Clock} label={title || 'Time'}><span className="text-[14px] font-bold tabular-nums">{now}</span></Frame>
 }
 registerWidget({ type: 'strip-clock', label: 'Clock · strip', strip: true, defaultSize: { w: 2, h: 1 }, Component: StripClock })
+
+/** Platform: the Stage It logo, to brand a dashboard header/footer. Set the
+ *  config's variant to "icon" for just the mark, or leave blank for the wordmark;
+ *  align defaults to centre. */
+function StripBrand({ config }: WidgetProps) {
+  const icon = (config.variant as string | undefined) === 'icon'
+  const align = (config.align as string | undefined) ?? 'center'
+  return (
+    <div className={cn('h-full w-full flex items-center px-3 rounded-lg overflow-hidden text-foreground/90',
+      align === 'left' ? 'justify-start' : align === 'right' ? 'justify-end' : 'justify-center')}>
+      <Brand variant={icon ? 'icon' : 'full'} className={icon ? 'h-8 w-8' : 'h-7 w-[150px]'} />
+    </div>
+  )
+}
+registerWidget({
+  type: 'strip-brand', label: 'Logo · strip', strip: true, defaultSize: { w: 3, h: 1 },
+  configFields: [{ key: 'variant', label: 'Variant (blank = wordmark, "icon" = mark)', kind: 'text' }, { key: 'align', label: 'Align (left / center / right)', kind: 'text' }],
+  Component: StripBrand,
+})
