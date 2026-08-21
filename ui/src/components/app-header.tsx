@@ -3,9 +3,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2, Server, Disc3, MonitorPlay, Circle, Video, Film, Volume2, Play, Wifi, CloudSun, Cpu, MessageSquare, Activity, ListChecks } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useTopic } from '@/hooks/use-topic'
+import { SlidersHorizontal, Clock, ChevronDown, Mic, House, LayoutDashboard, Settings2, ListChecks } from 'lucide-react'
 
 const APPS = [
   {
@@ -45,44 +43,12 @@ const APPS = [
   },
 ] as const
 
-type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
-interface ConnGroup { key: string; label: string; online: number; total: number; state: ConnState; icon: React.ElementType }
-interface Inst { id: string; typeId: string; name: string }
-
-const TYPE_ICON: Record<string, React.ElementType> = {
-  atem: Video, hyperdeck: Film, sennheiser: Mic, propresenter: MonitorPlay, smaart: Volume2,
-  qlab: Play, reaper: Disc3, unifi: Wifi, digico: SlidersHorizontal, weather: CloudSun,
-  netcheck: Activity, sysmon: Cpu, prodcom: MessageSquare,
-}
-const TYPE_LABEL: Record<string, string> = {
-  atem: 'ATEM', hyperdeck: 'HyperDeck', sennheiser: 'Wireless Mics', propresenter: 'ProPresenter',
-  smaart: 'Smaart', qlab: 'QLab', reaper: 'REAPER', unifi: 'UniFi', digico: 'DiGiCo',
-  weather: 'Weather', netcheck: 'Connection', sysmon: 'Computer', prodcom: 'Comms',
-}
-
-/** Every connector, grouped by type, graded from the live sys:status aggregate
- *  (multi-instance types like mics collapse to online/total). */
-function connGroups(instances: Inst[], status: Record<string, string> | null, wsConnected: boolean): ConnGroup[] {
-  const grade = (online: number, total: number): ConnState =>
-    total === 0 ? 'empty' : online === 0 ? 'offline' : online < total ? 'partial' : 'live'
-  const g: ConnGroup[] = [{ key: 'server', label: 'Server', online: wsConnected ? 1 : 0, total: 1, state: wsConnected ? 'live' : 'offline', icon: Server }]
-  const byType = new Map<string, string[]>()
-  for (const i of instances) { const a = byType.get(i.typeId) ?? []; a.push(status?.[i.id] ?? 'connecting'); byType.set(i.typeId, a) }
-  for (const [t, states] of byType) {
-    const online = states.filter((s) => s === 'online').length
-    g.push({ key: t, label: TYPE_LABEL[t] ?? t, online, total: states.length, state: grade(online, states.length), icon: TYPE_ICON[t] ?? Circle })
-  }
-  return g
-}
-
-const CONN_TEXT: Record<ConnState, string> = { live: 'text-live', sim: 'text-busy', partial: 'text-busy', offline: 'text-destructive', empty: 'text-muted-foreground/40' }
-
 /**
- * Shared header: app icon + title as an app-switcher dropdown, the four
- * connection LEDs, then app-specific content (right-aligned via ml-auto in
- * children) and the live-update pulse.
+ * Shared header: app icon + title as an app-switcher dropdown, then app-specific
+ * content (right-aligned via ml-auto in children) and the live-update pulse.
+ * Connection status now lives on the Settings / dashboard surfaces, not here.
  */
-export function AppHeader({ app, state, wsConnected, tick, children }: {
+export function AppHeader({ app, state, tick, children }: {
   app: 'home' | 'surfaces' | 'atem' | 'timers' | 'runsheet' | 'mics' | 'settings' | 'acceptance'
   state: Snapshot | null
   wsConnected: boolean
@@ -91,22 +57,13 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
 }) {
   const [open, setOpen] = useState(false)
   const [pulse, setPulse] = useState(false)
-  const [instances, setInstances] = useState<Inst[]>([])
-  const status = useTopic('sys:status') as Record<string, string> | null
   useEffect(() => {
     setPulse(true)
     const t = setTimeout(() => setPulse(false), 160)
     return () => clearTimeout(t)
   }, [tick])
-  useEffect(() => {
-    let live = true
-    const load = () => fetch('/api/instances').then((r) => r.json()).then((b) => { if (live) setInstances(b.instances ?? []) }).catch(() => {})
-    load(); const h = setInterval(load, 15000) // instances rarely change; status is live via sys:status
-    return () => { live = false; clearInterval(h) }
-  }, [])
 
   const cur = APPS.find((a) => a.id === app) ?? APPS[0]
-  const groups = connGroups(instances, status, wsConnected)
 
   return (
     <header className="shrink-0 flex items-center gap-5 px-5 h-14 border-b border-border/70 bg-background/80 z-30">
@@ -144,32 +101,6 @@ export function AppHeader({ app, state, wsConnected, tick, children }: {
             ))}
           </div>
         )}
-      </div>
-
-      <div className="h-6 w-px bg-border" />
-
-      {/* Connections — one icon per type, coloured by state (hover for detail) */}
-      <div className="flex items-center gap-0.5">
-        {groups.map((g) => {
-          const Icon = g.icon ?? Circle
-          return (
-            <Tooltip key={g.key}>
-              <TooltipTrigger asChild>
-                <div className="relative size-8 rounded-md grid place-items-center hover:bg-accent">
-                  <Icon className={cn('size-[16px]', CONN_TEXT[g.state])} />
-                  {g.total > 1 && (
-                    <span className={cn('absolute -bottom-0 -right-0 text-[8px] leading-none font-bold tabular-nums px-[2px] py-[1px] rounded bg-background border border-border/60', CONN_TEXT[g.state])}>{g.online}</span>
-                  )}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                {g.label} — {g.total > 1
-                  ? `${g.online}/${g.total} online${g.state === 'sim' ? ' · sim' : ''}`
-                  : g.state === 'offline' ? 'offline' : g.state === 'sim' ? 'sim' : g.online ? 'online' : 'off'}
-              </TooltipContent>
-            </Tooltip>
-          )
-        })}
       </div>
 
       {children}
