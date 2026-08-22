@@ -20,7 +20,7 @@ class StageItInstance extends InstanceBase {
 
   async init(config) {
     this.config = config
-    this.data = { mics: [], surfaces: [], displays: [], runsheet: {} }
+    this.data = { mics: [], surfaces: [], displays: [], looks: [], activeLook: null, runsheet: {} }
     this._sig = '' // signature of the option-affecting data, to know when to rebuild defs
     this.updateStatus(InstanceStatus.Connecting)
     this.rebuild()
@@ -60,13 +60,13 @@ class StageItInstance extends InstanceBase {
       const r = await fetch(`${this.base()}/api/companion/state`, { signal: AbortSignal.timeout(3000) })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const s = await r.json()
-      this.data = { mics: s.mics ?? [], surfaces: s.surfaces ?? [], displays: s.displays ?? [], runsheet: s.runsheet ?? {} }
+      this.data = { mics: s.mics ?? [], surfaces: s.surfaces ?? [], displays: s.displays ?? [], looks: s.looks ?? [], activeLook: s.activeLook ?? null, runsheet: s.runsheet ?? {} }
       this.updateStatus(InstanceStatus.Ok)
       // Rebuild dropdown-bearing definitions only when the option lists change.
-      const sig = JSON.stringify([this.data.mics.map((m) => m.id), this.data.surfaces.map((x) => x.id), this.data.displays.map((d) => d.browserId)])
+      const sig = JSON.stringify([this.data.mics.map((m) => m.id), this.data.surfaces.map((x) => x.id), this.data.displays.map((d) => d.browserId), this.data.looks.map((l) => l.name)])
       if (sig !== this._sig) { this._sig = sig; this.rebuild() }
       this.pushValues()
-      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running')
+      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running', 'look_is_active', 'drawer_is_open')
     } catch (e) {
       this.updateStatus(InstanceStatus.ConnectionFailure, e.message)
     }
@@ -96,6 +96,7 @@ class StageItInstance extends InstanceBase {
       { variableId: 'runsheet_next', name: 'Runsheet: next segment' },
       { variableId: 'runsheet_now_time', name: 'Runsheet: current segment time' },
       { variableId: 'runsheet_running', name: 'Runsheet: running (true/false)' },
+      { variableId: 'active_look', name: 'ATEM: active look' },
     ]
     for (const m of this.data.mics) {
       defs.push({ variableId: `${m.id}_cue`, name: `Mic cue — ${m.label}` })
@@ -113,6 +114,7 @@ class StageItInstance extends InstanceBase {
       runsheet_next: rs.next ?? '',
       runsheet_now_time: rs.nowTime ?? '',
       runsheet_running: rs.running ? 'true' : 'false',
+      active_look: this.data.activeLook ?? '',
     }
     for (const m of this.data.mics) { vals[`${m.id}_cue`] = m.cue; vals[`${m.id}_name`] = m.label; vals[`${m.id}_muted`] = m.muted ? 'true' : 'false' }
     this.setVariableValues(vals)
@@ -121,8 +123,14 @@ class StageItInstance extends InstanceBase {
   // --------------------------------------------------------------- actions
   initActions() {
     const mics = this.data.mics.map((m) => ({ id: m.id, label: m.label }))
-    const displays = this.data.displays.map((d) => ({ id: `${d.browserId}|${d.surfaceId ?? ''}`, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
+    // Browser sessions (the physical displays) and ALL defined surfaces are
+    // offered as SEPARATE dropdowns, so a button can target "this display, when
+    // it's showing that surface" — it fires the moment the session lands there.
+    const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
+    const surfaces = this.data.surfaces.map((s) => ({ id: s.id, label: s.name }))
+    const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
     const cueChoices = [{ id: 'toggle', label: 'Toggle' }, { id: 'live', label: 'Live' }, { id: 'standby', label: 'Standby' }, { id: 'off', label: 'Off' }]
+    const edgeChoices = ['left', 'right', 'top', 'bottom'].map((e) => ({ id: e, label: e }))
     this.setActionDefinitions({
       runsheet_next: { name: 'Runsheet: Next', options: [], callback: () => this.post('/api/companion/runsheet/next') },
       runsheet_back: { name: 'Runsheet: Back', options: [], callback: () => this.post('/api/companion/runsheet/back') },
@@ -135,17 +143,22 @@ class StageItInstance extends InstanceBase {
         ],
         callback: (a) => this.post(`/api/companion/miccue/${a.options.mic}/${a.options.action}`),
       },
+      look_goto: {
+        name: 'ATEM: go to look',
+        options: [
+          { type: 'dropdown', id: 'look', label: 'Look', choices: looks, default: looks[0]?.id ?? '' },
+        ],
+        callback: (a) => this.post(`/api/companion/look/${encodeURIComponent(a.options.look)}`),
+      },
       surface_drawer: {
         name: 'Surface: drawer',
         options: [
-          { type: 'dropdown', id: 'display', label: 'Display', choices: displays, default: displays[0]?.id ?? '' },
-          { type: 'dropdown', id: 'edge', label: 'Edge', choices: ['left', 'right', 'top', 'bottom'].map((e) => ({ id: e, label: e })), default: 'left' },
+          { type: 'dropdown', id: 'browser', label: 'Browser session', choices: browsers, default: browsers[0]?.id ?? '' },
+          { type: 'dropdown', id: 'surface', label: 'Surface (when shown)', choices: surfaces, default: surfaces[0]?.id ?? '', tooltip: 'Only acts while this session is showing this surface' },
+          { type: 'dropdown', id: 'edge', label: 'Drawer', choices: edgeChoices, default: 'left' },
           { type: 'dropdown', id: 'action', label: 'Action', choices: ['open', 'close', 'toggle'].map((x) => ({ id: x, label: x })), default: 'toggle' },
         ],
-        callback: (a) => {
-          const [browserId, surfaceId] = String(a.options.display).split('|')
-          return this.post('/api/companion/surface-drawer', { browserId, surfaceId, edge: a.options.edge, action: a.options.action })
-        },
+        callback: (a) => this.post('/api/companion/surface-drawer', { browserId: a.options.browser, surfaceId: a.options.surface, edge: a.options.edge, action: a.options.action }),
       },
     })
   }
@@ -153,6 +166,8 @@ class StageItInstance extends InstanceBase {
   // ------------------------------------------------------------- feedbacks
   initFeedbacks() {
     const mics = this.data.mics.map((m) => ({ id: m.id, label: m.label }))
+    const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
+    const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
     this.setFeedbackDefinitions({
       mic_cue_is: {
         type: 'boolean',
@@ -188,6 +203,30 @@ class StageItInstance extends InstanceBase {
         options: [],
         callback: () => !!this.data.runsheet?.running,
       },
+      look_is_active: {
+        type: 'boolean',
+        name: 'Look is active',
+        description: 'Colour a button when a look is the current ATEM look.',
+        defaultStyle: { bgcolor: combineRgb(30, 150, 60), color: combineRgb(255, 255, 255) },
+        options: [
+          { type: 'dropdown', id: 'look', label: 'Look', choices: looks, default: looks[0]?.id ?? '' },
+        ],
+        callback: (fb) => !!this.data.activeLook && this.data.activeLook === fb.options.look,
+      },
+      drawer_is_open: {
+        type: 'boolean',
+        name: 'Drawer is open',
+        description: 'Colour a button when a session has that drawer open.',
+        defaultStyle: { bgcolor: combineRgb(40, 90, 200), color: combineRgb(255, 255, 255) },
+        options: [
+          { type: 'dropdown', id: 'browser', label: 'Browser session', choices: browsers, default: browsers[0]?.id ?? '' },
+          { type: 'dropdown', id: 'edge', label: 'Drawer', choices: ['left', 'right', 'top', 'bottom'].map((e) => ({ id: e, label: e })), default: 'left' },
+        ],
+        callback: (fb) => {
+          const d = this.data.displays.find((x) => x.browserId === fb.options.browser)
+          return !!d && d.openEdge === fb.options.edge
+        },
+      },
     })
   }
 
@@ -211,6 +250,30 @@ class StageItInstance extends InstanceBase {
           { feedbackId: 'mic_cue_is', options: { mic: m.id, cue: 'live' }, style: { bgcolor: combineRgb(30, 150, 60), color: white } },
           { feedbackId: 'mic_muted', options: { mic: m.id }, style: { bgcolor: combineRgb(200, 30, 30), color: white } },
         ],
+      }
+    }
+    // One button per look — recall it, and light green while it's the live look.
+    for (const l of this.data.looks) {
+      presets[`look_${l.name}`] = {
+        type: 'button',
+        category: 'Looks',
+        name: l.name,
+        style: { text: l.name, size: '14', color: white, bgcolor: dark },
+        steps: [{ down: [{ actionId: 'look_goto', options: { look: l.name } }], up: [] }],
+        feedbacks: [{ feedbackId: 'look_is_active', options: { look: l.name }, style: { bgcolor: combineRgb(30, 150, 60), color: white } }],
+      }
+    }
+    // One drawer-toggle button per live browser session — defaults to the left
+    // drawer of the surface it's currently showing; edit the surface/edge on the
+    // button to retarget. Lights blue while that drawer is open.
+    for (const d of this.data.displays) {
+      presets[`drawer_${d.browserId}`] = {
+        type: 'button',
+        category: 'Surface drawers',
+        name: `${d.surfaceName ?? d.surfaceId ?? 'Surface'} — left drawer`,
+        style: { text: `${d.surfaceName ?? 'Drawer'}\\n◧ LEFT`, size: '14', color: white, bgcolor: dark },
+        steps: [{ down: [{ actionId: 'surface_drawer', options: { browser: d.browserId, surface: d.surfaceId ?? '', edge: 'left', action: 'toggle' } }], up: [] }],
+        feedbacks: [{ feedbackId: 'drawer_is_open', options: { browser: d.browserId, edge: 'left' }, style: { bgcolor: combineRgb(40, 90, 200), color: white } }],
       }
     }
     this.setPresetDefinitions(presets)

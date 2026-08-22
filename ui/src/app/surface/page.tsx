@@ -62,10 +62,11 @@ export default function SurfaceViewer() {
   const [openEdge, setOpenEdge] = useState<Edge | null>(null)
   const browserId = useBrowserId()
 
-  // Announce this display so OSC can target it (usr:surface:<browserId>).
+  // Announce this display so OSC/Companion can target it (usr:surface:<browserId>).
+  // openEdge is included so Companion drawer feedbacks can light when open.
   useEffect(() => {
-    if (browserId && surface) realtime.register({ browserId, surfaceId: surface.id, surfaceName: surface.name })
-  }, [browserId, surface])
+    if (browserId && surface) realtime.register({ browserId, surfaceId: surface.id, surfaceName: surface.name, openEdge })
+  }, [browserId, surface, openEdge])
 
   // Drawer control from OSC: { surfaceId, target: 'left_drawer', action }.
   const control = useTopic(browserId ? `usr:surface:${browserId}` : null) as { surfaceId?: string | null; target?: string; action?: string; at?: number } | null

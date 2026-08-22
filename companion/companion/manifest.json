@@ -4,7 +4,7 @@
   "name": "stageit",
   "shortname": "Stage It",
   "description": "Control Stage It Live — runsheet, mic cues and surface drawers — with live status feedback.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "MIT",
   "repository": "git+https://github.com/stageit/companion-module-stageit.git",
   "bugs": "https://github.com/stageit/companion-module-stageit/issues",

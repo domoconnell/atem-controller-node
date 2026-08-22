@@ -150,6 +150,8 @@ export class WebServer {
         mics: (this.store?.listMics() ?? []).map((m) => ({ id: m.id, label: m.label, cue: m.cue ?? 'off', muted: this._micMuted(m) })),
         surfaces: (this.store?.listSurfaces() ?? []).map((s) => ({ id: s.id, name: s.name })),
         displays: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c),
+        looks: (this.looks?.list?.() ?? []).map((l) => ({ name: l.name })),
+        activeLook: this.looks?.currentLook ?? null,
         runsheet: { service: svc?.name ?? null, running: idx != null, now: this._segTitle(now), next: this._segTitle(next), nowTime: now?.time ?? null },
       })
     })
@@ -170,6 +172,10 @@ export class WebServer {
       if (!browserId || !action) return res.status(400).json({ ok: false, error: 'browserId and action required' })
       this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { surfaceId: surfaceId ?? null, target: `${edge}_drawer`, action, at: Date.now() })
       res.json({ ok: true })
+    })
+    app.post('/api/companion/look/:name', async (req, res) => {
+      try { await this.sequencer?.goto(req.params.name); res.json({ ok: true }) }
+      catch (e) { res.status(400).json({ ok: false, error: e.message }) }
     })
 
     // ---- Runsheet services (timed segments with people + mics) ----
@@ -431,7 +437,7 @@ export class WebServer {
           else if (msg.t === 'register' && msg.data && typeof msg.data.browserId === 'string') {
             // A surface display announcing itself, so OSC can target it and
             // Settings can list which browser is showing which surface.
-            ;(this.surfaceClients ??= new Map()).set(msg.data.browserId, { browserId: msg.data.browserId, surfaceId: msg.data.surfaceId ?? null, surfaceName: msg.data.surfaceName ?? null, since: Date.now(), _ws: ws })
+            ;(this.surfaceClients ??= new Map()).set(msg.data.browserId, { browserId: msg.data.browserId, surfaceId: msg.data.surfaceId ?? null, surfaceName: msg.data.surfaceName ?? null, openEdge: msg.data.openEdge ?? null, since: Date.now(), _ws: ws })
           }
         })
         ws.on('close', () => {
