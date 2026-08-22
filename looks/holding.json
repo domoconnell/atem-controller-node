@@ -1,4 +1,5 @@
 {
+  "slug": "holding",
   "name": "holding",
   "capturedAt": "2026-08-14T13:16:55.292Z",
   "boxes": [
@@ -532,5 +533,6 @@
     "loop": true,
     "singleClip": true,
     "speed": 100
-  }
+  },
+  "folder": "Holding"
 }

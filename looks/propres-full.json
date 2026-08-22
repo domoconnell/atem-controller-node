@@ -1,4 +1,5 @@
 {
+  "slug": "propres-full",
   "name": "propres-full",
   "capturedAt": "2026-08-14T13:16:29.330Z",
   "boxes": [
@@ -532,5 +533,6 @@
     "loop": true,
     "singleClip": true,
     "speed": 100
-  }
+  },
+  "folder": "Speaking"
 }

@@ -9,9 +9,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Input } from '@/components/ui/input'
 import { SsMonitor } from './ss-monitor'
 import { lookScene, ppMediaThumb } from '@/lib/scene'
-import { Play, Route, Zap, MoveRight, RefreshCcw, Trash2 } from 'lucide-react'
+import { Play, Route, Zap, MoveRight, RefreshCcw, Trash2, FolderClosed } from 'lucide-react'
 
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
@@ -29,9 +30,18 @@ export function LookSheet({
 }: { look: Look | null; state: Snapshot; open: boolean; onOpenChange: (o: boolean) => void; locked: boolean }) {
   const [plan, setPlan] = useState<Plan | null>(null)
   const [tab, setTab] = useState('details')
+  const [folder, setFolder] = useState('')
   const inputName = (id?: number) => (id == null ? '—' : state.atem.inputs[id] ?? String(id))
+  const allFolders = [...new Set((state?.looks ?? []).map((l) => l.folder?.trim()).filter(Boolean))].sort() as string[]
 
-  useEffect(() => { setPlan(null); setTab('details') }, [look?.name, open])
+  useEffect(() => { setPlan(null); setTab('details'); setFolder(look?.folder ?? '') }, [look?.name, open])
+
+  const saveFolder = () => {
+    if (!look || (folder.trim() === (look.folder ?? ''))) return
+    fetch(`/api/looks/${encodeURIComponent(look.name)}/folder`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folder: folder.trim() }),
+    }).catch(() => {})
+  }
 
   const loadPlan = async () => {
     if (!look) return
@@ -67,6 +77,20 @@ export function LookSheet({
           </Button>
           <Button variant="secondary" onClick={loadPlan}><Route className="size-4" /> Plan</Button>
           <Button variant="secondary" disabled={locked} onClick={() => cmd('/look/animate', [look.name])} title="Animate SuperSource only"><MoveRight className="size-4" /> Anim</Button>
+        </div>
+
+        <div className="px-5 pt-3 flex items-center gap-2">
+          <FolderClosed className="size-4 text-muted-foreground shrink-0" />
+          <Input
+            value={folder}
+            list="look-folders"
+            placeholder="Folder (e.g. Worship, Speaking)…"
+            className="h-8 bg-muted/40 text-[12.5px]"
+            onChange={(e) => setFolder(e.target.value)}
+            onBlur={saveFolder}
+            onKeyDown={(e) => { if (e.key === 'Enter') { saveFolder(); (e.target as HTMLInputElement).blur() } }}
+          />
+          <datalist id="look-folders">{allFolders.map((f) => <option key={f} value={f} />)}</datalist>
         </div>
 
         <div className="px-5 pt-4">

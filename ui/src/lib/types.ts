@@ -54,6 +54,7 @@ export interface UskSettings {
 
 export interface Look {
   name: string
+  folder?: string
   capturedAt?: string
   boxes: (Box | null)[]
   ssProperties?: {

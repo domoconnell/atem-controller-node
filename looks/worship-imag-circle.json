@@ -1,4 +1,5 @@
 {
+  "slug": "worship-imag-circle",
   "name": "worship-imag-circle",
   "capturedAt": "2026-08-21T13:29:04.637Z",
   "boxes": [
@@ -559,5 +560,6 @@
     "loop": true,
     "singleClip": true,
     "speed": 100
-  }
+  },
+  "folder": "Worship"
 }

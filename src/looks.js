@@ -140,6 +140,18 @@ export class LookStore extends EventEmitter {
     return look
   }
 
+  /** Assign a look to a folder (e.g. "Worship", "Speaking"); '' clears it. */
+  setFolder(name, folder) {
+    const look = this.mustGet(name)
+    const f = (folder ?? '').trim()
+    if (f) look.folder = f
+    else delete look.folder
+    if (this.store) this.store.putLook(slug(name), look.name, look)
+    try { writeFileSync(path.join(looksDir, `${slug(name)}.json`), JSON.stringify(look, null, 2)) } catch { /* backup only */ }
+    this.emit('changed')
+    return look
+  }
+
   /** Copy an existing look under a new name (same captured ATEM state), so a
    *  look can be created without a live switcher. Returns the new look. */
   duplicate(fromName, toName, opts = {}) {

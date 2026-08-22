@@ -1,4 +1,5 @@
 {
+  "slug": "propres-zoom-top",
   "name": "propres-zoom-top",
   "capturedAt": "2026-08-14T13:20:03.213Z",
   "boxes": [
@@ -532,5 +533,6 @@
     "loop": true,
     "singleClip": true,
     "speed": 100
-  }
+  },
+  "folder": "Speaking"
 }

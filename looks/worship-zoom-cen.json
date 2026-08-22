@@ -1,4 +1,5 @@
 {
+  "slug": "worship-zoom-cen",
   "name": "worship-zoom-cen",
   "capturedAt": "2026-08-14T13:24:19.876Z",
   "boxes": [
@@ -536,5 +537,6 @@
     "loop": true,
     "singleClip": true,
     "speed": 100
-  }
+  },
+  "folder": "Worship"
 }

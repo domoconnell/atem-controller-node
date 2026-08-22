@@ -17,7 +17,7 @@ import { RecordDialog } from '@/components/atem/record-dialog'
 import { SettingsDialog } from '@/components/atem/settings-dialog'
 import { WireLog } from '@/components/atem/wire-log'
 import { Button } from '@/components/ui/button'
-import { Play } from 'lucide-react'
+import { Play, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function Page() {
@@ -28,8 +28,17 @@ export default function Page() {
   const [recordOpen, setRecordOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [grades, setGrades] = useState<PlanGrades>({})
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const locked = !!(state?.busy || state?.animating)
+
+  // Group looks into folders; unfoldered looks fall under '' (rendered last).
+  const folderGroups = useMemo<[string, Look[]][]>(() => {
+    const m = new Map<string, Look[]>()
+    for (const l of state?.looks ?? []) { const f = l.folder?.trim() || ''; if (!m.has(f)) m.set(f, []); m.get(f)!.push(l) }
+    return [...m.entries()].sort((a, b) => (a[0] === '' ? 1 : b[0] === '' ? -1 : a[0].localeCompare(b[0])))
+  }, [state?.looks])
+  const foldered = folderGroups.length > 1 || (folderGroups[0] && folderGroups[0][0] !== '')
   const gradeKey = state ? `${state.currentLook}|${state.atem.mixEffects[state.mainMe]?.programInput}|${state.busy?.name ?? ''}|${state.looks.length}` : ''
   useEffect(() => {
     if (!state?.atem.connected || locked) return
@@ -141,24 +150,45 @@ export default function Page() {
                   <div className="surface rounded-xl p-10 text-center text-muted-foreground text-[13px]">
                     No looks recorded yet — set the switcher up and hit <b className="text-foreground">Record</b> in the header.
                   </div>
-                ) : (
-                  <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2000px]:grid-cols-6">
-                    {state.looks.map((look) => (
-                      <LookTile
-                        key={look.name}
-                        look={look}
-                        state={state}
-                        isCurrent={state.currentLook === look.name}
-                        isTarget={targetName === look.name}
-                        grade={grades[look.name]?.grade}
-                        locked={locked}
-                        onSelect={() => setTargetName(look.name)}
-                        onGoto={() => cmd('/goto', [look.name])}
-                        onOpen={() => { setOpenLook(look); setSheetOpen(true) }}
-                      />
-                    ))}
-                  </div>
-                )}
+                ) : (() => {
+                  const tile = (look: Look) => (
+                    <LookTile
+                      key={look.name}
+                      look={look}
+                      state={state}
+                      isCurrent={state.currentLook === look.name}
+                      isTarget={targetName === look.name}
+                      grade={grades[look.name]?.grade}
+                      locked={locked}
+                      onSelect={() => setTargetName(look.name)}
+                      onGoto={() => cmd('/goto', [look.name])}
+                      onOpen={() => { setOpenLook(look); setSheetOpen(true) }}
+                    />
+                  )
+                  const gridCls = 'grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2000px]:grid-cols-6'
+                  if (!foldered) return <div className={gridCls}>{state.looks.map(tile)}</div>
+                  return (
+                    <div className="space-y-4">
+                      {folderGroups.map(([folder, looks]) => {
+                        const isOpen = !collapsed.has(folder)
+                        return (
+                          <section key={folder || '_ungrouped'}>
+                            <button
+                              onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(folder) ? n.delete(folder) : n.add(folder); return n })}
+                              className="w-full flex items-center gap-1.5 mb-2 text-left group/f"
+                            >
+                              <ChevronRight className={cn('size-3.5 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
+                              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-foreground/80 group-hover/f:text-foreground">{folder || 'Ungrouped'}</span>
+                              <span className="text-[11px] text-muted-foreground font-normal">· {looks.length}</span>
+                              <span className="flex-1 h-px bg-border/60 ml-2" />
+                            </button>
+                            {isOpen && <div className={gridCls}>{looks.map(tile)}</div>}
+                          </section>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
 
                 </div>
               </div>

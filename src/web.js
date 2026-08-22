@@ -259,6 +259,12 @@ export class WebServer {
       catch (e) { res.status(400).json({ ok: false, error: e.message }) }
     })
 
+    // Assign a look to a folder (grouping in the looks grid).
+    app.put('/api/looks/:name/folder', (req, res) => {
+      try { res.json({ ok: true, look: this.looks.setFolder(req.params.name, req.body?.folder ?? '') }) }
+      catch (e) { res.status(400).json({ ok: false, error: e.message }) }
+    })
+
     // Copy a look under a new name (create without a live switcher).
     app.post('/api/looks/duplicate', (req, res) => {
       const { from, to, enableBox } = req.body ?? {}
