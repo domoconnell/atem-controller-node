@@ -63,12 +63,15 @@ describe('interpreting console messages', () => {
       muted: true,
     })
 
-    // One decimal place is plenty for a fader on a wall panel. -3.25 lands on
-    // -3.2 because JS rounds a half toward positive infinity; either is fine
-    // for display, so the test pins the actual behaviour.
-    expect(interpret({ address: '/Input_Channels/3/fader', args: [-3.25] })?.channel).toMatchObject(
-      { channel: 3, faderDb: -3.2 },
+    // The console reports the fader as a 0..1 taper float, not dB. 0.75 is unity
+    // (0 dB), 0.5 is −10 dB, 0.0 is OFF (−Infinity). We convert via the taper.
+    expect(interpret({ address: '/Input_Channels/3/fader', args: [0.75] })?.channel).toMatchObject(
+      { channel: 3, faderDb: 0 },
     )
+    expect(interpret({ address: '/Input_Channels/3/fader', args: [0.5] })?.channel).toMatchObject(
+      { channel: 3, faderDb: -10 },
+    )
+    expect(interpret({ address: '/Input_Channels/3/fader', args: [0] })?.channel?.faderDb).toBe(-Infinity)
   })
 
   it('reads a snapshot fire', () => {

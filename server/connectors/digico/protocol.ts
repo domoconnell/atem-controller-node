@@ -119,6 +119,39 @@ function pad4(value: number): number {
   return value + ((4 - (value % 4)) % 4)
 }
 
+// ------------------------------------------------------------------ fader taper
+
+/**
+ * DiGiCo faders and send levels are a 0..1 float on a piecewise-linear taper,
+ * NOT linear dB. Breakpoints confirmed from the DiGiCo dealer "Other OSC" docs
+ * (also used by bitfocus/companion-module-digico-osc and the mix-my-ears spike):
+ *   0.75 = 0 dB (unity), 1.0 = +10, 0.625 = −6, 0.5 = −10, 0.375 = −20,
+ *   0.25 = −30, 0.125 = −50, 0.0 = OFF (−∞).
+ */
+const TAPER: Array<[fader: number, db: number]> = [
+  [0, -90], [0.125, -50], [0.25, -30], [0.375, -20], [0.5, -10], [0.625, -6], [0.75, 0], [1, 10],
+]
+/** 0..1 fader float → dB. Exactly 0 is OFF (−Infinity). */
+export function faderToDb(fader: number): number {
+  if (fader <= 0) return -Infinity
+  const f = Math.min(1, fader)
+  for (let i = 1; i < TAPER.length; i++) {
+    const [f0, d0] = TAPER[i - 1], [f1, d1] = TAPER[i]
+    if (f <= f1) return Math.round((d0 + ((f - f0) / (f1 - f0)) * (d1 - d0)) * 10) / 10
+  }
+  return 10
+}
+/** dB → 0..1 fader float. −Infinity / ≤ −90 dB is OFF (0). */
+export function dbToFader(db: number): number {
+  if (db === -Infinity || db <= -90) return 0
+  const d = Math.min(10, db)
+  for (let i = 1; i < TAPER.length; i++) {
+    const [f0, d0] = TAPER[i - 1], [f1, d1] = TAPER[i]
+    if (d <= d1) return Math.round((f0 + ((d - d0) / (d1 - d0)) * (f1 - f0)) * 1000) / 1000
+  }
+  return 1
+}
+
 // ------------------------------------------------------------------ addresses
 
 /** Strips an optional `/sd` prefix so both firmware dialects parse the same. */
@@ -140,10 +173,26 @@ export interface MacroState {
   at: number
 }
 
+/** One channel→aux send leaf (level in dB / on / pan −1..+1). */
+export interface AuxSendState {
+  ch: number
+  aux: number
+  level?: number
+  on?: boolean
+  pan?: number
+}
+
 export interface DigicoUpdate {
   channel?: ChannelState
+  auxSend?: AuxSendState
   macro?: MacroState
   snapshotNumber?: number
+}
+
+/** Parse an aux-send address ".../Input_Channels/{ch}/Aux_Send/{aux}/{leaf}". */
+export function parseAuxSend(address: string): { ch: number; aux: number; leaf: string } | null {
+  const m = /\/Input_Channels\/(\d+)\/Aux_Send\/(\d+)\/([a-z_]+)(?:\/\?)?$/i.exec(address)
+  return m ? { ch: Number(m[1]), aux: Number(m[2]), leaf: m[3] } : null
 }
 
 /**
@@ -183,12 +232,20 @@ export function interpret(message: OscMessage): DigicoUpdate | null {
       return { channel: { channel: number, name: null, muted: Number(value) > 0, faderDb: null } }
     }
     if (leaf === 'fader') {
+      // The console reports the raw 0..1 taper float; convert to dB properly.
+      const db = typeof value === 'number' ? faderToDb(value) : null
+      return { channel: { channel: number, name: null, muted: null, faderDb: db == null || db === -Infinity ? db : Math.round(db * 10) / 10 } }
+    }
+    // Aux sends (ch → aux): level / on / pan — the IEM-mixing surface.
+    const aux = parseAuxSend(address)
+    if (aux) {
+      const v = value
       return {
-        channel: {
-          channel: number,
-          name: null,
-          muted: null,
-          faderDb: typeof value === 'number' ? Math.round(value * 10) / 10 : null,
+        auxSend: {
+          ch: aux.ch, aux: aux.aux,
+          level: aux.leaf === 'send_level' && typeof v === 'number' ? faderToDb(v) : undefined,
+          on: aux.leaf === 'send_on' ? Number(v) > 0 : undefined,
+          pan: aux.leaf === 'send_pan' && typeof v === 'number' ? v : undefined,
         },
       }
     }
@@ -210,10 +267,15 @@ export function queryMessages(prefix: string, channelCount: number): OscMessage[
   for (let channel = 1; channel <= channelCount; channel++) {
     messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/name/?`, args: [] })
     messages.push({ address: `${prefix}/Input_Channels/${channel}/mute/?`, args: [] })
+    messages.push({ address: `${prefix}/Input_Channels/${channel}/fader/?`, args: [] })
   }
   return messages
 }
 
+/** Press a macro. NOTE: the dealer "Other OSC" list documents this arg as
+ *  0-based (macroIndex − 1); our simulator uses the 1-based index it reports in
+ *  `/Macros/Buttons/state`. Confirm the convention on real hardware before a show
+ *  relies on it (the module is `unproven`). */
 export function fireMacroMessage(prefix: string, index: number): OscMessage {
   return { address: `${prefix}/Macros/Buttons/press`, args: [index] }
 }
@@ -222,4 +284,30 @@ export function fireMacroMessage(prefix: string, index: number): OscMessage {
  *  is bidirectional on the Pad OSC command set (1 = muted, 0 = open). */
 export function muteChannelMessage(prefix: string, channel: number, muted: boolean): OscMessage {
   return { address: `${prefix}/Input_Channels/${channel}/mute`, args: [muted ? 1 : 0] }
+}
+
+/** Set an input channel's fader to a dB level (converted onto the 0..1 taper). */
+export function faderMessage(prefix: string, channel: number, db: number): OscMessage {
+  return { address: `${prefix}/Input_Channels/${channel}/fader`, args: [dbToFader(db)] }
+}
+
+/** Set a channel→aux send level (dB → 0..1 taper). */
+export function auxSendLevelMessage(prefix: string, channel: number, aux: number, db: number): OscMessage {
+  return { address: `${prefix}/Input_Channels/${channel}/Aux_Send/${aux}/send_level`, args: [dbToFader(db)] }
+}
+/** Turn a channel→aux send on/off. */
+export function auxSendOnMessage(prefix: string, channel: number, aux: number, on: boolean): OscMessage {
+  return { address: `${prefix}/Input_Channels/${channel}/Aux_Send/${aux}/send_on`, args: [on ? 1 : 0] }
+}
+
+/** Fire a snapshot by absolute number. */
+export function snapshotFireMessage(prefix: string, number: number): OscMessage {
+  return { address: `${prefix}/Snapshots/Fire_Snapshot_number`, args: [number] }
+}
+/** Fire the next / previous snapshot in the session. */
+export function snapshotNextMessage(prefix: string): OscMessage {
+  return { address: `${prefix}/Snapshots/Fire_Next_Snapshot`, args: [0] }
+}
+export function snapshotPrevMessage(prefix: string): OscMessage {
+  return { address: `${prefix}/Snapshots/Fire_Prev_Snapshot`, args: [0] }
 }

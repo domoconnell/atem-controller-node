@@ -4,14 +4,21 @@ import { z } from 'zod'
 import type { Connector, ConnectorContext, ConnectorModule } from '../core/types.js'
 import { digicoConditions } from './conditions.js'
 import {
+  type AuxSendState,
+  auxSendLevelMessage,
+  auxSendOnMessage,
   type ChannelState,
   decodeOsc,
   encodeOsc,
+  faderMessage,
   fireMacroMessage,
   interpret,
   type MacroState,
   muteChannelMessage,
   queryMessages,
+  snapshotFireMessage,
+  snapshotNextMessage,
+  snapshotPrevMessage,
 } from './protocol.js'
 import { DigicoSimulator } from './simulator.js'
 
@@ -55,6 +62,10 @@ export type DigicoConfig = z.infer<typeof digicoConfigSchema>
 
 const fireMacroInput = z.object({ index: z.number().int().min(1).max(500) })
 const muteChannelInput = z.object({ channel: z.number().int().min(1).max(128), muted: z.boolean() })
+const faderInput = z.object({ channel: z.number().int().min(1).max(128), db: z.number().min(-90).max(10) })
+const auxSendInput = z.object({ channel: z.number().int().min(1).max(128), aux: z.number().int().min(1).max(64), db: z.number().min(-90).max(10).optional(), on: z.boolean().optional() })
+const snapshotInput = z.object({ number: z.number().int().min(1).max(9999) })
+const noInput = z.object({})
 
 /** Keeps the message feed to something a widget can render. */
 const MESSAGE_LIMIT = 50
@@ -73,6 +84,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private cancelWatchdog: (() => void) | null = null
   private lastMessageAt = 0
   private channels = new Map<number, ChannelState>()
+  private auxSends = new Map<string, AuxSendState>() // key `${ch}:${aux}`
   private macros = new Map<number, MacroState>()
   private messages: { id: string; text: string; at: number }[] = []
   private messageSeq = 0
@@ -140,6 +152,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.relayFromConsole = 0
     this.ctx = null
     this.channels.clear()
+    this.auxSends.clear()
     this.macros.clear()
     this.messages = []
   }
@@ -220,6 +233,34 @@ class DigicoConnector implements Connector<DigicoConfig> {
       return commandOk()
     }
 
+    // Set an input fader to a dB level (mapped onto the console's 0..1 taper).
+    if (commandId === 'channel.fader') {
+      const parsed = faderInput.safeParse(input)
+      if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { channel, db }')
+      this.send(faderMessage(ctx.config.addressPrefix, parsed.data.channel, parsed.data.db))
+      return commandOk()
+    }
+
+    // Set a channel→aux send: level (dB) and/or on. For IEM/monitor control.
+    if (commandId === 'auxsend.set') {
+      const parsed = auxSendInput.safeParse(input)
+      if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { channel, aux, db?, on? }')
+      const { channel, aux, db, on } = parsed.data
+      if (db !== undefined) this.send(auxSendLevelMessage(ctx.config.addressPrefix, channel, aux, db))
+      if (on !== undefined) this.send(auxSendOnMessage(ctx.config.addressPrefix, channel, aux, on))
+      return commandOk()
+    }
+
+    // Snapshots — fire by number, or step next / previous.
+    if (commandId === 'snapshot.fire') {
+      const parsed = snapshotInput.safeParse(input)
+      if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { number }')
+      this.send(snapshotFireMessage(ctx.config.addressPrefix, parsed.data.number))
+      return commandOk()
+    }
+    if (commandId === 'snapshot.next') { this.send(snapshotNextMessage(ctx.config.addressPrefix)); return commandOk() }
+    if (commandId === 'snapshot.prev') { this.send(snapshotPrevMessage(ctx.config.addressPrefix)); return commandOk() }
+
     return commandFail('NOT_FOUND', `Unknown command ${commandId}`)
   }
 
@@ -255,6 +296,19 @@ class DigicoConnector implements Connector<DigicoConfig> {
         faderDb: update.channel.faderDb ?? existing.faderDb,
       })
       ctx.publish('channels', { channels: [...this.channels.values()] })
+    }
+
+    if (update.auxSend) {
+      const key = `${update.auxSend.ch}:${update.auxSend.aux}`
+      const prev = this.auxSends.get(key) ?? { ch: update.auxSend.ch, aux: update.auxSend.aux }
+      this.auxSends.set(key, {
+        ch: update.auxSend.ch,
+        aux: update.auxSend.aux,
+        level: update.auxSend.level ?? prev.level,
+        on: update.auxSend.on ?? prev.on,
+        pan: update.auxSend.pan ?? prev.pan,
+      })
+      ctx.publish('auxSends', { sends: [...this.auxSends.values()] })
     }
 
     if (update.macro) {
@@ -320,6 +374,7 @@ export const digicoModule: ConnectorModule<DigicoConfig> = {
     configSchema: digicoConfigSchema,
     streams: [
       { id: 'channels', label: 'Channels', rateClass: 'slow' },
+      { id: 'auxSends', label: 'Aux sends', rateClass: 'change' },
       { id: 'macros', label: 'Macros', rateClass: 'change' },
       { id: 'messages', label: 'Messages', rateClass: 'change', history: 'events' },
       { id: 'snapshots', label: 'Snapshots', rateClass: 'change', history: 'events' },
@@ -338,6 +393,41 @@ export const digicoModule: ConnectorModule<DigicoConfig> = {
         label: 'Mute / unmute channel',
         description: 'Sets an input channel’s mute — drives runsheet mic-mute automation.',
         inputSchema: muteChannelInput,
+        dangerous: true,
+      },
+      {
+        id: 'channel.fader',
+        label: 'Set channel fader (dB)',
+        description: 'Sets an input channel’s fader level in dB (mapped to the DiGiCo taper).',
+        inputSchema: faderInput,
+        dangerous: true,
+      },
+      {
+        id: 'auxsend.set',
+        label: 'Set aux send (level / on)',
+        description: 'Sets a channel→aux send level (dB) and/or on-state — monitor/IEM control.',
+        inputSchema: auxSendInput,
+        dangerous: true,
+      },
+      {
+        id: 'snapshot.fire',
+        label: 'Fire snapshot (by number)',
+        description: 'Recalls a session snapshot by its number.',
+        inputSchema: snapshotInput,
+        dangerous: true,
+      },
+      {
+        id: 'snapshot.next',
+        label: 'Fire next snapshot',
+        description: 'Recalls the next snapshot in the session.',
+        inputSchema: noInput,
+        dangerous: true,
+      },
+      {
+        id: 'snapshot.prev',
+        label: 'Fire previous snapshot',
+        description: 'Recalls the previous snapshot in the session.',
+        inputSchema: noInput,
         dangerous: true,
       },
     ],
