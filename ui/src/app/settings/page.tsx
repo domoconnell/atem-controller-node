@@ -9,7 +9,7 @@ import type { Recorder } from '@/widgets/recorders'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw, Download } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw, Download, MonitorSmartphone } from 'lucide-react'
 
 type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
 const DOT: Record<ConnState, string> = { live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/30' }
@@ -168,6 +168,7 @@ export default function SettingsPage() {
             <NavHeader>Features</NavHeader>
             <NavItem id="f:mics" icon={Mic} label="Wireless Mics" active={sel === 'f:mics'} onSelect={setSel} />
             <NavItem id="f:recorders" icon={Disc} label="Recorders" active={sel === 'f:recorders'} onSelect={setSel} />
+            <NavItem id="f:positions" icon={MonitorSmartphone} label="Positions" active={sel === 'f:positions'} onSelect={setSel} />
           </nav>
 
           {/* detail pane */}
@@ -203,6 +204,7 @@ export default function SettingsPage() {
               })()}
               {sel === 'f:mics' && <MicsSettings />}
               {sel === 'f:recorders' && <RecordersSettings instances={instances} />}
+              {sel === 'f:positions' && <PositionsSettings />}
             </div>
           </main>
         </div>
@@ -238,6 +240,45 @@ function MicsSettings() {
       )}
       <MicEditor key={editing?.id ?? 'new'} mic={editing} sennInstances={sennInstances} digicoInstances={digicoInstances}
         onSave={save} onDelete={remove} onClose={() => setEditing(null)} />
+    </>
+  )
+}
+
+/** Positions — name the connected browser sessions (Dave FOH, Joe Mons, …) so
+ *  the call system and Companion dropdowns show human names instead of the raw
+ *  browser id. Same data (/api/surface-clients, PUT /api/session-name) as the
+ *  Displays header control, so a name set here shows there too. */
+type PosClient = { browserId: string; name?: string | null; surfaceId?: string | null; surfaceName?: string | null }
+function PositionsSettings() {
+  const [clients, setClients] = useState<PosClient[]>([])
+  useEffect(() => {
+    const load = () => fetch('/api/surface-clients').then((r) => r.json()).then((b) => setClients(b.clients ?? [])).catch(() => {})
+    load(); const t = setInterval(load, 2000); return () => clearInterval(t)
+  }, [])
+  const rename = (browserId: string, name: string) => {
+    setClients((cs) => cs.map((c) => (c.browserId === browserId ? { ...c, name } : c)))
+    fetch('/api/session-name', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ browserId, name }) }).catch(() => {})
+  }
+  return (
+    <>
+      <h1 className="text-xl font-bold mb-1">Positions</h1>
+      <p className="text-sm text-muted-foreground mb-5 max-w-xl">Name each connected display so it reads as a person/role (e.g. <b className="text-foreground">Dave FOH</b>). Names drive the backstage call system and the Companion call dropdowns, and persist across reconnects.</p>
+      {clients.length === 0 ? (
+        <div className="text-sm text-muted-foreground rounded-xl border border-dashed border-border/60 py-8 text-center">No displays connected.<br />Open <b className="text-foreground">/surface?s=…</b> on a screen.</div>
+      ) : (
+        <div className="space-y-2">
+          {clients.map((c) => (
+            <div key={c.browserId} className="surface rounded-xl border border-border/60 p-3 flex items-center gap-3">
+              <MonitorSmartphone className="size-4 text-muted-foreground shrink-0" />
+              <input value={c.name ?? ''} onChange={(e) => rename(c.browserId, e.target.value)} placeholder="Name (e.g. Dave FOH)"
+                className="flex-1 min-w-0 h-9 rounded-md bg-input/40 border border-border px-2.5 text-[13px] font-semibold outline-none focus:border-border" />
+              <span className="text-[11px] text-muted-foreground/70 truncate shrink-0" title={`${c.surfaceName ?? '—'} · ${c.browserId}`}>
+                {c.surfaceName ?? '—'} <span className="font-mono text-muted-foreground/40">· {c.browserId}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   )
 }

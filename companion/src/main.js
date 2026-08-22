@@ -129,7 +129,7 @@ class StageItInstance extends InstanceBase {
     const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
     const surfaces = this.data.surfaces.map((s) => ({ id: s.id, label: s.name }))
     // Named positions (Dave FOH, Joe Mons, …) for the call system.
-    const positions = this.data.displays.map((d) => ({ id: d.browserId, label: d.name || d.surfaceName || d.browserId }))
+    const positions = this.data.displays.map((d) => ({ id: d.browserId, label: d.name || d.browserId }))
     const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
     const cueChoices = [{ id: 'toggle', label: 'Toggle' }, { id: 'live', label: 'Live' }, { id: 'standby', label: 'Standby' }, { id: 'off', label: 'Off' }]
     const edgeChoices = ['left', 'right', 'top', 'bottom'].map((e) => ({ id: e, label: e }))
@@ -202,7 +202,7 @@ class StageItInstance extends InstanceBase {
     const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
     const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
     const surfaces = this.data.surfaces.map((s) => ({ id: s.id, label: s.name }))
-    const positions = this.data.displays.map((d) => ({ id: d.browserId, label: d.name || d.surfaceName || d.browserId }))
+    const positions = this.data.displays.map((d) => ({ id: d.browserId, label: d.name || d.browserId }))
     this.setFeedbackDefinitions({
       mic_cue_is: {
         type: 'boolean',
@@ -364,7 +364,7 @@ class StageItInstance extends InstanceBase {
     // button after dragging it out), plus a "Clear" button per position that
     // lights red while that position is being called.
     for (const d of this.data.displays) {
-      const nm = d.name || d.surfaceName || d.browserId
+      const nm = d.name || d.browserId
       presets[`call_${d.browserId}`] = {
         type: 'button',
         category: 'Calls',
