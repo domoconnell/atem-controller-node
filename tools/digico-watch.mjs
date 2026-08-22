@@ -55,13 +55,19 @@
  *      clue to where meters go).
  *
  * ── If nothing meter-like shows up on --recv ─────────────────────────────────
- *   The console may stream meters on a different port (a negotiated one), or via
- *   a non-OSC protocol. Cast a wider net:  --ports 9001,10000-10030  (bind lots
- *   of local ports and see which lights up). If STILL nothing, the meters are
- *   going somewhere we don't receive (possibly straight to the iPad's own IP);
- *   the only fully-general way to find that is a packet capture on the wire:
- *     sudo tcpdump -n -i <iface> host <deskIP> and udp -w digico.pcap
- *   then open digico.pcap here — no live Wireshark UI needed. Ask me to parse it.
+ *   The console can only send to the ONE IP it's been told about — ours. So a
+ *   meter stream, if it exists, ALWAYS arrives at this machine; the only unknown
+ *   is the PORT. It could be:
+ *     (a) interleaved on --recv (caught already),
+ *     (b) a port the app negotiates (watch the SUBSCRIBE section for it, then add
+ *         it with --ports),
+ *     (c) a FIXED port baked into firmware (not negotiated, just known to the app)
+ *         — cast a wide net: --ports 9001,10000-10050,3000-3020 and see what lights.
+ *   For a fixed unknown port, one 5-second packet capture tells you the number
+ *   without any live Wireshark UI:
+ *     sudo tcpdump -n -i <iface> 'src host <deskIP> and udp' -c 200
+ *   read the dst ports it prints, then bind them here with --ports. (Hand me a
+ *   -w capture.pcap instead and I'll parse it.)
  */
 
 import { createSocket } from 'node:dgram'
