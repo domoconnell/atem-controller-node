@@ -212,14 +212,28 @@ function RunsheetList({ config, title }: WidgetProps) {
                   <span className="text-[12.5px] font-semibold truncate shrink min-w-0">{segTitle(seg)}</span>
                   {/* lead mics on the same line */}
                   {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
-                  <span className="ml-auto shrink-0 text-[11px] pl-1 flex items-center gap-2">
-                    {(() => { const sug = timing.suggest.get(seg.id); return !isNow && sug ? (
-                      <span className={cn('tabular-nums text-[10px]', sug.trimmed ? 'text-busy' : 'text-info/70')}
-                        title={sug.trimmed ? `suggested start (trimmed to ${fmtDuration(sug.dur)})` : 'suggested start'}>
-                        {fmtClockTs(sug.start)}{sug.trimmed ? '*' : ''}
-                      </span>
-                    ) : null })()}
-                    {isNow ? <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} /> : <span className="tabular-nums text-muted-foreground/70">{seg.time || ''}</span>}
+                  <span className="ml-auto shrink-0 text-[11px] pl-1 flex items-center gap-2.5">
+                    {(() => {
+                      const sug = timing.suggest.get(seg.id)
+                      if (isNow || !sug) return null
+                      return <span className={cn('tabular-nums text-[10px]', sug.trimmed ? 'text-busy' : 'text-info/70')} title="suggested start time to stay on schedule">{fmtClockTs(sug.start)}</span>
+                    })()}
+                    {isNow ? (
+                      <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} />
+                    ) : (() => {
+                      const sug = timing.suggest.get(seg.id)
+                      const planned = parseDuration(seg.time)
+                      if (sug?.trimmed && planned != null) {
+                        const cut = Math.round(planned - sug.dur)
+                        return (
+                          <span className="flex items-center gap-1.5 tabular-nums" title={`shorten ${seg.time} → ${fmtDuration(sug.dur)} (cut ${fmtDuration(cut)})`}>
+                            <span className="text-busy font-semibold">{fmtDuration(sug.dur)}</span>
+                            <span className="text-destructive/80 text-[9px]">−{fmtDuration(cut)}</span>
+                          </span>
+                        )
+                      }
+                      return <span className="tabular-nums text-muted-foreground/70">{seg.time || ''}</span>
+                    })()}
                   </span>
                 </div>
                 {others.length > 0 && (

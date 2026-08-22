@@ -106,7 +106,7 @@ export default function RunsheetPage() {
 
         <div className="flex-1 min-h-0 flex">
           {svc && (
-            <aside className="w-60 shrink-0 border-r border-border/70 overflow-y-auto p-4 space-y-5 bg-background/40">
+            <aside className="w-72 shrink-0 border-r border-border/70 overflow-y-auto p-4 space-y-5 bg-background/40">
               <Field label="Service name">
                 <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-full')} />
               </Field>
@@ -308,20 +308,20 @@ function ProLinkControl({ link, onLink, onUnlink, onResync }: {
   }
   if (link?.playlistId) {
     return (
-      <div className="inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 pl-2 pr-1 py-1 text-[12px] text-primary" title="Synced from ProPresenter">
+      <div className="flex w-full items-center gap-1 rounded-md border border-primary/40 bg-primary/10 pl-2 pr-1 py-1.5 text-[12px] text-primary" title="Synced from ProPresenter">
         <Link2 className="size-3.5 shrink-0" />
-        <span className="max-w-40 truncate font-medium">{link.playlistName || 'ProPresenter'}</span>
+        <span className="flex-1 min-w-0 truncate font-medium">{link.playlistName || 'ProPresenter'}</span>
         <button onClick={onResync} className="p-1 rounded hover:bg-primary/20" title="Re-sync now"><RefreshCw className="size-3" /></button>
         <button onClick={onUnlink} className="p-1 rounded hover:bg-destructive/15 hover:text-destructive" title="Unlink"><Link2Off className="size-3" /></button>
       </div>
     )
   }
   return (
-    <div className="relative">
-      <button onClick={openMenu} className="inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 border border-border hover:bg-accent" title="Link this service to a ProPresenter playlist">
-        <Link2 className="size-3.5" /> Link PP
+    <div className="relative w-full">
+      <button onClick={openMenu} className="w-full inline-flex items-center justify-center gap-1.5 text-[12px] rounded-md px-2.5 py-2 border border-border hover:bg-accent" title="Link this service to a ProPresenter playlist">
+        <Link2 className="size-3.5" /> Link ProPresenter
       </button>
-      {open && <div className="absolute left-0 top-full mt-1 z-50 w-64 rounded-lg border border-border bg-popover shadow-2xl p-1 max-h-72 overflow-y-auto" onMouseLeave={() => setOpen(false)}>
+      {open && <div className="absolute left-0 right-0 top-full mt-1 z-50 rounded-lg border border-border bg-popover shadow-2xl p-1 max-h-72 overflow-y-auto" onMouseLeave={() => setOpen(false)}>
         {err && <div className="text-[11px] text-destructive px-2 py-2">{err}</div>}
         {!err && playlists == null && <div className="text-[11px] text-muted-foreground px-2 py-2">Loading playlists…</div>}
         {!err && playlists?.length === 0 && <div className="text-[11px] text-muted-foreground px-2 py-2">No playlists found in ProPresenter.</div>}

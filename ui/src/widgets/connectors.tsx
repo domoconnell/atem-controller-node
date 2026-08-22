@@ -240,8 +240,8 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
   const norm = (db: number) => Math.max(0, Math.min(1, (db - SPEC_MIN) / (SPEC_MAX - SPEC_MIN)))
   const labelIdx = [7, 12, 17, 22, 27].filter((i) => i < freqs.length)  // 100 / 315 / 1k / 3.15k / 10k
   return (
-    <div className="h-full flex flex-col">
-      <div className="shrink-0 flex items-center gap-2 px-3 pt-2 pb-1">
+    <div className="h-full flex flex-col p-1.5">
+      <div className="shrink-0 flex items-center gap-2 px-3 pt-1.5 pb-2">
         {title && <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground truncate">{title}</span>}
         <span className="text-[9px] uppercase tracking-wide text-muted-foreground/60">RTA{d?.octaveFraction ? ` · 1/${d.octaveFraction}` : ''}{d?.weighting ? ` · ${d.weighting}` : ''}</span>
         <select value={cur?.id ?? ''} onChange={(e) => setSel(e.target.value)} className="ml-auto bg-muted/40 border border-border rounded px-1.5 py-0.5 text-[11px] max-w-[45%] truncate">
@@ -249,14 +249,14 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
           {inputs.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
         </select>
       </div>
-      <div className="flex-1 min-h-0 relative px-3 pb-4">
+      <div className="flex-1 min-h-0 relative px-3 pb-7 pt-1">
         {/* dB gridlines */}
         {[60, 80, 100].map((db) => (
-          <div key={db} className="absolute left-3 right-3 border-t border-border/25 flex" style={{ bottom: `calc(${norm(db) * 100}% + 16px)` }}>
+          <div key={db} className="absolute left-3 right-3 border-t border-border/25 flex" style={{ bottom: `calc(${norm(db) * 100}% + 28px)` }}>
             <span className="text-[7px] text-muted-foreground/40 -mt-2 ml-0.5 tabular-nums">{db}</span>
           </div>
         ))}
-        <div className="absolute inset-x-3 top-0 bottom-4 flex items-end gap-px">
+        <div className="absolute inset-x-3 top-1 bottom-7 flex items-end gap-[2px]">
           {mags.length === 0 ? <div className="text-[11px] text-muted-foreground/50 m-auto">No spectrum.</div> : mags.map((db, i) => (
             <div key={i} className="flex-1 min-w-0 rounded-t-[1px] transition-[height] duration-100"
               style={{ height: `${norm(db) * 100}%`, background: specBarColor(db) }}
@@ -264,7 +264,7 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
           ))}
         </div>
         {/* frequency axis */}
-        <div className="absolute inset-x-3 bottom-0 h-4 pointer-events-none">
+        <div className="absolute inset-x-3 bottom-1.5 h-5 pointer-events-none">
           {labelIdx.map((i) => (
             <span key={i} className="absolute text-[8px] text-muted-foreground/50 tabular-nums -translate-x-1/2" style={{ left: `${(i / (freqs.length - 1)) * 100}%`, bottom: 0 }}>{fLabel(freqs[i])}</span>
           ))}
