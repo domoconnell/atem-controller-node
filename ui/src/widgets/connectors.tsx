@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { registerWidget, type WidgetDef, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
-import { usePulseOn } from '@/components/surfaces/pulse'
+import { usePulseOn, useDanger, dangerHigh, dangerLow } from '@/components/surfaces/pulse'
 import { statusTopic } from '@/lib/topics'
 import { cn } from '@/lib/utils'
 import { ReceiverCard } from './mics'
@@ -115,6 +115,7 @@ function ReceiverCards({ id, name }: { id: string; name: string }) {
   const chans = d?.channels ?? []
   const online = !!d?.online
   usePulseOn(chans.map((c) => (c.mute ? '1' : '0')).join('') + (online ? 'o' : 'x'))
+  useDanger(!online ? 0.4 : dangerLow(chans.reduce((m, c) => (c.battery != null && c.battery < m ? c.battery : m), 999), 50, 15))
   if (chans.length === 0) return <ReceiverCard ch={{ id: 'x' }} online={false} name={name} />
   return <>{chans.map((ch) => <ReceiverCard key={ch.id} ch={ch} online={online} name={chans.length > 1 ? `${name} · ${ch.id}` : name} />)}</>
 }
@@ -188,6 +189,7 @@ function SmaartPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'spl') as Record<string, unknown> | null
   const viol = (d?.violations as unknown[] | undefined)?.length ?? 0
   usePulseOn(viol)
+  useDanger(Math.max(viol > 0 ? 1 : 0, dangerHigh(num(d?.splAFast), 95, 103)))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 grid grid-cols-2 gap-x-4 gap-y-1.5 content-start">
@@ -269,6 +271,7 @@ function ReaperPanel({ instanceId, title }: WidgetProps) {
   const disk = useStream(instanceId, 'disk') as { freeMb?: number } | null
   const tracks = tk?.tracks ?? []
   usePulseOn(t?.state)
+  useDanger(dangerLow(num(disk?.freeMb), 8000, 2000))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-2">
@@ -311,6 +314,7 @@ function HyperdeckPanel({ instanceId, title }: WidgetProps) {
   const dev = useStream(instanceId, 'device') as { model?: string } | null
   const tc = t?.displayTimecode || t?.timecode || '––:––:––:––'
   usePulseOn(t?.status)
+  useDanger(dangerLow(num(slot?.recordingTimeSeconds), 1800, 300))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 flex flex-col justify-center gap-2 px-3 pb-2">
@@ -391,6 +395,7 @@ function UnifiPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'devices') as { devices?: UniDev[] } | null
   const devs = d?.devices ?? []
   usePulseOn(`${s?.onlineCount ?? ''}/${s?.deviceCount ?? ''}`)
+  useDanger(dangerHigh((s?.deviceCount ?? 0) - (s?.onlineCount ?? 0), 0.5, 2))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-2">
@@ -475,6 +480,7 @@ function WeatherPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'current') as Record<string, unknown> | null
   const t = num(d?.temperatureC), w = num(d?.windMs), g = num(d?.gustMs), r = num(d?.precipitationMm), h = num(d?.humidityPct)
   usePulseOn(t)
+  useDanger(Math.max(dangerHigh(g, 12, 20), dangerHigh(w, 10, 16)))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 grid place-items-center">
@@ -511,6 +517,7 @@ function NetcheckPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'latency') as Record<string, unknown> | null
   const up = d?.up === true, rtt = num(d?.rttAvgMs), loss = num(d?.lossPct), jit = num(d?.jitterMs)
   usePulseOn(d?.up)
+  useDanger(d?.up === false ? 1 : dangerHigh(loss, 2, 10))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 grid place-items-center">
@@ -554,6 +561,7 @@ function SysGauge({ label, value, warn = 85 }: { label: string; value: number | 
 function SysmonPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'metrics') as Record<string, unknown> | null
   usePulseOn([num(d?.cpuPct), num(d?.memUsedPct), num(d?.diskUsedPct)].map((v, i) => (v != null && v > (i === 2 ? 90 : 85) ? '1' : '0')).join(''))
+  useDanger(Math.max(dangerHigh(num(d?.cpuPct), 80, 98), dangerHigh(num(d?.memUsedPct), 85, 98), dangerHigh(num(d?.diskUsedPct), 85, 97)))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 flex flex-col justify-center gap-2.5 px-3 pb-2">

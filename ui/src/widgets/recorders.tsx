@@ -1,7 +1,7 @@
 'use client'
 import { registerWidget, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
-import { usePulseOn } from '@/components/surfaces/pulse'
+import { usePulseOn, useDanger, dangerHigh, dangerLow } from '@/components/surfaces/pulse'
 import { cn } from '@/lib/utils'
 import { Circle, Play, HardDrive, Film, Video, Music } from 'lucide-react'
 
@@ -77,6 +77,7 @@ function HyperdeckRec({ rec }: { rec: Recorder }) {
   const slot = useStream(rec.instanceId, 'slots') as { recordingTimeSeconds?: number; videoFormat?: string; volumeName?: string } | null
   const dev = useStream(rec.instanceId, 'device') as { model?: string } | null
   usePulseOn(t?.status)
+  useDanger(dangerLow(slot?.recordingTimeSeconds ?? null, 1800, 300))
   const s = (t?.status ?? '').toLowerCase()
   const recording = s === 'record'
   const playing = /play|forward|jog|shuttle|var/.test(s)
@@ -96,6 +97,7 @@ function ReaperRec({ rec }: { rec: Recorder }) {
   const t = useStream(rec.instanceId, 'transport') as { state?: string; positionString?: string; armedCount?: number } | null
   const disk = useStream(rec.instanceId, 'disk') as { freeMb?: number } | null
   usePulseOn(t?.state)
+  useDanger(dangerLow(disk?.freeMb ?? null, 8000, 2000))
   const st = (t?.state ?? '').toLowerCase()
   const recording = st === 'recording'
   const playing = st === 'playing'
@@ -115,6 +117,7 @@ function AtemRec({ rec }: { rec: Recorder }) {
   const r = useStream(rec.instanceId, 'recording') as { state?: string; durationSeconds?: number; timeAvailableSeconds?: number; volumeName?: string } | null
   const recording = r?.state === 'recording' || r?.state === 'stopping'
   usePulseOn(r?.state)
+  useDanger(dangerLow(r?.timeAvailableSeconds ?? null, 1800, 300))
   const tone: ToneKey = r == null ? 'off' : recording ? 'rec' : 'idle'
   const n: Norm = {
     icon: Video, tone,

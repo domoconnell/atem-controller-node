@@ -144,6 +144,8 @@
      accent rule along the top edge, subtle lift. Not glass. */
   .glass {
     position: relative;
+    /* danger-tinted accent (blue safe → red critical); WidgetView overrides it */
+    --accent: oklch(0.78 0.16 232);
     background: linear-gradient(180deg, oklch(0.185 0.014 262 / 0.72), oklch(0.135 0.011 262 / 0.66));
     backdrop-filter: blur(9px) saturate(1.05);
     -webkit-backdrop-filter: blur(9px) saturate(1.05);
@@ -152,8 +154,8 @@
   }
   .glass::before {
     content: ""; position: absolute; left: 8px; right: 8px; top: 0; height: 1.5px; pointer-events: none;
-    background: linear-gradient(90deg, transparent, oklch(0.72 0.15 232 / 0.7), transparent);
-    box-shadow: 0 0 8px oklch(0.72 0.15 232 / 0.45);
+    background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--accent) 70%, transparent), transparent);
+    box-shadow: 0 0 8px color-mix(in oklch, var(--accent) 45%, transparent);
   }
   .glass-strip {
     background: linear-gradient(180deg, oklch(0.185 0.014 262 / 0.68), oklch(0.130 0.011 262 / 0.60));
@@ -166,7 +168,7 @@
      Two styles, chosen per surface (fx-sweep / fx-orbit). */
   /* sweep: a bright node travels back and forth along the top edge */
   .fx-sweep .glass::before {
-    background: linear-gradient(90deg, transparent 0%, oklch(0.74 0.15 232 / 0.9) 50%, transparent 100%);
+    background: linear-gradient(90deg, transparent 0%, color-mix(in oklch, var(--accent) 90%, transparent) 50%, transparent 100%);
     background-size: 46% 100%; background-repeat: no-repeat;
     animation: accent-sweep 3.4s ease-in-out infinite alternate;
   }
@@ -178,10 +180,11 @@
   .fx-orbit .glass::after {
     content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.3px; pointer-events: none;
     background: conic-gradient(from var(--orbit-a),
-      transparent 0 68%,
-      oklch(0.80 0.15 232 / 0.85) 80%,
-      oklch(0.90 0.11 210 / 0.6) 84%,
-      transparent 90%);
+      transparent 0 66%,
+      color-mix(in oklch, var(--accent) 45%, transparent) 76%,
+      color-mix(in oklch, var(--accent) 95%, transparent) 82%,
+      color-mix(in oklch, var(--accent) 45%, transparent) 87%,
+      transparent 92%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
             mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor; mask-composite: exclude;

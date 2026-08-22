@@ -1,7 +1,7 @@
 'use client'
 import { registerWidget, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
-import { usePulseOn } from '@/components/surfaces/pulse'
+import { usePulseOn, useDanger, dangerHigh, dangerLow } from '@/components/surfaces/pulse'
 import { cn } from '@/lib/utils'
 import { MicOff } from 'lucide-react'
 import { SegMeter, Battery } from '@/components/mics/meters'
@@ -97,6 +97,7 @@ function MicCard({ mic, nowNext }: { mic: MicObj; nowNext?: { now?: string; next
   const battery = online ? ch?.battery : null
   const sennMute = mic.sennheiserInstanceId ? (ch?.mute ?? false) : undefined
   usePulseOn(`${cue}|${muted ? 1 : 0}|${sennMute ? 1 : 0}|${online ? 1 : 0}`)
+  useDanger(Math.max(dangerLow(battery, 50, 15), (cue === 'live' && (!!muted || !!sennMute)) ? 0.85 : 0))
   const tone = compositeTone(online, rf, battery, !!muted || !!sennMute, cue)
   return (
     <div className={cn('rounded-md border p-1.5 flex flex-col gap-1', TONE[tone])}>
