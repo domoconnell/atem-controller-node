@@ -17,6 +17,7 @@ import {
   parseCalibratedInputs,
   parseLoggedData,
   parseMetricsFrame,
+  parseSpectrumFrame,
   parseRootProperties,
   selectChannel,
   slugForMetric,
@@ -585,6 +586,11 @@ class SmaartConnector implements Connector<SmaartConfig> {
       return
     }
 
+    // A live RTA spectrum rides on the same stream (independent of the SPL
+    // metrics), so publish it before the metrics-liveness gates below.
+    const spectrum = parseSpectrumFrame(value)
+    if (spectrum) ctx.publish('spectrum', spectrum)
+
     const frame = parseMetricsFrame(value)
     if (!frame) return
 
@@ -870,6 +876,14 @@ export const smaartModule: ConnectorModule<SmaartConfig> = {
         // something is plugged in or out. Under `slow` it would be `$stale`
         // fifteen seconds after every connect and never clear.
         rateClass: 'change',
+      },
+      {
+        id: 'spectrum',
+        label: 'Spectrum (RTA)',
+        // A live real-time-analyzer curve — 1/3-octave band magnitudes per
+        // calibrated input. `fast`, no resampled history (it's a live view).
+        rateClass: 'fast',
+        history: 'none',
       },
     ],
     commands: [],

@@ -426,6 +426,34 @@ export interface MetricsFrame {
  * invented 0 dB reading is not, and that principle is worth more here than a
  * payload with a predictable set of keys.
  */
+export interface SpectrumInput { id: string; name: string; magnitudes: number[] }
+export interface SpectrumFrame { octaveFraction: number; weighting: string; freqs: number[]; inputs: SpectrumInput[] }
+
+/** A live RTA spectrum frame: `{ spectrum: { freqs[], inputs: [{ id, name,
+ *  magnitudes[] }], octaveFraction, weighting } }`. Total (never throws); returns
+ *  null when the frame carries no usable spectrum. */
+export function parseSpectrumFrame(value: unknown): SpectrumFrame | null {
+  const spec = asRecord(asRecord(value).spectrum)
+  const freqs = Array.isArray(spec.freqs) ? spec.freqs.filter((n): n is number => typeof n === 'number') : null
+  const list = Array.isArray(spec.inputs) ? spec.inputs : null
+  if (!freqs || freqs.length === 0 || !list) return null
+  const inputs: SpectrumInput[] = []
+  for (const entry of list) {
+    const r = asRecord(entry)
+    const magnitudes = Array.isArray(r.magnitudes) ? r.magnitudes.filter((n): n is number => typeof n === 'number') : []
+    if (magnitudes.length !== freqs.length) continue
+    const id = typeof r.id === 'string' ? r.id : String(r.name ?? '')
+    inputs.push({ id, name: typeof r.name === 'string' ? r.name : id, magnitudes })
+  }
+  if (inputs.length === 0) return null
+  return {
+    octaveFraction: typeof spec.octaveFraction === 'number' ? spec.octaveFraction : 3,
+    weighting: typeof spec.weighting === 'string' ? spec.weighting : 'Z',
+    freqs,
+    inputs,
+  }
+}
+
 export function parseMetricsFrame(value: unknown): MetricsFrame | null {
   const frame = asRecord(value)
   const list = frame.metrics

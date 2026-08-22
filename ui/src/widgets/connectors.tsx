@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { registerWidget, type WidgetDef, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
 import { usePulseOn, useDanger, dangerHigh, dangerLow } from '@/components/surfaces/pulse'
@@ -219,6 +219,61 @@ function SmaartStrip({ instanceId, title }: WidgetProps) {
   )
 }
 connector({ typeId: 'smaart', label: 'SPL', icon: Volume2, Panel: SmaartPanel, Strip: SmaartStrip, panelSize: { w: 4, h: 3 } })
+
+/** Live 1/3-octave RTA spectrum with a selectable input. */
+interface SpectrumInput { id: string; name: string; magnitudes: number[] }
+const SPEC_MIN = 40, SPEC_MAX = 100  // dB display range
+function specBarColor(db: number): string {
+  const t = Math.max(0, Math.min(1, (db - 60) / 38))      // 60→green … 98→red
+  return `hsl(${Math.round(140 - t * 140)} 80% 55%)`
+}
+const fLabel = (hz: number) => (hz >= 1000 ? `${hz / 1000}k` : `${hz}`)
+function SmaartSpectrum({ instanceId, title }: WidgetProps) {
+  const d = useStream(instanceId, 'spectrum') as { freqs?: number[]; inputs?: SpectrumInput[]; weighting?: string; octaveFraction?: number } | null
+  const inputs = d?.inputs ?? []
+  const freqs = d?.freqs ?? []
+  const [sel, setSel] = useState<string>('')
+  useEffect(() => { if ((!sel || !inputs.some((i) => i.id === sel)) && inputs[0]) setSel(inputs[0].id) }, [inputs, sel])
+  const cur = inputs.find((i) => i.id === sel) ?? inputs[0]
+  const mags = cur?.magnitudes ?? []
+  usePulseOn(inputs.map((i) => i.id).join())
+  const norm = (db: number) => Math.max(0, Math.min(1, (db - SPEC_MIN) / (SPEC_MAX - SPEC_MIN)))
+  const labelIdx = [7, 12, 17, 22, 27].filter((i) => i < freqs.length)  // 100 / 315 / 1k / 3.15k / 10k
+  return (
+    <div className="h-full flex flex-col">
+      <div className="shrink-0 flex items-center gap-2 px-3 pt-2 pb-1">
+        {title && <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground truncate">{title}</span>}
+        <span className="text-[9px] uppercase tracking-wide text-muted-foreground/60">RTA{d?.octaveFraction ? ` · 1/${d.octaveFraction}` : ''}{d?.weighting ? ` · ${d.weighting}` : ''}</span>
+        <select value={cur?.id ?? ''} onChange={(e) => setSel(e.target.value)} className="ml-auto bg-muted/40 border border-border rounded px-1.5 py-0.5 text-[11px] max-w-[45%] truncate">
+          {inputs.length === 0 && <option value="">no input</option>}
+          {inputs.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+        </select>
+      </div>
+      <div className="flex-1 min-h-0 relative px-3 pb-4">
+        {/* dB gridlines */}
+        {[60, 80, 100].map((db) => (
+          <div key={db} className="absolute left-3 right-3 border-t border-border/25 flex" style={{ bottom: `calc(${norm(db) * 100}% + 16px)` }}>
+            <span className="text-[7px] text-muted-foreground/40 -mt-2 ml-0.5 tabular-nums">{db}</span>
+          </div>
+        ))}
+        <div className="absolute inset-x-3 top-0 bottom-4 flex items-end gap-px">
+          {mags.length === 0 ? <div className="text-[11px] text-muted-foreground/50 m-auto">No spectrum.</div> : mags.map((db, i) => (
+            <div key={i} className="flex-1 min-w-0 rounded-t-[1px] transition-[height] duration-100"
+              style={{ height: `${norm(db) * 100}%`, background: specBarColor(db) }}
+              title={`${fLabel(freqs[i])} Hz · ${db.toFixed(1)} dB`} />
+          ))}
+        </div>
+        {/* frequency axis */}
+        <div className="absolute inset-x-3 bottom-0 h-4 pointer-events-none">
+          {labelIdx.map((i) => (
+            <span key={i} className="absolute text-[8px] text-muted-foreground/50 tabular-nums -translate-x-1/2" style={{ left: `${(i / (freqs.length - 1)) * 100}%`, bottom: 0 }}>{fLabel(freqs[i])}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', supportedTypeIds: ['smaart'], defaultSize: { w: 6, h: 4 }, Component: SmaartSpectrum })
 
 /* ==================================================================== QLAB */
 

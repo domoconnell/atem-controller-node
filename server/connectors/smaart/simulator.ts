@@ -50,6 +50,12 @@ const DEFAULT_METRICS = [
   'Exposure N',
 ]
 
+/** ISO 1/3-octave band centre frequencies, 20 Hz – 20 kHz (31 bands). */
+const THIRD_OCTAVE = [
+  20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000,
+  1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+]
+
 /** Eight frames a second is the specification's maximum, and its default. */
 const MAX_FPS = 8
 const FRAME_INTERVAL_MS = Math.round(1000 / MAX_FPS)
@@ -527,7 +533,29 @@ export class SmaartSimulator implements SimulatorHandle {
       deviceName: channel.deviceName,
       channelName: channel.channelName,
       metrics,
+      // A live real-time-analyzer spectrum. Smaart's API exposes live Spectrum
+      // measurements; the SDK frame format is request-only, so this is a
+      // faithful stand-in (1/3-octave band magnitudes, dB, evolving) for the
+      // spectrum widget until it can be confirmed against real hardware.
+      spectrum: this.spectrumPayload(),
     }
+  }
+
+  /** 1/3-octave RTA spectrum for every calibrated input — a pink-ish resting
+   *  curve with a moving band-by-band wobble, offset per input. */
+  private spectrumPayload(): Record<string, unknown> {
+    const inputs = this.channels.map((ch) => {
+      const chOff = ch.channelIndex * 2.5
+      const magnitudes = THIRD_OCTAVE.map((hz, i) => {
+        const l2 = Math.log2(hz / 250)
+        const base = 82 - 3.2 * Math.log10(hz / 1000) + 6 * Math.exp(-(l2 * l2) / 3.2)  // gentle mid bump + HF tilt
+        const move = 3.2 * Math.sin(this.tick / 5 + i * 0.7 + ch.channelIndex)
+          + 1.6 * Math.sin(this.tick / 2.3 + i * 1.9)
+        return Math.round((base + move + chOff) * 10) / 10
+      })
+      return { id: ch.channelName, name: ch.channelName, magnitudes }
+    })
+    return { octaveFraction: 3, weighting: 'Z', freqs: THIRD_OCTAVE, inputs }
   }
 
   // -------------------------------------------------------------------- log
