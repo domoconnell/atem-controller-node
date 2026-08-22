@@ -11,6 +11,7 @@ import { LookTile } from '@/components/atem/look-tile'
 import { LookSheet } from '@/components/atem/look-sheet'
 import { PlanStoryboard } from '@/components/atem/plan-storyboard'
 import { lookScene, liveScene, ppMediaThumb } from '@/lib/scene'
+import { useLookPreview } from '@/hooks/use-look-preview'
 import { fetchPlanGrades } from '@/lib/api'
 import type { PlanGrades } from '@/lib/types'
 import { RecordDialog } from '@/components/atem/record-dialog'
@@ -58,6 +59,11 @@ export default function Page() {
   }, [state, targetName])
 
   const me = state?.atem.mixEffects[state.mainMe]
+  // Hovering a different look loops an animated preview: tween the live layout
+  // to the target look, hold, replay.
+  const targetScene = useMemo(() => (target ? lookScene(target) : null), [target])
+  const animateHover = !!(state && target && target.name !== state.currentLook && !state.busy)
+  const previewScene = useLookPreview(state?.atem.boxes ?? [], targetScene, animateHover, target?.name ?? null)
   // Per-monitor width, capped by viewport height so the look grid keeps scroll
   // room; the two monitors are then spread with equal left/middle/right gaps.
   const monW = 'min(540px, max(220px, calc((100dvh - 620px) * 16 / 9)))'
@@ -104,12 +110,12 @@ export default function Page() {
 
                 <div className="min-w-0" style={{ width: monW }}>
                   <SsMonitor
-                    scene={target ? lookScene(target) : liveScene(state).scene}
-                    ghost={target && (target.me?.programInput ?? 6000) === 6000 ? state.atem.boxes : null}
+                    scene={target ? (previewScene ?? lookScene(target)) : liveScene(state).scene}
+                    ghost={!animateHover && target && (target.me?.programInput ?? 6000) === 6000 ? state.atem.boxes : null}
                     inputName={inputName}
                     mediaThumbUrl={ppMediaThumb(target ? target.pro?.media : state.propresenter?.currentMedia)}
                     displayBox={state.displayBox} proInput={state.propresenterInput}
-                    label={state.busy?.to ? 'Going to' : 'Preview'}
+                    label={state.busy?.to ? 'Going to' : animateHover ? 'Preview · animating' : 'Preview'}
                     tally="pvw"
                     sublabel={target ? `${target.name}${target.me?.programInputName ? ' · ' + target.me.programInputName : ''}` : 'hover a look'}
                     className={cn(target && target.name !== state.currentLook && !state.busy && 'glow-pvw')}
