@@ -29,6 +29,11 @@
  *                     connect to (they aim their OSC here instead of at the
  *                     desk). Everything they exchange is logged + forwarded.
  *                     Omit to just listen.  [optional]
+ *   --ports <list>    Also bind these EXTRA local ports and log anything the
+ *                     console sends to them — for hunting a metering stream that
+ *                     arrives on a port other than --recv. Comma list + ranges,
+ *                     e.g. "9001,10000-10030". Each is watched + fanned to relay
+ *                     clients too.  [optional]
  *   --query <N>       On start, send name/mute/fader "?" queries for channels
  *                     1..N to prod the desk into replying.  [default 0 = off]
  *   --prefix <p>      Address prefix for those queries: "" or "/sd".  [default /sd]
@@ -45,7 +50,18 @@
  *      Open a meter view on the desk/app, push some audio, ride a fader.
  *   4. Watch the table. Hit Ctrl+C for the summary. If you see high-rate rows or
  *      "BLOB" args, that's the meter stream — and the iPad is already getting it
- *      through the relay.
+ *      through the relay. The SUBSCRIBE/NEGOTIATION section shows any non-query
+ *      command the iPad sent (a meter-subscribe often names a port or IP — the
+ *      clue to where meters go).
+ *
+ * ── If nothing meter-like shows up on --recv ─────────────────────────────────
+ *   The console may stream meters on a different port (a negotiated one), or via
+ *   a non-OSC protocol. Cast a wider net:  --ports 9001,10000-10030  (bind lots
+ *   of local ports and see which lights up). If STILL nothing, the meters are
+ *   going somewhere we don't receive (possibly straight to the iPad's own IP);
+ *   the only fully-general way to find that is a packet capture on the wire:
+ *     sudo tcpdump -n -i <iface> host <deskIP> and udp -w digico.pcap
+ *   then open digico.pcap here — no live Wireshark UI needed. Ask me to parse it.
  */
 
 import { createSocket } from 'node:dgram'
@@ -60,6 +76,13 @@ if (!DESK) { console.error('error: --desk <ip> is required. See the header of th
 const SEND = Number(arg('send', 8000))
 const RECV = Number(arg('recv', 9000))
 const RELAY = arg('relay') ? Number(arg('relay')) : null
+// Extra local ports to watch (comma list + "a-b" ranges), for hunting a meter
+// stream that lands off the main --recv port.
+const EXTRA_PORTS = (arg('ports', '') || '').split(',').filter(Boolean).flatMap((tok) => {
+  const m = tok.match(/^(\d+)-(\d+)$/)
+  if (m) { const out = []; for (let p = +m[1]; p <= +m[2]; p++) out.push(p); return out }
+  return [Number(tok)]
+}).filter((p) => p > 0 && p !== RECV)
 const QUERY = Number(arg('query', 0))
 const PREFIX = arg('prefix', '/sd')
 const OUT = arg('out', 'digico-capture')
@@ -124,41 +147,71 @@ function encode(address, types = '', args = []) {
 const strBuf = (s) => { const b = Buffer.from(s + '\0', 'ascii'); return b.length % 4 ? Buffer.concat([b, Buffer.alloc(4 - (b.length % 4))]) : b }
 
 // ── stats ────────────────────────────────────────────────────────────────────
-const seen = new Map() // address -> { count, first, last, types, blob, sample }
-function note(dir, msg, from) {
+const seen = new Map() // address -> { count, first, last, types, blob, sample, ports:Set }
+const negotiation = [] // client→desk messages that look like a subscribe / meter request
+function note(dir, msg, from, arrivalPort) {
   const key = msg.address
-  const s = seen.get(key) ?? { count: 0, first: Date.now(), last: 0, types: msg.types, blob: false, sample: msg.args, dir }
+  const s = seen.get(key) ?? { count: 0, first: Date.now(), last: 0, types: msg.types, blob: false, sample: msg.args, dir, ports: new Set() }
   s.count++; s.last = Date.now(); s.types = msg.types
   if (msg.types.includes('b')) s.blob = true
+  if (arrivalPort) s.ports.add(arrivalPort)
   if (s.count <= 1) s.sample = msg.args
   seen.set(key, s)
-  raw.write(JSON.stringify({ t: now(), dir, from, address: msg.address, types: msg.types, args: msg.args }) + '\n')
+  raw.write(JSON.stringify({ t: now(), dir, from, port: arrivalPort, address: msg.address, types: msg.types, args: msg.args }) + '\n')
+  // Flag anything the downstream client (iPad) sends that isn't a plain query —
+  // a meter subscribe often names a port or IP, telling the console where to
+  // stream. That's exactly the clue to where meters go.
+  if (dir === 'client→desk' && !msg.address.endsWith('/?')) {
+    const looksLikeTarget = /meter|subscribe|subscription|rtp|stream|watch|feed/i.test(msg.address) ||
+      msg.args.some((a) => (typeof a === 'number' && a > 1024 && a < 65536) || (typeof a === 'string' && /\d+\.\d+\.\d+\.\d+/.test(a)))
+    if (looksLikeTarget) negotiation.push({ t: now(), from, address: msg.address, types: msg.types, args: msg.args })
+  }
   if (!QUIET && s.count === 1) {
     const tag = msg.types.includes('b') ? '  ◀── BLOB (meter candidate!)' : ''
-    console.log(`${now()}  ${dir.padEnd(10)} NEW  ${msg.address}  [${msg.types}] ${fmtArgs(msg.args)}${tag}`)
+    const pt = arrivalPort ? ` :${arrivalPort}` : ''
+    console.log(`${now()}  ${dir.padEnd(11)}${pt} NEW  ${msg.address}  [${msg.types}] ${fmtArgs(msg.args)}${tag}`)
   }
 }
 const fmtArgs = (a) => a.map((x) => (x && x.blob != null ? `<blob ${x.blob}B>` : JSON.stringify(x))).join(' ')
 
 // ── sockets ──────────────────────────────────────────────────────────────────
-const deskSock = createSocket('udp4')
-deskSock.on('error', (e) => console.error('[recv] socket error', e.message))
-deskSock.on('message', (buf, rinfo) => {
+// One handler for any port the console might send to. `arrivalPort` records
+// which local port caught it — the tell for where a meter stream lands.
+function handleFromDesk(buf, rinfo, arrivalPort) {
   const decoded = decode(buf)
   const list = Array.isArray(decoded) ? decoded : decoded ? [decoded] : []
-  if (list.length === 0) { raw.write(JSON.stringify({ t: now(), dir: 'desk→us', nonOsc: buf.length }) + '\n'); if (!QUIET) console.log(`${now()}  desk→us    NON-OSC ${buf.length} bytes: ${buf.subarray(0, 24).toString('hex')}…`); }
-  for (const m of list) note('desk→us', m, `${rinfo.address}:${rinfo.port}`)
-  // fan out to relay clients verbatim
-  if (relaySock) for (const c of clients.values()) relaySock.send(buf, c.port, c.ip)
-})
+  if (list.length === 0) {
+    raw.write(JSON.stringify({ t: now(), dir: 'desk→us', port: arrivalPort, nonOsc: buf.length, hex: buf.subarray(0, 32).toString('hex') }) + '\n')
+    const key = `<non-osc ${buf.length}B>`
+    const s = seen.get(key) ?? { count: 0, first: Date.now(), last: 0, types: '', blob: true, sample: [], dir: 'desk→us', ports: new Set() }
+    s.count++; s.last = Date.now(); s.ports.add(arrivalPort); seen.set(key, s)
+    if (!QUIET && s.count === 1) console.log(`${now()}  desk→us :${arrivalPort} NON-OSC ${buf.length}B (meter candidate!): ${buf.subarray(0, 24).toString('hex')}…`)
+  }
+  for (const m of list) note('desk→us', m, `${rinfo.address}:${rinfo.port}`, arrivalPort)
+  if (relaySock) for (const c of clients.values()) relaySock.send(buf, c.port, c.ip) // fan out verbatim
+}
+
+const deskSock = createSocket('udp4')
+deskSock.on('error', (e) => console.error('[recv] socket error', e.message))
+deskSock.on('message', (buf, rinfo) => handleFromDesk(buf, rinfo, RECV))
 deskSock.bind(RECV, () => {
   console.log(`\n▶ digico-watch`)
   console.log(`  listening for console feedback on udp:${RECV}  (point the desk's "send to" here)`)
   console.log(`  sending to console at ${DESK}:${SEND}`)
+  if (EXTRA_PORTS.length) console.log(`  also watching ${EXTRA_PORTS.length} extra port(s): ${summarisePorts(EXTRA_PORTS)}`)
   if (RELAY) console.log(`  relaying downstream clients (iPad/Companion) on udp:${RELAY}`)
   console.log(`  raw log → ${OUT}.jsonl   ·   Ctrl+C for summary\n`)
   if (QUERY > 0) startQueries()
 })
+
+// Extra watch ports — receive-only observers for a stray meter stream.
+for (const port of EXTRA_PORTS) {
+  const s = createSocket('udp4')
+  s.on('error', (e) => { if (e.code === 'EADDRINUSE') console.error(`  (port ${port} busy, skipping)`); else console.error(`[watch ${port}]`, e.message) })
+  s.on('message', (buf, rinfo) => handleFromDesk(buf, rinfo, port))
+  s.bind(port)
+}
+const summarisePorts = (ps) => ps.length <= 8 ? ps.join(',') : `${ps[0]}…${ps[ps.length - 1]} (${ps.length})`
 
 let relaySock = null
 const clients = new Map() // ip:port -> {ip, port, lastSeen}
@@ -169,7 +222,7 @@ if (RELAY) {
     clients.set(`${rinfo.address}:${rinfo.port}`, { ip: rinfo.address, port: rinfo.port, lastSeen: Date.now() })
     const decoded = decode(buf)
     const list = Array.isArray(decoded) ? decoded : decoded ? [decoded] : []
-    for (const m of list) note('client→desk', m, `${rinfo.address}:${rinfo.port}`)
+    for (const m of list) note('client→desk', m, `${rinfo.address}:${rinfo.port}`, RELAY)
     deskSock.send(buf, SEND, DESK) // forward verbatim; replies come back on RECV
   })
   relaySock.bind(RELAY)
@@ -210,15 +263,18 @@ setInterval(() => {
 // ── summary on exit ──────────────────────────────────────────────────────────
 function summarise() {
   const dur = (Date.now() - t0) / 1000
-  const rows = [...seen.entries()].map(([addr, s]) => ({ addr, count: s.count, hz: +(s.count / dur).toFixed(2), types: s.types, blob: s.blob, sample: s.sample, dir: s.dir }))
+  const rows = [...seen.entries()].map(([addr, s]) => ({ addr, count: s.count, hz: +(s.count / dur).toFixed(2), types: s.types, blob: s.blob, sample: s.sample, dir: s.dir, ports: [...s.ports] }))
   rows.sort((a, b) => b.count - a.count)
   const meterCandidates = rows.filter((r) => r.blob || r.hz >= 10)
   const lines = []
   lines.push(`digico-watch summary — ${new Date().toISOString()}`)
-  lines.push(`desk ${DESK}:${SEND}  ·  recv :${RECV}  ·  relay ${RELAY ?? 'off'}  ·  ${dur.toFixed(1)}s  ·  ${rows.length} unique addresses\n`)
-  lines.push('METER CANDIDATES (blob args or ≥10 Hz):')
-  if (meterCandidates.length === 0) lines.push('  none — no metering stream arrived on this OSC connection.')
-  for (const r of meterCandidates) lines.push(`  ${String(r.hz).padStart(6)} Hz  ×${String(r.count).padEnd(8)} [${r.types}] ${r.addr}${r.blob ? '  <BLOB>' : ''}`)
+  lines.push(`desk ${DESK}:${SEND}  ·  recv :${RECV}${EXTRA_PORTS.length ? ` +${EXTRA_PORTS.length} extra` : ''}  ·  relay ${RELAY ?? 'off'}  ·  ${dur.toFixed(1)}s  ·  ${rows.length} unique addresses\n`)
+  lines.push('METER CANDIDATES (blob args, non-OSC datagrams, or ≥10 Hz):')
+  if (meterCandidates.length === 0) lines.push('  none — no metering stream arrived on any watched port.')
+  for (const r of meterCandidates) lines.push(`  ${String(r.hz).padStart(6)} Hz  ×${String(r.count).padEnd(8)} [${r.types}] ${r.addr}${r.blob ? '  <BLOB>' : ''}  ← port ${r.ports.join(',') || '?'}`)
+  lines.push('\nSUBSCRIBE / NEGOTIATION (non-query commands the client sent — where does it ask meters to go?):')
+  if (negotiation.length === 0) lines.push('  none seen.')
+  for (const n of negotiation.slice(0, 40)) lines.push(`  ${n.t}s  ${n.address}  [${n.types}] ${fmtArgs(n.args)}`)
   lines.push('\nALL ADDRESSES (by volume):')
   for (const r of rows) lines.push(`  ×${String(r.count).padEnd(8)} ${String(r.hz).padStart(6)}Hz  [${r.types}] ${r.dir.padEnd(11)} ${r.addr}   e.g. ${fmtArgs(r.sample ?? [])}`)
   const text = lines.join('\n')
