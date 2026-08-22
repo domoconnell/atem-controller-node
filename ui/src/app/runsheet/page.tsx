@@ -6,13 +6,13 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
 import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading, RotateCcw } from 'lucide-react'
-import { isValidDuration } from '@/lib/runsheet'
+import { isValidDuration, isValidClock } from '@/lib/runsheet'
 import { useTopic } from '@/hooks/use-topic'
 
 interface Person { name: string; micId?: string; lead?: boolean }
-interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string }
+interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean }
 interface ProLink { playlistId: string; playlistName?: string; lastSync?: number }
-interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink }
+interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink; startTime?: string; startSegmentId?: string }
 interface MicDef { id: string; label: string }
 interface Playlist { id: string; name: string; path?: string }
 
@@ -103,6 +103,15 @@ export default function RunsheetPage() {
           <ServicePicker services={services} current={svc} onPick={setSelId}
             onNew={async () => { const list = await save({ name: 'New service', segments: [] }); const created = list[list.length - 1]; if (created) setSelId(created.id) }} />
           {svc && <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-40')} />}
+          {svc && <input value={svc.startTime ?? ''} onChange={(e) => update({ startTime: e.target.value })} placeholder="Start 10:30"
+            title="Service start time (wall clock) — the estimated finish is measured against this"
+            className={cn(sc, 'w-24 tabular-nums', !isValidClock(svc.startTime) && 'border-destructive text-destructive')} />}
+          {svc && <select value={svc.startSegmentId ?? ''} onChange={(e) => update({ startSegmentId: e.target.value || undefined })}
+            title="Which item the start time applies to — items before it (pre-roll, countdown) are pre-service"
+            className={cn(sc, 'max-w-[150px]')}>
+            <option value="">Starts at first item</option>
+            {segments.filter((s) => s.kind !== 'header').map((s) => <option key={s.id} value={s.id}>↳ {s.titleOverride || s.title}</option>)}
+          </select>}
           {svc && <ProLinkControl link={svc.proLink}
             onLink={async (pl) => { await save({ id: svc.id, proLink: { playlistId: pl.id, playlistName: pl.path || pl.name } }); await syncNow(svc.id) }}
             onUnlink={() => save({ id: svc.id, proLink: null as unknown as undefined })}
@@ -226,6 +235,11 @@ function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, 
         <input value={seg.time ?? ''} onChange={(e) => onChange({ ...seg, time: e.target.value })} placeholder="10:00"
           title={isValidDuration(seg.time) ? 'Planned duration — M:SS or H:MM:SS' : 'Invalid time — use M:SS or H:MM:SS'}
           className={cn(sc, 'w-20 tabular-nums', !isValidDuration(seg.time) && 'border-destructive text-destructive focus:border-destructive')} />
+        <button onClick={() => onChange({ ...seg, flexible: !seg.flexible })}
+          title={seg.flexible ? 'Flexible — may be shortened to catch up (a talk/message). Click to make fixed.' : 'Fixed length (e.g. a song). Click to allow shortening to keep on time.'}
+          className={cn('shrink-0 w-11 rounded px-1 py-1 text-[9px] font-black uppercase tracking-wider', seg.flexible ? 'bg-busy/15 text-busy' : 'bg-muted/40 text-muted-foreground/50 hover:text-muted-foreground')}>
+          {seg.flexible ? 'Flex' : 'Fixed'}
+        </button>
         {synced
           ? <span className="w-7.5 shrink-0" />
           : <button onClick={onRemove} className="p-1.5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground"><Trash2 className="size-3.5" /></button>}

@@ -10,8 +10,17 @@ import type { Mic as MicObj } from '@/components/mics/mic-composite'
 import {
   type Person, type Segment, type Service,
   isHeader, segTitle, nextItemIndex, prevItemIndex, firstItemIndex, lastItemIndex, sectionFor, resolveService, gotoIndex,
-  parseDuration, fmtDuration,
+  parseDuration, fmtDuration, computeTiming, fmtClockTs,
 } from '@/lib/runsheet'
+
+/** Colour the finish estimate: on/under time is calm blue, drifting over goes
+ *  amber then red as the overrun grows. */
+function finishTone(deltaSec: number | null): string {
+  if (deltaSec == null) return 'text-muted-foreground'
+  if (deltaSec <= 15) return 'text-info'
+  if (deltaSec <= 180) return 'text-busy'
+  return 'text-destructive'
+}
 
 /** Re-renders about twice a second so live timers tick. Only runs when enabled
  *  (a segment is actually running), so idle widgets stay quiet. */
@@ -149,7 +158,8 @@ function RunsheetList({ config, title }: WidgetProps) {
   const idx = svc?.activeIndex ?? null
   usePulseOn(idx)
   const nextIdx = idx != null ? nextItemIndex(segs, idx) : firstItemIndex(segs)
-  const now = useTick(idx != null)
+  const now = useTick(!!svc)                 // tick always so the finish estimate is live
+  const timing = computeTiming(svc, now)
   const contRef = useRef<HTMLDivElement>(null)
   const nowRef = useRef<HTMLDivElement>(null)
   const nextRef = useRef<HTMLDivElement>(null)
@@ -167,6 +177,18 @@ function RunsheetList({ config, title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
+      {timing.estFinish != null && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
+          <span className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Est. finish</span>
+          <span className={cn('tabular-nums font-bold text-[15px] leading-none', finishTone(timing.deltaSec))}>{fmtClockTs(timing.estFinish, true)}</span>
+          {timing.deltaSec != null && (
+            <span className={cn('ml-auto tabular-nums text-[11px] font-semibold', finishTone(timing.deltaSec))}>
+              {timing.deltaSec > 0 ? '▲ ' : timing.deltaSec < -15 ? '▼ ' : '● '}{timing.deltaSec > 0 ? '+' : ''}{fmtDuration(timing.deltaSec)}
+            </span>
+          )}
+          {timing.plannedEnd != null && <span className="tabular-nums text-[10px] text-muted-foreground/60">/ {fmtClockTs(timing.plannedEnd)}</span>}
+        </div>
+      )}
       <div ref={contRef} className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5">
         {!svc ? <div className="text-[11px] text-muted-foreground/50 px-1">No service.</div> : segs.length === 0 ? <div className="text-[11px] text-muted-foreground/50 px-1">Empty runsheet.</div> : (
           segs.map((seg, i) => {
@@ -190,7 +212,13 @@ function RunsheetList({ config, title }: WidgetProps) {
                   <span className="text-[12.5px] font-semibold truncate shrink min-w-0">{segTitle(seg)}</span>
                   {/* lead mics on the same line */}
                   {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
-                  <span className="ml-auto shrink-0 text-[11px] pl-1">
+                  <span className="ml-auto shrink-0 text-[11px] pl-1 flex items-center gap-2">
+                    {(() => { const sug = timing.suggest.get(seg.id); return !isNow && sug ? (
+                      <span className={cn('tabular-nums text-[10px]', sug.trimmed ? 'text-busy' : 'text-info/70')}
+                        title={sug.trimmed ? `suggested start (trimmed to ${fmtDuration(sug.dur)})` : 'suggested start'}>
+                        {fmtClockTs(sug.start)}{sug.trimmed ? '*' : ''}
+                      </span>
+                    ) : null })()}
                     {isNow ? <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} /> : <span className="tabular-nums text-muted-foreground/70">{seg.time || ''}</span>}
                   </span>
                 </div>
