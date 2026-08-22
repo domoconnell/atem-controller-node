@@ -58,6 +58,9 @@ export default function Page() {
   }, [state, targetName])
 
   const me = state?.atem.mixEffects[state.mainMe]
+  // Per-monitor width, capped by viewport height so the look grid keeps scroll
+  // room; the two monitors are then spread with equal left/middle/right gaps.
+  const monW = 'min(540px, max(220px, calc((100dvh - 620px) * 16 / 9)))'
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -80,8 +83,8 @@ export default function Page() {
             )}
             {/* ---- Left column: pinned monitors + scrolling looks ---- */}
             <div className="min-w-0 min-h-0 flex flex-col gap-4">
-              <div className="shrink-0 grid gap-3 grid-cols-2" style={{ maxWidth: 'min(1100px, max(440px, calc((100dvh - 620px) * 32 / 9)))' }}>
-                <div>
+              <div className="shrink-0 flex justify-evenly items-start">
+                <div className="min-w-0" style={{ width: monW }}>
                   <SsMonitor
                     scene={liveScene(state).scene}
                     mixTo={liveScene(state).mixTo}
@@ -99,7 +102,7 @@ export default function Page() {
                   </div>
                 </div>
 
-                <div>
+                <div className="min-w-0" style={{ width: monW }}>
                   <SsMonitor
                     scene={target ? lookScene(target) : liveScene(state).scene}
                     ghost={target && (target.me?.programInput ?? 6000) === 6000 ? state.atem.boxes : null}
@@ -124,7 +127,7 @@ export default function Page() {
               </div>
 
               {/* transition storyboard: what the engine will do + simulator verdict */}
-              <div className="shrink-0 surface rounded-xl px-3 h-[76px] max-w-[1100px] flex flex-col justify-center overflow-hidden">
+              <div className="shrink-0 surface rounded-xl px-3 h-[76px] flex flex-col justify-center overflow-hidden">
                 <div className="text-[9.5px] uppercase tracking-[0.18em] text-muted-foreground mb-1 truncate flex items-center gap-3">
                   <span>Transition plan {target && target.name !== state.currentLook ? `→ ${target.name}` : ''}</span>
                   {state.verify?.results[0] && (
@@ -165,7 +168,7 @@ export default function Page() {
                       onOpen={() => { setOpenLook(look); setSheetOpen(true) }}
                     />
                   )
-                  const gridCls = 'grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 min-[2000px]:grid-cols-6'
+                  const gridCls = 'grid gap-2.5 grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 min-[2000px]:grid-cols-8'
                   if (!foldered) return <div className={gridCls}>{state.looks.map(tile)}</div>
                   return (
                     <div className="space-y-4">
