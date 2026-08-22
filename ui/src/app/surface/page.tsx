@@ -47,7 +47,7 @@ function MainGrid({ surface, instances }: { surface: Surface; instances: IRef[] 
   return (
     <div ref={ref} className="flex-1 min-h-0 min-w-0 overflow-hidden">
       {w > 0 && h > 0 && (
-        <Grid className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }} rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} isDraggable={false} isResizable={false}>
+        <Grid key={`${surface.id}:${surface.display}`} className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }} rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} isDraggable={false} isResizable={false}>
           {surface.main.widgets.map((p) => (<div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }} className="p-1.5"><WidgetView p={p} instances={instances} /></div>))}
         </Grid>
       )}

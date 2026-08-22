@@ -2,7 +2,7 @@
 import type { Look, Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SsMonitor } from './ss-monitor'
-import { lookScene, ppMediaThumb } from '@/lib/scene'
+import { lookScene, liveScene, ppMediaThumb } from '@/lib/scene'
 import { useLookPreview } from '@/hooks/use-look-preview'
 import { Play, Info, MonitorPlay, Zap, Film } from 'lucide-react'
 
@@ -23,10 +23,11 @@ export function LookTile({
   const usks = look.me?.uskOnAir ?? []
   const pgm = look.me?.programInputName ?? (look.me?.programInput != null ? inputName(look.me.programInput) : '—')
   // On hover, animate this thumbnail through the transition from the live state
-  // to this look (loops); static otherwise.
+  // to this look (loops); static otherwise. Box changes tween; program/USK/art
+  // changes crossfade — so it always reflects roughly what taking it does.
   const toScene = lookScene(look)
   const animate = isTarget && !isCurrent && !state.busy
-  const scene = useLookPreview(state.atem.boxes, toScene, animate, look.name)
+  const anim = useLookPreview(liveScene(state).scene, toScene, animate, look.name)
 
   return (
     <div
@@ -39,7 +40,7 @@ export function LookTile({
         !isCurrent && !isTarget && 'hover:border-foreground/25'
       )}
     >
-      <SsMonitor scene={scene ?? toScene} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media, 200)} displayBox={state.displayBox} proInput={state.propresenterInput} showLabels showGrid={false} className="p-1 rounded-lg" />
+      <SsMonitor scene={anim.scene} mixTo={anim.mixTo} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media, 200)} displayBox={state.displayBox} proInput={state.propresenterInput} showLabels showGrid={false} className="p-1 rounded-lg" />
 
       <div className="mt-2 flex items-start gap-2">
         <div className="min-w-0 flex-1">

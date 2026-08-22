@@ -3,13 +3,20 @@ import { useEffect, useRef, useState } from 'react'
 import type { Box } from '@/lib/types'
 import type { Scene } from '@/components/atem/ss-monitor'
 
+const SS = 6000
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
-/** Interpolate the SuperSource box layout from `from` to `to` at 0..1.
- *  Boxes present in both tween their geometry; boxes appearing pop in (size
- *  grows), boxes leaving pop out (size shrinks) — mirroring how the switcher
- *  brings SuperSource boxes on and off during a real transition. */
+export interface PreviewAnim { scene: Scene; mixTo: { scene: Scene; t: number } | null }
+
+/** Signature of the visible SuperSource layout, to tell whether two looks
+ *  differ in their box arrangement. */
+function boxSig(boxes: (Box | null)[]): string {
+  return (boxes ?? []).map((b) => (b && b.enabled && b.size > 0 ? `${b.source},${Math.round(b.x)},${Math.round(b.y)},${Math.round(b.size)}` : '-')).join('|')
+}
+
+/** Interpolate the SuperSource layout from `from` to `to` at 0..1 — boxes in
+ *  both move/resize, appearing boxes pop in, leaving boxes pop out. */
 function animBoxes(from: (Box | null)[], to: (Box | null)[], t: number): (Box | null)[] {
   const n = Math.max(from.length, to.length)
   const out: (Box | null)[] = []
@@ -25,9 +32,9 @@ function animBoxes(from: (Box | null)[], to: (Box | null)[], t: number): (Box | 
         cropLeft: lerp(a!.cropLeft ?? 0, b!.cropLeft ?? 0, t), cropRight: lerp(a!.cropRight ?? 0, b!.cropRight ?? 0, t),
       })
     } else if (bOn) {
-      out.push({ ...b!, enabled: true, size: b!.size * t })          // pop in
+      out.push({ ...b!, enabled: true, size: b!.size * t })
     } else if (aOn) {
-      out.push({ ...a!, enabled: t < 1, size: a!.size * (1 - t) })   // pop out
+      out.push({ ...a!, enabled: t < 1, size: a!.size * (1 - t) })
     } else {
       out.push(null)
     }
@@ -36,26 +43,40 @@ function animBoxes(from: (Box | null)[], to: (Box | null)[], t: number): (Box | 
 }
 
 /**
- * When `active`, loop an animated preview of the transition from the live
- * scene to the target scene: tween in, hold, restart. When inactive, return
- * the static target scene. Keyed on `key` (the target look name) so the loop
- * only restarts when the hovered look — not every state tick — changes.
+ * Loop an animated preview of the transition from the live scene to the target
+ * scene: tween in, hold, replay. Picks the mode automatically —
+ *  - both SuperSource with a changed box layout → animate the boxes;
+ *  - otherwise (program change, direct feed, USK/art-only change) → crossfade,
+ *    which the monitor renders as a mix (keys/art/program fade through).
+ * When inactive, returns the static target. Keyed on `key` (the hovered look
+ * name) so the loop restarts only when the hovered look changes.
  */
-export function useLookPreview(fromBoxes: (Box | null)[], to: Scene | null, active: boolean, key: string | null): Scene | null {
-  const fromRef = useRef(fromBoxes); fromRef.current = fromBoxes
-  const toRef = useRef(to); toRef.current = to
-  const [scene, setScene] = useState<Scene | null>(to)
+export function useLookPreview(fromScene: Scene, toScene: Scene | null, active: boolean, key: string | null): PreviewAnim {
+  const fromRef = useRef(fromScene); fromRef.current = fromScene
+  const toRef = useRef(toScene); toRef.current = toScene
+  const [anim, setAnim] = useState<PreviewAnim>({ scene: toScene ?? fromScene, mixTo: null })
 
   useEffect(() => {
-    if (!active || !to) { setScene(to); return }
+    if (!active || !toScene) { setAnim({ scene: toScene ?? fromRef.current, mixTo: null }); return }
     const DUR = 1100, HOLD = 950, CYCLE = DUR + HOLD
+    // Decide the mode once per hovered look.
+    const from = fromRef.current, to = toRef.current!
+    const tween = from.program === SS && to.program === SS && boxSig(from.boxes) !== boxSig(to.boxes)
     let raf = 0, start = 0
     const tick = (now: number) => {
       if (!start) start = now
       const el = (now - start) % CYCLE
       const t = el < DUR ? easeInOutCubic(el / DUR) : 1
-      const tgt = toRef.current!
-      setScene({ ...tgt, boxes: animBoxes(fromRef.current, tgt.boxes, t) })
+      const f = fromRef.current, tg = toRef.current!
+      if (tween) {
+        setAnim({ scene: { ...tg, boxes: animBoxes(f.boxes, tg.boxes, t) }, mixTo: null })
+      } else if (t <= 0.001) {
+        setAnim({ scene: f, mixTo: null })
+      } else if (t >= 0.999) {
+        setAnim({ scene: tg, mixTo: null })   // hold on the target
+      } else {
+        setAnim({ scene: f, mixTo: { scene: tg, t } })
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -63,5 +84,5 @@ export function useLookPreview(fromBoxes: (Box | null)[], to: Scene | null, acti
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, key])
 
-  return active && to ? scene : to
+  return active && toScene ? anim : { scene: toScene ?? fromScene, mixTo: null }
 }

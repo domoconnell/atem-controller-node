@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAtemState } from '@/hooks/use-atem-state'
 import { cmd } from '@/lib/api'
-import type { Look } from '@/lib/types'
+import type { Look, Snapshot } from '@/lib/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { StatusBar } from '@/components/atem/status-bar'
 import { SsMonitor } from '@/components/atem/ss-monitor'
@@ -30,6 +30,16 @@ export default function Page() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [grades, setGrades] = useState<PlanGrades>({})
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Keep the take timeline on screen ~2s after the transition finishes, showing
+  // every step complete, before reverting to the status panel.
+  const [heldBusy, setHeldBusy] = useState<Snapshot['busy']>(null)
+  useEffect(() => {
+    if (state?.busy) { setHeldBusy(state.busy); return }
+    if (!heldBusy) return
+    const t = setTimeout(() => setHeldBusy(null), 2000)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.busy])
 
   const locked = !!(state?.busy || state?.animating)
 
@@ -200,7 +210,7 @@ export default function Page() {
 
             {/* ---- Right rail: status panel, or the live take timeline ---- */}
             <aside className="min-w-0 min-h-0 overflow-y-auto">
-              {state.busy ? <TransitionTimeline busy={state.busy} /> : <MePanel state={state} locked={locked} />}
+              {state.busy || heldBusy ? <TransitionTimeline busy={(state.busy ?? heldBusy)!} done={!state.busy} /> : <MePanel state={state} locked={locked} />}
             </aside>
           </main>
         )}

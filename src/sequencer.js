@@ -138,7 +138,7 @@ export class Sequencer extends EventEmitter {
     this.current = {
       name, stepIndex: 0, totalSteps: steps.length,
       from: meta.from ?? null, to: meta.to ?? null,
-      steps: steps.map((s) => this._stepLabel(s)),
+      steps: steps.map((s) => ({ type: s.type, label: this._stepLabel(s) })),
     }
     this._stopRequested = false
     this.emit('busy', this.current)
