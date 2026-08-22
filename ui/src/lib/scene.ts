@@ -1,5 +1,11 @@
-import type { Look, Snapshot } from './types'
+import type { Look, ProMedia, Snapshot } from './types'
 import type { Scene } from '@/components/atem/ss-monitor'
+
+/** URL of a ProPresenter background-media thumbnail (proxied by our server),
+ *  or null. `quality` doubles as an approximate pixel width. */
+export function ppMediaThumb(m?: ProMedia | null, quality = 300): string | null {
+  return m?.item?.uuid ? `/api/features/propresenter/media/${encodeURIComponent(m.item.uuid)}/thumbnail?quality=${quality}` : null
+}
 
 /** Scene as recorded in a look. */
 export function lookScene(look: Look, ssInput = 6000): Scene {

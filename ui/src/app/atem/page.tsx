@@ -10,7 +10,7 @@ import { MePanel } from '@/components/atem/me-panel'
 import { LookTile } from '@/components/atem/look-tile'
 import { LookSheet } from '@/components/atem/look-sheet'
 import { PlanStoryboard } from '@/components/atem/plan-storyboard'
-import { lookScene, liveScene } from '@/lib/scene'
+import { lookScene, liveScene, ppMediaThumb } from '@/lib/scene'
 import { fetchPlanGrades } from '@/lib/api'
 import type { PlanGrades } from '@/lib/types'
 import { RecordDialog } from '@/components/atem/record-dialog'
@@ -77,6 +77,8 @@ export default function Page() {
                     scene={liveScene(state).scene}
                     mixTo={liveScene(state).mixTo}
                     inputName={inputName}
+                    mediaThumbUrl={ppMediaThumb(state.propresenter?.currentMedia)}
+                    displayBox={state.displayBox}
                     label="Program"
                     tally="pgm"
                     sublabel={me ? `${inputName(me.programInput)}${me.inTransition ? ` · MIX ${Math.round((me.handlePosition / 10000) * 100)}%` : ''}` : undefined}
@@ -93,6 +95,8 @@ export default function Page() {
                     scene={target ? lookScene(target) : liveScene(state).scene}
                     ghost={target && (target.me?.programInput ?? 6000) === 6000 ? state.atem.boxes : null}
                     inputName={inputName}
+                    mediaThumbUrl={ppMediaThumb(target ? target.pro?.media : state.propresenter?.currentMedia)}
+                    displayBox={state.displayBox}
                     label={state.busy?.to ? 'Going to' : 'Preview'}
                     tally="pvw"
                     sublabel={target ? `${target.name}${target.me?.programInputName ? ' · ' + target.me.programInputName : ''}` : 'hover a look'}

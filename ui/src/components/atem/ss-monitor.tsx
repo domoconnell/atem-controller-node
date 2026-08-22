@@ -35,6 +35,10 @@ export interface SsMonitorProps {
   showLabels?: boolean
   ghost?: (Box | null)[] | null
   ssInput?: number
+  /** JPEG URL of the ProPresenter background media, painted into `displayBox`. */
+  mediaThumbUrl?: string | null
+  /** Zero-indexed SS box that carries the ProMain feed (config.supersource.displayBox). */
+  displayBox?: number
 }
 
 // ---- source colours: stable per input id -------------------------------
@@ -93,10 +97,22 @@ function hexA(hex: string, a: number) {
 
 export function SsMonitor({
   boxes, scene, mixTo, inputName, tally = 'plain', label, sublabel, className,
-  showGrid = true, showLabels = true, ghost, ssInput = 6000,
+  showGrid = true, showLabels = true, ghost, ssInput = 6000, mediaThumbUrl = null, displayBox,
 }: SsMonitorProps) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [, force] = useState(0)
+  // Load the ProPresenter background thumbnail once per URL; redraw on load.
+  const mediaImg = useRef<{ url: string; img: HTMLImageElement; ready: boolean } | null>(null)
+  useEffect(() => {
+    if (!mediaThumbUrl) { mediaImg.current = null; force((n) => n + 1); return }
+    if (mediaImg.current?.url === mediaThumbUrl) return
+    const img = new Image()
+    const rec = { url: mediaThumbUrl, img, ready: false }
+    mediaImg.current = rec
+    img.onload = () => { if (mediaImg.current === rec) { rec.ready = true; force((n) => n + 1) } }
+    img.onerror = () => { if (mediaImg.current === rec) mediaImg.current = null }
+    img.src = mediaThumbUrl
+  }, [mediaThumbUrl])
   useEffect(() => {
     const c = ref.current
     if (!c) return
@@ -125,7 +141,7 @@ export function SsMonitor({
     ctx.fillRect(0, 0, W, H)
 
     // ---- draw one scene (background layer + boxes) ----
-    const drawScene = (s: Scene, alpha: number, labels: boolean) => {
+    const drawScene = (s: Scene, alpha: number, labels: boolean, drawMedia = false) => {
       ctx.save()
       ctx.globalAlpha = alpha
       if (s.program === ssInput) {
@@ -182,10 +198,27 @@ export function SsMonitor({
           g.addColorStop(0, hexA(col, 0.42)); g.addColorStop(1, hexA(col, 0.22))
           ctx.fillStyle = g
           ctx.fillRect(x, y, w, h)
+          // -- ProPresenter background media: paint the real thumbnail into the
+          //    ProMain box, scaled to COVER the full source frame and clipped to
+          //    the visible (cropped) region, so a crop shows the right slice --
+          let hasMedia = false
+          if (drawMedia && i === displayBox && mediaImg.current?.ready) {
+            const im = mediaImg.current.img
+            const ar = im.width / im.height, far = full.w / full.h
+            let dw, dh, dx, dy
+            if (ar > far) { dh = full.h; dw = dh * ar; dx = full.x - (dw - full.w) / 2; dy = full.y }
+            else { dw = full.w; dh = dw / ar; dx = full.x; dy = full.y - (dh - full.h) / 2 }
+            ctx.save()
+            ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
+            ctx.globalAlpha = alpha
+            try { ctx.drawImage(im, dx, dy, dw, dh) } catch { /* decode not ready */ }
+            ctx.restore()
+            hasMedia = true
+          }
           // faint "picture" cue of the FULL source (diagonals + centre ring),
           // clipped to the visible region, so a top-half crop reads as "the
           // top half of the picture" rather than "a smaller picture"
-          if (labels && (big || w > 40 * dpr)) {
+          if (labels && !hasMedia && (big || w > 40 * dpr)) {
             ctx.save()
             ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()
             ctx.strokeStyle = hexA(col, 0.22)
@@ -327,12 +360,12 @@ export function SsMonitor({
     if (ghost) drawScene({ program: ssInput, boxes: ghost }, 0.28, false)
     if (mixTo && mixTo.t > 0 && mixTo.t < 1) {
       if (mixTo.keysOnly) {
-        drawScene(sc, 1, true)
+        drawScene(sc, 1, true, true)
         // keys crossfade: outgoing keys fade out, incoming fade in
         drawKeys(sc, 1 - mixTo.t)
         drawKeys(mixTo.scene, mixTo.t)
       } else {
-        drawScene(sc, 1, true)
+        drawScene(sc, 1, true, true)
         drawScene(mixTo.scene, mixTo.t, true)
         drawKeys(sc, 1 - mixTo.t)
         drawKeys(mixTo.scene, mixTo.t)
@@ -343,7 +376,7 @@ export function SsMonitor({
         ctx.fillRect(0, H - 4 * dpr, W * mixTo.t, 4 * dpr)
       }
     } else {
-      drawScene(sc, 1, true)
+      drawScene(sc, 1, true, true)
       drawKeys(sc, 1)
     }
 

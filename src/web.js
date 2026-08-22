@@ -237,6 +237,22 @@ export class WebServer {
       catch (e) { res.status(502).json({ ok: false, error: e.message, items: [] }) }
     })
 
+    // Proxy a ProPresenter media thumbnail (JPEG) so surfaces on other machines
+    // can show the background of the ProMain box. Thumbnails are static per
+    // media uuid, so cache hard. `quality` doubles as a size knob (~px width).
+    app.get('/api/features/propresenter/media/:id/thumbnail', async (req, res) => {
+      const base = this.propresenter?.baseUrl
+      if (!base) return res.status(503).end()
+      const q = Math.min(1600, Math.max(80, Number(req.query.quality) || 300))
+      try {
+        const r = await fetch(`${base}/v1/media/${encodeURIComponent(req.params.id)}/thumbnail?quality=${q}`, { signal: AbortSignal.timeout(4000) })
+        if (!r.ok) return res.status(r.status).end()
+        res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg')
+        res.set('Cache-Control', 'public, max-age=86400, immutable')
+        res.send(Buffer.from(await r.arrayBuffer()))
+      } catch { res.status(502).end() }
+    })
+
     // Set/replace a look's ProPresenter block (audience look and/or macro).
     app.put('/api/looks/:name/pro', (req, res) => {
       try { res.json({ ok: true, look: this.looks.setPro(req.params.name, req.body ?? null) }) }
@@ -787,9 +803,12 @@ export class WebServer {
       busy: this.sequencer.current,
       animating: this.animator.running,
       mainMe: this.atem.me,
+      displayBox: config.supersource?.displayBox ?? 3,
       propresenter: {
         connected: this.propresenter.connected,
         configured: !!this.propresenter.baseUrl,
+        currentLook: this.propresenter.currentLook ?? null,
+        currentMedia: this.propresenter.currentMedia ?? null,
       },
       verify: this.verifier?.snapshot() ?? null,
     }

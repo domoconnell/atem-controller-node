@@ -2,7 +2,7 @@
 import type { Look, Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SsMonitor } from './ss-monitor'
-import { lookScene } from '@/lib/scene'
+import { lookScene, ppMediaThumb } from '@/lib/scene'
 import { Play, Info, MonitorPlay, Zap, Film } from 'lucide-react'
 
 export function LookTile({
@@ -33,7 +33,7 @@ export function LookTile({
         !isCurrent && !isTarget && 'hover:border-foreground/25'
       )}
     >
-      <SsMonitor scene={lookScene(look)} inputName={inputName} showLabels showGrid={false} className="p-1 rounded-lg" />
+      <SsMonitor scene={lookScene(look)} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media, 200)} displayBox={state.displayBox} showLabels showGrid={false} className="p-1 rounded-lg" />
 
       <div className="mt-2 flex items-start gap-2">
         <div className="min-w-0 flex-1">

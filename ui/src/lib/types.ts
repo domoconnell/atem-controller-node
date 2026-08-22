@@ -103,7 +103,8 @@ export interface Snapshot {
   busy: { name: string; stepIndex: number; totalSteps: number; from?: string | null; to?: string | null } | null
   animating: boolean
   mainMe: number
-  propresenter?: { connected: boolean; configured: boolean }
+  displayBox?: number
+  propresenter?: { connected: boolean; configured: boolean; currentLook?: ProLook | null; currentMedia?: ProMedia | null }
   verify?: {
     results: VerifyResult[]
     lastGrade: unknown
