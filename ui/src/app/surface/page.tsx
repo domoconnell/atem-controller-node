@@ -113,7 +113,7 @@ export default function SurfaceViewer() {
       {surface.footer.enabled && <Strip widgets={surface.footer.widgets} instances={instances} />}
 
       <Pullouts surface={surface} instances={instances} openEdge={openEdge} onOpenEdge={setOpenEdge} />
-      {browserId && <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-foreground/70 tabular-nums pointer-events-none select-none bg-black/45 rounded-md px-2 py-0.5 border border-border/50 backdrop-blur-sm">{browserId}</div>}
+      {browserId && <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-foreground/70 tabular-nums pointer-events-none select-none bg-black/45 rounded-b-md px-2 py-0.5 border border-t-0 border-border/50 backdrop-blur-sm">{browserId}</div>}
     </div>
   )
 }
