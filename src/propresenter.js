@@ -29,6 +29,7 @@ export class ProPresenter extends EventEmitter {
     this._looksFetched = 0
     this.currentLook = null // { uuid, name, index, stableUuid } — the live audience look
     this.looksList = [] // [{ uuid, name, index }] — all defined audience looks
+    this.currentMedia = null // { playlist:{uuid,name,index}, item:{uuid,name,index} } — the live background media, or null
     this._mockStart = Date.now()
     this._timer = null
     // Runtime config: seeded from config.json, overridable from the Settings UI
@@ -132,7 +133,13 @@ export class ProPresenter extends EventEmitter {
             if (this.currentLook?.name !== next.name) changed = true
             this.currentLook = next
           } else if (this.currentLook) { this.currentLook = null; changed = true }
-        } catch { /* looks unsupported on this PP build — leave last known */ }
+          // Live background media on the audience wall. Its uuids are stable
+          // (they match the enumerated playlist), so recall by uuid directly.
+          const active = await this._get(`${base}/v1/media/playlist/active`).catch(() => null)
+          const it = active?.item?.uuid ? { playlist: this._idOf(active.playlist), item: this._idOf(active.item) } : null
+          if ((this.currentMedia?.item?.uuid ?? null) !== (it?.item?.uuid ?? null)) changed = true
+          this.currentMedia = it
+        } catch { /* looks/media unsupported on this PP build — leave last known */ }
       }
       if (changed) {
         wire('rx', 'propres', 'timers-changed', short([...this.timers.values()].map((t) => `${t.name}=${Math.round(t.remaining)}s/${t.state}`).join(' '), 110))
@@ -182,6 +189,7 @@ export class ProPresenter extends EventEmitter {
       configured: !!this.baseUrl,
       timers: [...this.timers.values()],
       currentLook: this.currentLook,
+      currentMedia: this.currentMedia,
     }
   }
 
@@ -267,6 +275,52 @@ export class ProPresenter extends EventEmitter {
     if (!base || !idOrName) return false
     return this._trigger(`${base}/v1/macro/${encodeURIComponent(idOrName)}/trigger`)
   }
+
+  /** Media (background) playlists, flattened through groups:
+   *  [{ id, name, path }] (id = playlist uuid). */
+  async getMediaPlaylists() {
+    const base = this.baseUrl
+    if (!base) return []
+    const root = await this._get(`${base}/v1/media/playlists`).catch(() => [])
+    const out = []
+    const walk = (nodes, prefix) => {
+      for (const n of nodes ?? []) {
+        const name = n.id?.name ?? '?'
+        const uuid = n.id?.uuid
+        const path = prefix ? `${prefix} / ${name}` : name
+        const kind = String(n.type ?? '').toLowerCase()
+        if (kind === 'group' && Array.isArray(n.children)) walk(n.children, path)
+        else if (uuid) out.push({ id: uuid, name, path })
+      }
+    }
+    walk(Array.isArray(root) ? root : root?.items, '')
+    return out
+  }
+
+  /** One media playlist's items: [{ uuid, name, index, type, duration }]. */
+  async getMediaItems(playlistId) {
+    const base = this.baseUrl
+    if (!base || !playlistId) return []
+    const pl = await this._get(`${base}/v1/media/playlist/${encodeURIComponent(playlistId)}`).catch(() => null)
+    return (pl?.items ?? []).map((it) => ({ uuid: it.id?.uuid, name: it.id?.name, index: it.id?.index, type: it.type, duration: it.duration }))
+  }
+
+  /** Trigger a background media item (playlist uuid + item uuid). Puts it on
+   *  the audience wall's media layer. */
+  async triggerMedia(playlistId, itemId) {
+    const base = this.baseUrl
+    if (!base || !playlistId || !itemId) return false
+    return this._trigger(`${base}/v1/media/playlist/${encodeURIComponent(playlistId)}/${encodeURIComponent(itemId)}/trigger`)
+  }
+
+  /** Clear the audience media layer (remove the background). */
+  async clearMedia() {
+    const base = this.baseUrl
+    if (!base) return false
+    return this._trigger(`${base}/v1/clear/layer/media`)
+  }
+
+  _idOf(o) { return o ? { uuid: o.uuid, name: o.name, index: o.index } : null }
 
   /** GET a trigger endpoint that answers 204/no-body (so _get's JSON parse
    *  would throw). Returns true on 2xx. */

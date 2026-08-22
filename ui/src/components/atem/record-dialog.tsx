@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { cmd } from '@/lib/api'
-import type { ProLook, Snapshot } from '@/lib/types'
+import type { ProLook, ProMedia, Snapshot } from '@/lib/types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Circle, MonitorPlay } from 'lucide-react'
+import { Circle, MonitorPlay, Film } from 'lucide-react'
 import { SsMonitor } from './ss-monitor'
 import { liveScene } from '@/lib/scene'
 
@@ -20,7 +20,7 @@ export function RecordDialog({ open, onOpenChange, state, locked }: {
   const [busy, setBusy] = useState(false)
   // ProPresenter: the look captured with this Stage It look, plus an optional
   // macro (theme+background bundle) to fire when the look is taken.
-  const [pro, setPro] = useState<{ current: ProLook | null; macros: ProLook[] } | null>(null)
+  const [pro, setPro] = useState<{ current: ProLook | null; currentMedia: ProMedia | null; macros: ProLook[] } | null>(null)
   const [macroId, setMacroId] = useState('')
   const canon = slug(name)
   const exists = !!canon && state.looks.some((l) => l.name === canon)
@@ -31,7 +31,7 @@ export function RecordDialog({ open, onOpenChange, state, locked }: {
     if (!open) return
     setMacroId('')
     fetch('/api/features/propresenter/looks').then((r) => r.json())
-      .then((b) => setPro(b.ok ? { current: b.current ?? null, macros: b.macros ?? [] } : null))
+      .then((b) => setPro(b.ok ? { current: b.current ?? null, currentMedia: b.currentMedia ?? null, macros: b.macros ?? [] } : null))
       .catch(() => setPro(null))
   }, [open])
 
@@ -40,12 +40,13 @@ export function RecordDialog({ open, onOpenChange, state, locked }: {
     if (exists && !confirm(`'${canon}' already exists — overwrite it with the current live state?`)) return
     setBusy(true)
     const r = await cmd('/look/capture', [canon])
-    // Capture already records the live PP look; attach the chosen macro (if any).
+    // Capture already records the live PP look + background media; attaching a
+    // macro re-writes the whole block, so carry the captured look/media through.
     const macro = pro?.macros.find((m) => String(m.uuid) === macroId)
-    if (r.ok && macro && pro?.current) {
+    if (r.ok && macro) {
       await fetch(`/api/looks/${encodeURIComponent(canon)}/pro`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ look: pro.current, macro }),
+        body: JSON.stringify({ look: pro?.current ?? null, media: pro?.currentMedia ?? null, macro }),
       }).catch(() => {})
     }
     setBusy(false)
@@ -79,13 +80,22 @@ export function RecordDialog({ open, onOpenChange, state, locked }: {
           </div>
         </div>
 
-        {pro?.current && (
+        {pro && (
           <div className="rounded-lg border border-border bg-muted/30 p-2.5 space-y-2">
+            {pro?.current && (
+              <div className="flex items-center gap-1.5 text-[12px]">
+                <MonitorPlay className="size-3.5 text-info" />
+                <span className="text-muted-foreground">ProPresenter look</span>
+                <b className="text-foreground">{pro.current.name}</b>
+                <span className="text-[10px] text-muted-foreground/70">— recalled when this look is taken</span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5 text-[12px]">
-              <MonitorPlay className="size-3.5 text-info" />
-              <span className="text-muted-foreground">ProPresenter look</span>
-              <b className="text-foreground">{pro.current.name}</b>
-              <span className="text-[10px] text-muted-foreground/70">— recalled when this look is taken</span>
+              <Film className="size-3.5 text-info" />
+              <span className="text-muted-foreground">Background</span>
+              {pro?.currentMedia?.item?.name
+                ? <b className="text-foreground">{pro.currentMedia.item.name}</b>
+                : <span className="text-muted-foreground/60">none on the wall</span>}
             </div>
             <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className="shrink-0">Also fire macro</span>

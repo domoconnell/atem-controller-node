@@ -82,18 +82,27 @@ export class TransitionEngine {
       })
     }
 
-    // ---- ProPresenter audience look + macro (idempotent) ----------------
+    // ---- ProPresenter look + background media + macro (idempotent) ------
     // Fire early so the lyric theme / background swaps as the wall transitions.
-    // The look trigger is skipped when PP already reports that look live; a
+    // Look and media triggers are skipped when PP already reports them live; a
     // macro (theme+background bundle) always fires when attached.
-    if (target.pro?.look || target.pro?.macro) {
+    if (target.pro?.look || target.pro?.media || target.pro?.macro) {
       const liveLook = this.propresenter?.currentLook?.name ?? null
       const wantLook = target.pro?.look?.name ?? null
       const needLook = !!wantLook && liveLook !== wantLook
-      if (needLook || target.pro?.macro) {
-        steps.push({ type: 'propresenter', look: needLook ? target.pro.look : null, macro: target.pro?.macro ?? null })
+      const liveMedia = this.propresenter?.currentMedia?.item?.uuid ?? null
+      const wantMedia = target.pro?.media?.item?.uuid ?? null
+      const needMedia = !!wantMedia && liveMedia !== wantMedia
+      if (needLook || needMedia || target.pro?.macro) {
+        steps.push({
+          type: 'propresenter',
+          look: needLook ? target.pro.look : null,
+          media: needMedia ? target.pro.media : null,
+          macro: target.pro?.macro ?? null,
+        })
         const bits = []
         if (needLook) bits.push(`look → ${wantLook}`)
+        if (needMedia) bits.push(`media → ${target.pro.media.item.name}`)
         if (target.pro?.macro) bits.push(`macro → ${target.pro.macro.name}`)
         notes.push(`ProPresenter: ${bits.join(', ')}`)
       }

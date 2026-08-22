@@ -31,8 +31,9 @@ function describe(s: PlanStep, inputName: (id: number) => string): { icon: React
     case 'hyperdeckEnsure': return { icon: Film, text: `HyperDeck ${s.status}`, tone: 'text-muted-foreground' }
     case 'propresenter': {
       const lk = (s.look as { name?: string } | null)?.name
+      const md = (s.media as { item?: { name?: string } } | null)?.item?.name
       const mc = (s.macro as { name?: string } | null)?.name
-      const bits = [lk && `look ${lk}`, mc && `macro ${mc}`].filter(Boolean).join(' + ')
+      const bits = [lk && `look ${lk}`, md && `bg ${md}`, mc && `macro ${mc}`].filter(Boolean).join(' + ')
       return { icon: MonitorPlay, text: `ProPresenter ${bits}`, tone: 'text-info' }
     }
     case 'setMixRate': return { icon: Waves, text: `rate ${s.frames}f`, tone: 'text-muted-foreground/60' }

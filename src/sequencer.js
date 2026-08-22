@@ -178,6 +178,7 @@ export class Sequencer extends EventEmitter {
         break
       case 'propresenter':
         if (step.look) await this.propresenter?.triggerLook(step.look.uuid || step.look.name)
+        if (step.media?.item?.uuid) await this.propresenter?.triggerMedia(step.media.playlist?.uuid, step.media.item.uuid)
         if (step.macro) await this.propresenter?.triggerMacro(step.macro.uuid || step.macro.name)
         break
 

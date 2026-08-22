@@ -123,15 +123,17 @@ export class LookStore extends EventEmitter {
   _capturePro(existing = null) {
     const macro = existing?.pro?.macro ?? null
     const c = this.propresenter?.currentLook
-    if (!c) return existing?.pro ? { look: existing.pro.look ?? null, macro } : null
-    return { look: { uuid: c.stableUuid ?? c.uuid ?? null, name: c.name ?? null, index: c.index ?? null }, macro }
+    const media = this.propresenter?.currentMedia ?? null // { playlist, item } | null
+    const look = c ? { uuid: c.stableUuid ?? c.uuid ?? null, name: c.name ?? null, index: c.index ?? null } : (existing?.pro?.look ?? null)
+    if (!look && !media && !macro) return null
+    return { look, media, macro }
   }
 
   /** Set/replace a look's ProPresenter block (audience look and/or macro) from
    *  the UI, without disturbing the rest of the captured state. */
   setPro(name, pro) {
     const look = this.mustGet(name)
-    look.pro = pro && (pro.look || pro.macro) ? { look: pro.look ?? null, macro: pro.macro ?? null } : null
+    look.pro = pro && (pro.look || pro.media || pro.macro) ? { look: pro.look ?? null, media: pro.media ?? null, macro: pro.macro ?? null } : null
     if (this.store) this.store.putLook(slug(name), look.name, look)
     try { writeFileSync(path.join(looksDir, `${slug(name)}.json`), JSON.stringify(look, null, 2)) } catch { /* backup only */ }
     this.emit('changed')

@@ -76,12 +76,14 @@ export interface Look {
     loop: boolean; singleClip: boolean; speed: number | null
   }
   pro?: {
-    look?: { uuid?: string | null; name?: string | null; index?: number | null } | null
-    macro?: { uuid?: string | null; name?: string | null; index?: number | null } | null
+    look?: ProLook | null
+    media?: { playlist?: ProLook | null; item?: ProLook | null } | null
+    macro?: ProLook | null
   } | null
 }
 
 export interface ProLook { uuid?: string | null; name?: string | null; index?: number | null }
+export interface ProMedia { playlist?: ProLook | null; item?: ProLook | null }
 
 export interface Snapshot {
   sennheiser?: { enabled: boolean; simulated: boolean; online: number; total: number }

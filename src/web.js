@@ -218,12 +218,23 @@ export class WebServer {
     // (the Record dialog). `current` is the live audience look right now.
     app.get('/api/features/propresenter/looks', async (_req, res) => {
       try {
-        const [looks, macros] = await Promise.all([
+        const [looks, macros, mediaPlaylists] = await Promise.all([
           this.propresenter?.getLooks?.() ?? [],
           this.propresenter?.getMacros?.() ?? [],
+          this.propresenter?.getMediaPlaylists?.() ?? [],
         ])
-        res.json({ ok: true, looks, macros, current: this.propresenter?.currentLook ?? null })
-      } catch (e) { res.status(502).json({ ok: false, error: e.message, looks: [], macros: [], current: null }) }
+        res.json({
+          ok: true, looks, macros, mediaPlaylists,
+          current: this.propresenter?.currentLook ?? null,
+          currentMedia: this.propresenter?.currentMedia ?? null,
+        })
+      } catch (e) { res.status(502).json({ ok: false, error: e.message, looks: [], macros: [], mediaPlaylists: [], current: null, currentMedia: null }) }
+    })
+
+    // Items in one PP media playlist (for the media picker in the Record dialog).
+    app.get('/api/features/propresenter/media/:playlistId', async (req, res) => {
+      try { res.json({ ok: true, items: (await this.propresenter?.getMediaItems?.(req.params.playlistId)) ?? [] }) }
+      catch (e) { res.status(502).json({ ok: false, error: e.message, items: [] }) }
     })
 
     // Set/replace a look's ProPresenter block (audience look and/or macro).
