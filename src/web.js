@@ -5,7 +5,7 @@ import { WebSocketServer } from 'ws'
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { config, projectRoot, configPath, applyConfigUpdate } from './config.js'
 import { Simulator } from './simulator.js'
-import { wireBus, wireHistory } from './wire.js'
+import { wire, wireBus, wireHistory } from './wire.js'
 
 /**
  * Status web UI: express serves public/, a WebSocket pushes the full status
@@ -30,6 +30,9 @@ export class WebServer {
     // other. calls: [{ from, to, at }] where from/to are browserIds.
     this.calls = []
     this.sessionNames = (() => { try { return { ...(this.store?.allSettings()?.sessionNames ?? {}) } } catch { return {} } })()
+    // Runsheet automation: segment actions auto-fire on playhead move when armed.
+    // Default armed (consistent with mic cues); the operator can disarm to rehearse.
+    this.automationArmed = (() => { try { const v = this.store?.allSettings()?.automationArmed; return v == null ? true : !!v } catch { return true } })()
 
     const app = express()
     app.use(express.json())
@@ -245,11 +248,32 @@ export class WebServer {
       this.store.putService(req.params.id, name, data, sortOrder)
       // Moving the playhead re-cues mics server-side (the single source of truth,
       // so OSC and every client behave identically).
-      if (moved) this.applyCues({ segments: data.segments }, data.activeIndex)
+      if (moved) { this.applyCues({ segments: data.segments }, data.activeIndex); this.runSegmentActions({ segments: data.segments }, data.activeIndex) }
       this.publishServices()
       res.json({ ok: true, services: this.store.listServices() })
     })
     app.delete('/api/features/services/:id', (req, res) => { this.store?.deleteService(req.params.id); this.publishServices(); res.json({ ok: true, services: this.store?.listServices() ?? [] }) })
+
+    // Runsheet automation arm switch — when armed, a segment's actions auto-fire
+    // as the playhead lands on it. Reflected live over feature:services.
+    app.get('/api/features/automation', (_req, res) => res.json({ ok: true, armed: this.automationArmed }))
+    app.put('/api/features/automation', (req, res) => {
+      if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'armed')) this.setAutomationArmed(!!req.body.armed)
+      res.json({ ok: true, armed: this.automationArmed })
+    })
+    // Fire a single segment's actions on demand (manual override / test), ignoring
+    // the arm switch. { serviceId, index } or { serviceId, segId }.
+    app.post('/api/features/services/:id/fire', (req, res) => {
+      const svc = this.store?.listServices().find((s) => s.id === req.params.id)
+      if (!svc) return res.status(404).json({ ok: false, error: 'service not found' })
+      const segs = svc.segments ?? []
+      let idx = req.body?.index
+      if (idx == null && req.body?.segId) idx = segs.findIndex((s) => s.id === req.body.segId)
+      if (idx == null || idx < 0 || idx >= segs.length) return res.status(400).json({ ok: false, error: 'index or segId required' })
+      const armed = this.automationArmed
+      this.automationArmed = true; this.runSegmentActions(svc, idx); this.automationArmed = armed
+      res.json({ ok: true })
+    })
 
     // ProPresenter playlists — for linking a service to a live playlist so its
     // segment list stays in sync with ProPresenter (see startRunsheetSync).
@@ -629,7 +653,7 @@ export class WebServer {
   /** Push the full services list onto the realtime hub so every runsheet widget
    *  updates at once over the shared WebSocket (no per-widget HTTP polling). */
   publishServices() {
-    try { this.connectorEngine?.hub?.publish('feature:services', { services: this.store?.listServices() ?? [] }) }
+    try { this.connectorEngine?.hub?.publish('feature:services', { services: this.store?.listServices() ?? [], automationArmed: this.automationArmed }) }
     catch { /* hub optional (engine may be absent) */ }
     this.pushCompanionRunsheet()
   }
@@ -697,7 +721,59 @@ export class WebServer {
     if (changed) this.publishMics()
   }
 
-  /** Move a service's playhead, re-cue mics, stamp the timer and broadcast. */
+  // ---- Runsheet automation: segment actions fired on playhead entry ----------
+  /** Fire the segment-at-idx's configured actions (ATEM look, ProPresenter
+   *  presentation/media, mic mute). Auto-fires on every playhead move, gated by
+   *  the global arm switch. Fire-and-forget: one action failing never blocks the
+   *  move or the others. */
+  runSegmentActions(svc, idx) {
+    if (!this.automationArmed || idx == null) return
+    const seg = (svc?.segments ?? [])[idx]
+    const actions = Array.isArray(seg?.actions) ? seg.actions : []
+    for (const a of actions) {
+      if (!a || a.enabled === false) continue
+      Promise.resolve(this._runAction(a, seg)).catch((e) => wire('rx', 'auto', `action ${a.type} failed: ${e?.message ?? e}`))
+    }
+  }
+
+  async _runAction(a, seg) {
+    switch (a.type) {
+      case 'atem-look':
+        if (a.look) { wire('tx', 'auto', `look → ${a.look}`); await this.sequencer?.goto(a.look) }
+        break
+      case 'pp-presentation': {
+        const id = a.presentationId || seg?.proItemId
+        if (id) { wire('tx', 'auto', `PP presentation → ${a.presentationName || id}${a.index != null ? ` #${a.index}` : ''}`); await this.propresenter?.triggerPresentation(id, a.index) }
+        break
+      }
+      case 'pp-media':
+        if (a.playlistId && a.itemId) { wire('tx', 'auto', `PP media → ${a.itemName || a.itemId}`); await this.propresenter?.triggerMedia(a.playlistId, a.itemId) }
+        break
+      case 'mic-mute':
+        await this._setMicMute(a)
+        break
+    }
+  }
+
+  /** Mute/unmute a composite mic via whatever backs it (DiGiCo channel today).
+   *  toggle reads the mic's current live mute from the hub snapshot. */
+  async _setMicMute(a) {
+    const mic = this.store?.listMics().find((m) => m.id === a.micId)
+    if (!mic) return
+    const muted = a.muteAction === 'toggle' ? !this._micMuted(mic) : a.muteAction !== 'unmute'
+    if (mic.digicoInstanceId && mic.digicoChannel != null && this.connectorEngine) {
+      wire('tx', 'auto', `${muted ? 'mute' : 'unmute'} → ${mic.label} (DiGiCo ch ${mic.digicoChannel})`)
+      await this.connectorEngine.command(mic.digicoInstanceId, 'channel.mute', { channel: mic.digicoChannel, muted })
+    }
+  }
+
+  setAutomationArmed(armed) {
+    this.automationArmed = !!armed
+    try { this.store?.setSetting('automationArmed', this.automationArmed) } catch { /* best effort */ }
+    this.publishServices()
+  }
+
+  /** Move a service's playhead, re-cue mics, stamp the timer, fire actions and broadcast. */
   setActiveIndex(svcId, idx) {
     const svc = this.store?.listServices().find((s) => s.id === svcId)
     if (!svc) return
@@ -708,6 +784,7 @@ export class WebServer {
     if (seg?.id) actuals[seg.id] = ts
     this.store.putService(id, name, { ...data, activeIndex: idx, activeStartedAt: ts, actuals }, sortOrder)
     this.applyCues({ ...svc, activeIndex: idx }, idx)
+    this.runSegmentActions({ ...svc, activeIndex: idx }, idx)
     this.publishServices()
   }
 

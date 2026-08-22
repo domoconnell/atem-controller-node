@@ -217,3 +217,9 @@ export function queryMessages(prefix: string, channelCount: number): OscMessage[
 export function fireMacroMessage(prefix: string, index: number): OscMessage {
   return { address: `${prefix}/Macros/Buttons/press`, args: [index] }
 }
+
+/** Set an input channel's mute. Same address the console reports mute on, which
+ *  is bidirectional on the Pad OSC command set (1 = muted, 0 = open). */
+export function muteChannelMessage(prefix: string, channel: number, muted: boolean): OscMessage {
+  return { address: `${prefix}/Input_Channels/${channel}/mute`, args: [muted ? 1 : 0] }
+}

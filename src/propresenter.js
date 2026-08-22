@@ -313,6 +313,16 @@ export class ProPresenter extends EventEmitter {
     return this._trigger(`${base}/v1/media/playlist/${encodeURIComponent(playlistId)}/${encodeURIComponent(itemId)}/trigger`)
   }
 
+  /** Trigger a presentation (by uuid or name). With `index` set, jumps to that
+   *  slide/cue; without it, triggers the presentation (its first cue). Used by
+   *  runsheet automation to bring a song/message up as its item goes live. */
+  async triggerPresentation(idOrUuid, index) {
+    const base = this.baseUrl
+    if (!base || !idOrUuid) return false
+    const suffix = index != null && index !== '' ? `/${encodeURIComponent(index)}` : ''
+    return this._trigger(`${base}/v1/presentation/${encodeURIComponent(idOrUuid)}${suffix}/trigger`)
+  }
+
   /** Clear the audience media layer (remove the background). */
   async clearMedia() {
     const base = this.baseUrl

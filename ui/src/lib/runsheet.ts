@@ -1,9 +1,31 @@
 /** Shared runsheet model + helpers, used by the Runsheet app and its widgets. */
 
 export interface Person { name: string; micId?: string; lead?: boolean }
+
+/** An automation fired when the playhead lands on a segment (auto-fire, gated by
+ *  the global "automation armed" switch). Configured per segment in the runsheet.
+ *  Recalling an ATEM look also fires that look's embedded PP look + bg media. */
+export type RunActionType = 'atem-look' | 'pp-presentation' | 'pp-media' | 'mic-mute'
+export interface RunAction {
+  id: string
+  type: RunActionType
+  enabled?: boolean                       // default true; false = configured but skipped
+  look?: string                           // atem-look: look name
+  presentationId?: string                 // pp-presentation: PP presentation uuid (defaults to the segment's own)
+  presentationName?: string
+  index?: number | null                   // pp-presentation: slide index (blank = whole presentation)
+  playlistId?: string                     // pp-media: media playlist uuid
+  playlistName?: string
+  itemId?: string                         // pp-media: media item uuid
+  itemName?: string
+  micId?: string                          // mic-mute: composite mic id (resolves to DiGiCo channel etc.)
+  micLabel?: string
+  muteAction?: 'mute' | 'unmute' | 'toggle'
+}
+
 /** `flexible`: this item's time can be shortened to catch up (a talk/message);
- *  songs and fixed items leave it off. */
-export interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean }
+ *  songs and fixed items leave it off. `actions`: automations fired on entry. */
+export interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean; actions?: RunAction[] }
 /** `startTime` "HH:MM" is the wall-clock the service should hit at `startSegmentId`
  *  (items before it — pre-roll, countdown — are pre-service). */
 /** `actuals`: segId -> wall-clock ms the item was actually made active (stamped

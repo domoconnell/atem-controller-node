@@ -10,6 +10,7 @@ import {
   fireMacroMessage,
   interpret,
   type MacroState,
+  muteChannelMessage,
   queryMessages,
 } from './protocol.js'
 import { DigicoSimulator } from './simulator.js'
@@ -41,6 +42,7 @@ export const digicoConfigSchema = z.object({
 export type DigicoConfig = z.infer<typeof digicoConfigSchema>
 
 const fireMacroInput = z.object({ index: z.number().int().min(1).max(500) })
+const muteChannelInput = z.object({ channel: z.number().int().min(1).max(128), muted: z.boolean() })
 
 /** Keeps the message feed to something a widget can render. */
 const MESSAGE_LIMIT = 50
@@ -98,16 +100,27 @@ class DigicoConnector implements Connector<DigicoConfig> {
   async exec(commandId: string, input: unknown): Promise<CommandResult> {
     const ctx = this.ctx
     if (!ctx) return commandFail('NOT_CONNECTED', 'Not connected')
-    if (commandId !== 'macro.fire') return commandFail('NOT_FOUND', `Unknown command ${commandId}`)
 
-    if (!ctx.config.allowMacroFire) {
-      return commandFail('NOT_ALLOWED', 'Firing macros is disabled for this console')
+    if (commandId === 'macro.fire') {
+      if (!ctx.config.allowMacroFire) {
+        return commandFail('NOT_ALLOWED', 'Firing macros is disabled for this console')
+      }
+      const parsed = fireMacroInput.safeParse(input)
+      if (!parsed.success) return commandFail('INVALID_INPUT', 'Pick a macro number')
+      this.send(fireMacroMessage(ctx.config.addressPrefix, parsed.data.index))
+      return commandOk()
     }
-    const parsed = fireMacroInput.safeParse(input)
-    if (!parsed.success) return commandFail('INVALID_INPUT', 'Pick a macro number')
 
-    this.send(fireMacroMessage(ctx.config.addressPrefix, parsed.data.index))
-    return commandOk()
+    // Mute/unmute an input channel — drives runsheet mic-mute automation. The
+    // console echoes the new mute back, so the UI catches up on its own.
+    if (commandId === 'channel.mute') {
+      const parsed = muteChannelInput.safeParse(input)
+      if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { channel, muted }')
+      this.send(muteChannelMessage(ctx.config.addressPrefix, parsed.data.channel, parsed.data.muted))
+      return commandOk()
+    }
+
+    return commandFail('NOT_FOUND', `Unknown command ${commandId}`)
   }
 
   private onDatagram(buffer: Buffer): void {
@@ -213,6 +226,13 @@ export const digicoModule: ConnectorModule<DigicoConfig> = {
         label: 'Fire macro',
         description: 'Presses a macro on the console — for acknowledging a message.',
         inputSchema: fireMacroInput,
+        dangerous: true,
+      },
+      {
+        id: 'channel.mute',
+        label: 'Mute / unmute channel',
+        description: 'Sets an input channel’s mute — drives runsheet mic-mute automation.',
+        inputSchema: muteChannelInput,
         dangerous: true,
       },
     ],
