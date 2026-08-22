@@ -544,9 +544,12 @@ export class WebServer {
     sennheiser?.on('presence', markDirty) // header LED state rides the main snapshot
     // Timer values tick every poll; only rebroadcast the main snapshot when
     // the ProPresenter *connection* state changes.
+    // Rebroadcast when the connection OR the live audience look / background
+    // media changes, so the "what's live now" panel reflects what ProPresenter
+    // is actually doing — even when the change was made in ProPresenter itself.
     let ppState = ''
     propresenter.on('update', (snap) => {
-      const key = `${snap.connected}:${snap.configured}`
+      const key = `${snap.connected}:${snap.configured}:${snap.currentLook?.name ?? ''}:${snap.currentMedia?.item?.uuid ?? ''}`
       if (key !== ppState) { ppState = key; markDirty() }
     })
   }
