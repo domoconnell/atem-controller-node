@@ -264,13 +264,11 @@ function RunsheetList({ config, title }: WidgetProps) {
             const others = seg.people.filter((p) => !p.lead)
             return (
               <div key={seg.id} ref={isNow ? nowRef : isNext ? nextRef : undefined}
-                className={cn('rounded-md pr-2 pl-2 py-1 border-l-2', isNow ? 'bg-live/15 border-live' : isNext ? 'bg-busy/10 border-busy' : 'border-transparent')}>
+                className={cn('rounded-md pr-2 pl-2 py-1.5 mb-1 border-l-2', isNow ? 'bg-live/15 border-live' : isNext ? 'bg-busy/10 border-busy' : 'border-transparent')}>
                 <div className="flex items-center gap-2">
                   <span className={cn('text-[12.5px] font-semibold truncate shrink min-w-0', isNow ? 'text-live' : isNext ? 'text-busy' : '')}>{segTitle(seg)}</span>
                   {/* automations attached to this item (dimmed while disarmed) */}
                   <ActionIcons actions={seg.actions} className={cn(!armed && 'opacity-40 grayscale')} />
-                  {/* lead mics on the same line */}
-                  {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
                   {(() => {
                     const info = timing.plan.get(seg.id)
                     const sug = timing.suggest.get(seg.id)
@@ -303,9 +301,10 @@ function RunsheetList({ config, title }: WidgetProps) {
                     )
                   })()}
                 </div>
-                {others.length > 0 && (
-                  <div className="pl-1 pt-0.5 flex flex-wrap gap-1.5 gap-y-1 text-muted-foreground">
-                    {others.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}
+                {/* mic cues on their own line — leads first, then the rest */}
+                {seg.people.length > 0 && (
+                  <div className="pl-1 pt-1 flex flex-wrap gap-1.5 gap-y-1 text-muted-foreground">
+                    {[...leads, ...others].map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}
                   </div>
                 )}
               </div>
