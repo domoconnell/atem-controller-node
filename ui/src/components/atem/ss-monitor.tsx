@@ -35,10 +35,14 @@ export interface SsMonitorProps {
   showLabels?: boolean
   ghost?: (Box | null)[] | null
   ssInput?: number
-  /** JPEG URL of the ProPresenter background media, painted into `displayBox`. */
+  /** JPEG URL of the ProPresenter background media, painted where ProPresenter shows. */
   mediaThumbUrl?: string | null
-  /** Zero-indexed SS box that carries the ProMain feed (config.supersource.displayBox). */
+  /** Zero-indexed SS box carrying the main display feed (config.supersource.displayBox);
+   *  used as a fallback for where ProPresenter shows when `proInput` is unset. */
   displayBox?: number
+  /** ATEM input number carrying ProPresenter. When set, the media paints into ANY box
+   *  on this source and full-frame when it is the direct program — not tied to a box index. */
+  proInput?: number | null
 }
 
 // ---- source colours: stable per input id -------------------------------
@@ -97,7 +101,7 @@ function hexA(hex: string, a: number) {
 
 export function SsMonitor({
   boxes, scene, mixTo, inputName, tally = 'plain', label, sublabel, className,
-  showGrid = true, showLabels = true, ghost, ssInput = 6000, mediaThumbUrl = null, displayBox,
+  showGrid = true, showLabels = true, ghost, ssInput = 6000, mediaThumbUrl = null, displayBox, proInput = null,
 }: SsMonitorProps) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [, force] = useState(0)
@@ -201,8 +205,11 @@ export function SsMonitor({
           // -- ProPresenter background media: paint the real thumbnail into the
           //    ProMain box, scaled to COVER the full source frame and clipped to
           //    the visible (cropped) region, so a crop shows the right slice --
+          // The box shows ProPresenter when it's on the configured PP input;
+          // if that isn't set, fall back to the display-box index.
+          const isProBox = proInput != null ? b.source === proInput : i === displayBox
           let hasMedia = false
-          if (drawMedia && i === displayBox && mediaImg.current?.ready) {
+          if (drawMedia && isProBox && mediaImg.current?.ready) {
             const im = mediaImg.current.img
             const ar = im.width / im.height, far = full.w / full.h
             let dw, dh, dx, dy
@@ -274,8 +281,10 @@ export function SsMonitor({
         // ProMain input (the source the displayBox carries), the ProPresenter
         // background media full-frame, since the whole output is ProPresenter.
         const col = sourceColor(s.program)
-        const promainSrc = displayBox != null ? s.boxes?.[displayBox]?.source : undefined
-        const im = drawMedia && mediaImg.current?.ready && promainSrc != null && s.program === promainSrc ? mediaImg.current.img : null
+        // The direct feed IS ProPresenter when it's the configured PP input;
+        // fall back to whatever source the display box carries.
+        const proSrc = proInput != null ? proInput : (displayBox != null ? s.boxes?.[displayBox]?.source : undefined)
+        const im = drawMedia && mediaImg.current?.ready && proSrc != null && s.program === proSrc ? mediaImg.current.img : null
         if (im) {
           const ar = im.width / im.height, far = W / H
           let dw, dh, dx, dy

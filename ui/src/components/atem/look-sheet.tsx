@@ -58,7 +58,7 @@ export function LookSheet({
         </SheetHeader>
 
         <div className="px-5">
-          <SsMonitor scene={lookScene(look)} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media)} displayBox={state.displayBox} label={isCurrent ? 'PGM' : 'Look'} tally={isCurrent ? 'pgm' : 'plain'} sublabel={look.me?.programInputName} />
+          <SsMonitor scene={lookScene(look)} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media)} displayBox={state.displayBox} proInput={state.propresenterInput} label={isCurrent ? 'PGM' : 'Look'} tally={isCurrent ? 'pgm' : 'plain'} sublabel={look.me?.programInputName} />
         </div>
 
         <div className="px-5 pt-3 grid grid-cols-4 gap-1.5">

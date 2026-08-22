@@ -33,7 +33,7 @@ export function LookTile({
         !isCurrent && !isTarget && 'hover:border-foreground/25'
       )}
     >
-      <SsMonitor scene={lookScene(look)} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media, 200)} displayBox={state.displayBox} showLabels showGrid={false} className="p-1 rounded-lg" />
+      <SsMonitor scene={lookScene(look)} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media, 200)} displayBox={state.displayBox} proInput={state.propresenterInput} showLabels showGrid={false} className="p-1 rounded-lg" />
 
       <div className="mt-2 flex items-start gap-2">
         <div className="min-w-0 flex-1">

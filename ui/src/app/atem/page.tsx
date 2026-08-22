@@ -71,14 +71,14 @@ export default function Page() {
             )}
             {/* ---- Left column: pinned monitors + scrolling looks ---- */}
             <div className="min-w-0 min-h-0 flex flex-col gap-4">
-              <div className="shrink-0 grid gap-4 grid-cols-2 max-w-[1100px]">
+              <div className="shrink-0 grid gap-3 grid-cols-2" style={{ maxWidth: 'min(1100px, max(440px, calc((100dvh - 620px) * 32 / 9)))' }}>
                 <div>
                   <SsMonitor
                     scene={liveScene(state).scene}
                     mixTo={liveScene(state).mixTo}
                     inputName={inputName}
                     mediaThumbUrl={ppMediaThumb(state.propresenter?.currentMedia)}
-                    displayBox={state.displayBox}
+                    displayBox={state.displayBox} proInput={state.propresenterInput}
                     label="Program"
                     tally="pgm"
                     sublabel={me ? `${inputName(me.programInput)}${me.inTransition ? ` · MIX ${Math.round((me.handlePosition / 10000) * 100)}%` : ''}` : undefined}
@@ -96,7 +96,7 @@ export default function Page() {
                     ghost={target && (target.me?.programInput ?? 6000) === 6000 ? state.atem.boxes : null}
                     inputName={inputName}
                     mediaThumbUrl={ppMediaThumb(target ? target.pro?.media : state.propresenter?.currentMedia)}
-                    displayBox={state.displayBox}
+                    displayBox={state.displayBox} proInput={state.propresenterInput}
                     label={state.busy?.to ? 'Going to' : 'Preview'}
                     tally="pvw"
                     sublabel={target ? `${target.name}${target.me?.programInputName ? ' · ' + target.me.programInputName : ''}` : 'hover a look'}

@@ -812,6 +812,7 @@ export class WebServer {
       animating: this.animator.running,
       mainMe: this.atem.me,
       displayBox: config.supersource?.displayBox ?? 3,
+      propresenterInput: config.supersource?.propresenterInput ?? null,
       propresenter: {
         connected: this.propresenter.connected,
         configured: !!this.propresenter.baseUrl,

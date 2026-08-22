@@ -104,6 +104,7 @@ export interface Snapshot {
   animating: boolean
   mainMe: number
   displayBox?: number
+  propresenterInput?: number | null
   propresenter?: { connected: boolean; configured: boolean; currentLook?: ProLook | null; currentMedia?: ProMedia | null }
   verify?: {
     results: VerifyResult[]

@@ -30,6 +30,7 @@ const GROUPS: Group[] = [
     { path: 'supersource.me', label: 'Main M/E', dyn: 'me' },
     { path: 'supersource.ssInput', label: 'SuperSource input', dyn: 'input', hint: 'the ATEM input the SuperSource is on (normally 6000)' },
     { path: 'supersource.displayBox', label: 'Display box', dyn: 'box', hint: 'the box carrying the main display feed' },
+    { path: 'supersource.propresenterInput', label: 'ProPresenter input', dyn: 'input', hint: 'the ATEM input carrying ProPresenter — its background media is shown full-frame on program and inside any box on this source' },
   ]},
   { title: 'Timing', desc: 'Applied live.', fields: [
     { path: 'animation.defaultDurationMs', label: 'Box move (ms)', type: 'number' },

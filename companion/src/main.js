@@ -263,11 +263,23 @@ class StageItInstance extends InstanceBase {
         feedbacks: [{ feedbackId: 'look_is_active', options: { look: l.name }, style: { bgcolor: combineRgb(30, 150, 60), color: white } }],
       }
     }
-    // One drawer-toggle button per live browser session — defaults to the left
-    // drawer of the surface it's currently showing; edit the surface/edge on the
-    // button to retarget. Lights blue while that drawer is open.
+    // Generic drawer presets — always available, even before any surface is
+    // open. Drag one out, then set the Browser session + Surface on the button.
+    const edgeGlyph = { left: '◧', right: '◨', top: '⬒', bottom: '⬓' }
+    for (const edge of ['left', 'right', 'top', 'bottom']) {
+      presets[`drawer_${edge}`] = {
+        type: 'button',
+        category: 'Surface drawers',
+        name: `Drawer: ${edge} (toggle)`,
+        style: { text: `DRAWER\\n${edgeGlyph[edge]} ${edge.toUpperCase()}`, size: '14', color: white, bgcolor: dark },
+        steps: [{ down: [{ actionId: 'surface_drawer', options: { browser: '', surface: '', edge, action: 'toggle' } }], up: [] }],
+        feedbacks: [{ feedbackId: 'drawer_is_open', options: { browser: '', edge }, style: { bgcolor: combineRgb(40, 90, 200), color: white } }],
+      }
+    }
+    // One drawer-toggle button per live browser session — pre-filled with that
+    // session + the surface it's currently showing. Lights blue while open.
     for (const d of this.data.displays) {
-      presets[`drawer_${d.browserId}`] = {
+      presets[`drawer_disp_${d.browserId}`] = {
         type: 'button',
         category: 'Surface drawers',
         name: `${d.surfaceName ?? d.surfaceId ?? 'Surface'} — left drawer`,
