@@ -9,7 +9,7 @@ import type { Recorder } from '@/widgets/recorders'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw, Download, MonitorSmartphone } from 'lucide-react'
+import { Plus, Trash2, FlaskConical, Globe, Radio, Mic, Disc, Save, Copy, Check, RefreshCw, Download, MonitorSmartphone, ArrowLeftRight, Cable } from 'lucide-react'
 
 type ConnState = 'live' | 'sim' | 'partial' | 'offline' | 'empty'
 const DOT: Record<ConnState, string> = { live: 'bg-live', sim: 'bg-busy', partial: 'bg-busy', offline: 'bg-destructive', empty: 'bg-muted-foreground/30' }
@@ -58,6 +58,7 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
         ? <SchemaForm schema={schema as never} value={config} onChange={setConfig} />
         : <textarea value={JSON.stringify(config, null, 2)} onChange={(e) => { try { setConfig(JSON.parse(e.target.value)) } catch { /* keep typing */ } }}
             className="w-full h-28 bg-input/40 border border-border rounded-md px-2 py-1.5 text-[12px] font-mono outline-none" />}
+      {inst.typeId === 'digico' && <DigicoRelayPanel instanceId={inst.id} />}
       <div className="flex items-center gap-4 pt-1 border-t border-border/40">
         <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground"><input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} className="size-3.5 accent-[var(--busy)]" /><FlaskConical className="size-3" /> Simulator</label>
         <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="size-3.5 accent-[var(--live)]" /> Enabled</label>
@@ -65,6 +66,55 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
           <Save className="size-3.5" /> {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
+    </div>
+  )
+}
+
+/** Live OSC pass-through relay status for a DiGiCo instance. A DiGiCo takes only
+ *  one OSC connection, so we hold it and relay for other tools (Companion). This
+ *  shows the relay port and every downstream client currently routed through us. */
+type RelayClient = { address: string; port: number; lastSeen: number; toConsole: number; fromConsole: number }
+type RelayState = { enabled?: boolean; port?: number; console?: { host: string; sendPort: number }; toConsole?: number; fromConsole?: number; clients?: RelayClient[] }
+function DigicoRelayPanel({ instanceId }: { instanceId: string }) {
+  const relay = useTopic(`mi:${instanceId}:relay`) as RelayState | null
+  const [, force] = useState(0)
+  useEffect(() => { const t = setInterval(() => force((x) => x + 1), 1000); return () => clearInterval(t) }, []) // keep "last seen" fresh
+  if (!relay) return null
+  const ago = (ts: number) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago` }
+  const clients = relay.clients ?? []
+  return (
+    <div className={cn('rounded-lg border p-3 space-y-2', relay.enabled ? 'border-info/40 bg-info/[0.04]' : 'border-border/60 bg-muted/20')}>
+      <div className="flex items-center gap-2">
+        <ArrowLeftRight className={cn('size-4', relay.enabled ? 'text-info' : 'text-muted-foreground/50')} />
+        <span className="text-[12px] font-semibold">OSC pass-through relay</span>
+        <span className={cn('text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5', relay.enabled ? 'bg-info/15 text-info' : 'bg-muted/50 text-muted-foreground')}>{relay.enabled ? 'On' : 'Off'}</span>
+        {relay.enabled && <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">:{relay.port} → {relay.console?.host}:{relay.console?.sendPort}</span>}
+      </div>
+      {!relay.enabled ? (
+        <p className="text-[11px] text-muted-foreground leading-snug">Off. Enable it above to let Companion and other tools reach this console through us — point their OSC at this machine on the relay port, and they’ll share our single console connection.</p>
+      ) : (
+        <>
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground tabular-nums">
+            <span className="inline-flex items-center gap-1"><Cable className="size-3" /> {clients.length} client{clients.length === 1 ? '' : 's'}</span>
+            <span>▲ {relay.toConsole ?? 0} to console</span>
+            <span>▼ {relay.fromConsole ?? 0} to clients</span>
+          </div>
+          {clients.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground/60">No clients yet. In Companion’s DiGiCo module, set the console IP to <b className="text-foreground">this machine</b> and the port to <b className="text-foreground">{relay.port}</b>.</p>
+          ) : (
+            <div className="space-y-1">
+              {clients.map((c) => (
+                <div key={`${c.address}:${c.port}`} className="flex items-center gap-2 text-[11px] rounded-md bg-card border border-border/50 px-2 py-1">
+                  <span className="size-1.5 rounded-full bg-info shrink-0" />
+                  <span className="font-mono text-foreground/90">{c.address}:{c.port}</span>
+                  <span className="text-muted-foreground/60 tabular-nums">▲{c.toConsole} ▼{c.fromConsole}</span>
+                  <span className="ml-auto text-muted-foreground/60 tabular-nums">{ago(c.lastSeen)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

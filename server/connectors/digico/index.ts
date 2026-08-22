@@ -1,4 +1,4 @@
-import { createSocket, type Socket } from 'node:dgram'
+import { createSocket, type RemoteInfo, type Socket } from 'node:dgram'
 import { type CommandResult, commandFail, commandOk } from '@stageit/shared'
 import { z } from 'zod'
 import type { Connector, ConnectorContext, ConnectorModule } from '../core/types.js'
@@ -37,6 +37,18 @@ export const digicoConfigSchema = z.object({
   messagesFromMacros: z.boolean().default(true),
   /** Firing macros back at the console; off until an admin decides otherwise. */
   allowMacroFire: z.boolean().default(false),
+  /**
+   * OSC pass-through relay. A DiGiCo accepts only ONE OSC connection at a time,
+   * so we hold it and let other tools (Companion especially) talk to the console
+   * *through us*: they point their OSC at this relay port, we forward each packet
+   * to the console and fan the console's replies back to every relay client. The
+   * client thinks it is talking straight to the desk.
+   */
+  relayEnabled: z.boolean().default(false),
+  /** UDP port the relay listens on for downstream clients (e.g. Companion). */
+  relayPort: z.number().int().min(0).max(65535).default(8001),
+  /** Drop a relay client we have heard nothing from for this long. */
+  relayClientTimeoutSeconds: z.number().int().min(10).max(3600).default(300),
 })
 
 export type DigicoConfig = z.infer<typeof digicoConfigSchema>
@@ -64,6 +76,13 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private macros = new Map<number, MacroState>()
   private messages: { id: string; text: string; at: number }[] = []
   private messageSeq = 0
+  // ---- OSC pass-through relay ----
+  private relaySocket: Socket | null = null
+  private relayClients = new Map<string, { address: string; port: number; lastSeen: number; toConsole: number; fromConsole: number }>()
+  private relayToConsole = 0
+  private relayFromConsole = 0
+  private cancelRelayHousekeeping: (() => void) | null = null
+  private relayDirty = false
 
   async start(ctx: ConnectorContext<DigicoConfig>): Promise<void> {
     this.ctx = ctx
@@ -82,19 +101,100 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.query()
     this.cancelRefresh = ctx.setInterval(() => this.query(), ctx.config.pollIntervalSeconds * 1_000)
     this.cancelWatchdog = ctx.setInterval(() => this.checkAlive(), 5_000)
+
+    if (ctx.config.relayEnabled) await this.startRelay(ctx)
+    // Publish relay status ~2x/sec when it changed, and prune idle clients.
+    this.cancelRelayHousekeeping = ctx.setInterval(() => {
+      this.pruneRelayClients()
+      if (this.relayDirty) { this.relayDirty = false; this.publishRelay() }
+    }, 500)
+    this.publishRelay()
+  }
+
+  /** Bind the downstream OSC port that Companion (and friends) connect to. */
+  private async startRelay(ctx: ConnectorContext<DigicoConfig>): Promise<void> {
+    const relay = createSocket('udp4')
+    this.relaySocket = relay
+    relay.on('message', (buffer, rinfo) => this.onRelayDatagram(buffer, rinfo))
+    relay.on('error', (error) => ctx.logger.debug({ err: error }, 'relay socket error'))
+    await new Promise<void>((resolve, reject) => {
+      relay.bind(ctx.config.relayPort, () => resolve())
+      relay.once('error', reject)
+    })
+    ctx.logger.info({ port: ctx.config.relayPort }, 'DiGiCo OSC relay listening')
   }
 
   stop(): void {
     this.cancelRefresh?.()
     this.cancelWatchdog?.()
+    this.cancelRelayHousekeeping?.()
     this.cancelRefresh = null
     this.cancelWatchdog = null
+    this.cancelRelayHousekeeping = null
     this.socket?.close()
     this.socket = null
+    this.relaySocket?.close()
+    this.relaySocket = null
+    this.relayClients.clear()
+    this.relayToConsole = 0
+    this.relayFromConsole = 0
     this.ctx = null
     this.channels.clear()
     this.macros.clear()
     this.messages = []
+  }
+
+  /** A downstream client (Companion) sent OSC meant for the console. Remember it
+   *  so we can route replies back, then forward the packet on to the desk. */
+  private onRelayDatagram(buffer: Buffer, rinfo: RemoteInfo): void {
+    const ctx = this.ctx
+    if (!ctx || !this.socket) return
+    const key = `${rinfo.address}:${rinfo.port}`
+    const client = this.relayClients.get(key) ?? { address: rinfo.address, port: rinfo.port, lastSeen: 0, toConsole: 0, fromConsole: 0 }
+    client.lastSeen = Date.now()
+    client.toConsole += 1
+    this.relayClients.set(key, client)
+    this.relayToConsole += 1
+    this.relayDirty = true
+    // Forward verbatim to the console (its single OSC connection is ours).
+    this.socket.send(buffer, ctx.config.sendPort, ctx.config.host, (error) => {
+      if (error) ctx.logger.debug({ err: error }, 'relay → console send failed')
+    })
+  }
+
+  /** Fan a console packet out to every relay client (called from onDatagram). */
+  private relayToClients(buffer: Buffer): void {
+    if (!this.relaySocket || this.relayClients.size === 0) return
+    for (const client of this.relayClients.values()) {
+      this.relaySocket.send(buffer, client.port, client.address, (error) => {
+        if (error) this.ctx?.logger.debug({ err: error }, 'relay → client send failed')
+      })
+      client.fromConsole += 1
+      this.relayFromConsole += 1
+    }
+    this.relayDirty = true
+  }
+
+  private pruneRelayClients(): void {
+    const ctx = this.ctx
+    if (!ctx || this.relayClients.size === 0) return
+    const cutoff = Date.now() - ctx.config.relayClientTimeoutSeconds * 1_000
+    for (const [key, client] of this.relayClients) {
+      if (client.lastSeen < cutoff) { this.relayClients.delete(key); this.relayDirty = true }
+    }
+  }
+
+  private publishRelay(): void {
+    const ctx = this.ctx
+    if (!ctx) return
+    ctx.publish('relay', {
+      enabled: ctx.config.relayEnabled,
+      port: ctx.config.relayPort,
+      console: { host: ctx.config.host, sendPort: ctx.config.sendPort },
+      toConsole: this.relayToConsole,
+      fromConsole: this.relayFromConsole,
+      clients: [...this.relayClients.values()].map((c) => ({ address: c.address, port: c.port, lastSeen: c.lastSeen, toConsole: c.toConsole, fromConsole: c.fromConsole })),
+    })
   }
 
   async exec(commandId: string, input: unknown): Promise<CommandResult> {
@@ -128,6 +228,10 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (!ctx) return
 
     this.lastMessageAt = Date.now()
+    // Relay the raw console packet to every downstream client first — even things
+    // we do not parse (aux sends, EQ, …) must reach Companion untouched.
+    this.relayToClients(buffer)
+
     const message = decodeOsc(buffer)
     if (!message) return // not OSC, or truncated; the console will send more
 
@@ -219,6 +323,7 @@ export const digicoModule: ConnectorModule<DigicoConfig> = {
       { id: 'macros', label: 'Macros', rateClass: 'change' },
       { id: 'messages', label: 'Messages', rateClass: 'change', history: 'events' },
       { id: 'snapshots', label: 'Snapshots', rateClass: 'change', history: 'events' },
+      { id: 'relay', label: 'OSC relay', rateClass: 'change' },
     ],
     commands: [
       {
