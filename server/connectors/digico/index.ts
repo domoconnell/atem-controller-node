@@ -23,27 +23,24 @@ import {
 import { DigicoSimulator } from './simulator.js'
 
 export const digicoConfigSchema = z.object({
-  host: z.string().min(1).default('192.168.1.10'),
-  /** The console's receive port — "Send" in its External Control panel. */
-  sendPort: z.number().int().min(1).max(65535).default(8000),
-  /** The port the console sends to; this connector binds it. 0 lets the OS pick. */
-  receivePort: z.number().int().min(0).max(65535).default(9000),
-  /**
-   * Some firmware expects addresses prefixed with `/sd`, some rejects it.
-   * Bench-test against the actual console before a show depends on it.
-   */
-  addressPrefix: z.enum(['', '/sd']).default(''),
-  channelCount: z.number().int().min(0).max(128).default(32),
-  pollIntervalSeconds: z.number().int().min(5).max(600).default(30),
-  timeoutSeconds: z.number().int().min(10).max(300).default(45),
-  /**
-   * Turns labelled macro presses into a message feed. Console text chat rides
-   * the audio transport and cannot be read over the network, so this is the
-   * closest honest substitute.
-   */
-  messagesFromMacros: z.boolean().default(true),
-  /** Firing macros back at the console; off until an admin decides otherwise. */
-  allowMacroFire: z.boolean().default(false),
+  host: z.string().min(1).default('192.168.1.10')
+    .describe('The console’s IP address (Setup → External Control on the desk).'),
+  sendPort: z.number().int().min(1).max(65535).default(8000)
+    .describe('The port the CONSOLE listens on — its “Receive” port in External Control. We send commands here.'),
+  receivePort: z.number().int().min(0).max(65535).default(9000)
+    .describe('The port WE listen on for the console’s feedback — point the desk’s “Send to” at this machine on this port. 0 = OS-assigned.'),
+  addressPrefix: z.enum(['', '/sd']).default('/sd')
+    .describe('Command-set dialect. “/sd” = the SD/Quantum “Other OSC” set (what we implement). The iPad app uses a different (undocumented) set — for iPads, use the relay: they pass through untouched. Blank only if your firmware rejects the /sd prefix.'),
+  channelCount: z.number().int().min(0).max(128).default(32)
+    .describe('How many input channels WE query at startup to pre-load names/mutes/faders. Not a console setting — just how much state we hydrate up front (the desk auto-sends changes after that).'),
+  pollIntervalSeconds: z.number().int().min(5).max(600).default(30)
+    .describe('Keep-alive: how often we re-query a value to keep the link warm and resync after a console reboot. Our setting, not the desk’s.'),
+  timeoutSeconds: z.number().int().min(10).max(300).default(45)
+    .describe('Health watchdog: if the console sends us nothing for this long, we flag the connection offline. Our setting, not the desk’s.'),
+  messagesFromMacros: z.boolean().default(true)
+    .describe('Turn labelled macro presses on the desk into a message feed (console text chat can’t be read over the network, so labelled macros are the substitute).'),
+  allowMacroFire: z.boolean().default(false)
+    .describe('Allow firing macros back at the console. Off until an admin opts in.'),
   /**
    * OSC pass-through relay. A DiGiCo accepts only ONE OSC connection at a time,
    * so we hold it and let other tools (Companion especially) talk to the console
@@ -51,11 +48,12 @@ export const digicoConfigSchema = z.object({
    * to the console and fan the console's replies back to every relay client. The
    * client thinks it is talking straight to the desk.
    */
-  relayEnabled: z.boolean().default(false),
-  /** UDP port the relay listens on for downstream clients (e.g. Companion). */
-  relayPort: z.number().int().min(0).max(65535).default(8001),
-  /** Drop a relay client we have heard nothing from for this long. */
-  relayClientTimeoutSeconds: z.number().int().min(10).max(3600).default(300),
+  relayEnabled: z.boolean().default(false)
+    .describe('Let other OSC tools (Companion, DiGiCo iPad apps) reach this console through us. They aim their OSC at this machine on the relay port and we pass everything both ways — so many controllers can share the desk’s single OSC connection.'),
+  relayPort: z.number().int().min(0).max(65535).default(8001)
+    .describe('The port downstream clients (iPad / Companion) connect to instead of the desk.'),
+  relayClientTimeoutSeconds: z.number().int().min(10).max(3600).default(300)
+    .describe('Forget a relay client we’ve heard nothing from for this long.'),
 })
 
 export type DigicoConfig = z.infer<typeof digicoConfigSchema>
