@@ -68,14 +68,31 @@ export default function SurfaceViewer() {
     if (browserId && surface) realtime.register({ browserId, surfaceId: surface.id, surfaceName: surface.name, openEdge })
   }, [browserId, surface, openEdge])
 
-  // Drawer control from OSC: { surfaceId, target: 'left_drawer', action }.
-  const control = useTopic(browserId ? `usr:surface:${browserId}` : null) as { surfaceId?: string | null; target?: string; action?: string; at?: number } | null
+  // Control messages from OSC/Companion, targeted at this browser session:
+  //  - drawer:  { surfaceId, target: 'left_drawer', action }
+  //  - switch:  { showSurface: <surfaceId> }
+  const control = useTopic(browserId ? `usr:surface:${browserId}` : null) as { surfaceId?: string | null; target?: string; action?: string; showSurface?: string; at?: number } | null
   useEffect(() => {
     if (!control?.target) return
     const edge = EDGE_TARGETS[control.target]
     if (!edge) return
     if (control.surfaceId && surface && control.surfaceId !== surface.id) return
     setOpenEdge((cur) => control.action === 'open' ? edge : control.action === 'close' ? (cur === edge ? null : cur) : (cur === edge ? null : edge))
+  }, [control, surface])
+
+  // Switch this display to a different surface, in place (no reload). The URL is
+  // updated so a refresh stays on the new surface, and the register effect
+  // re-announces this session under it.
+  useEffect(() => {
+    const id = control?.showSurface
+    if (!id || (surface && id === surface.id)) return
+    fetch(`/api/surfaces/${id}`).then((r) => r.json()).then((b) => {
+      if (!b?.surface) return
+      setOpenEdge(null)
+      setSurface(normaliseSurface({ ...b.surface, id }))
+      setMissing(false)
+      const u = new URL(window.location.href); u.searchParams.set('s', id); window.history.replaceState(null, '', u.toString())
+    }).catch(() => {})
   }, [control, surface])
 
   useEffect(() => {

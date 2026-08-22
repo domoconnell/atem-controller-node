@@ -66,7 +66,7 @@ class StageItInstance extends InstanceBase {
       const sig = JSON.stringify([this.data.mics.map((m) => m.id), this.data.surfaces.map((x) => x.id), this.data.displays.map((d) => d.browserId), this.data.looks.map((l) => l.name)])
       if (sig !== this._sig) { this._sig = sig; this.rebuild() }
       this.pushValues()
-      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running', 'look_is_active', 'drawer_is_open')
+      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running', 'look_is_active', 'drawer_is_open', 'surface_is')
     } catch (e) {
       this.updateStatus(InstanceStatus.ConnectionFailure, e.message)
     }
@@ -160,6 +160,14 @@ class StageItInstance extends InstanceBase {
         ],
         callback: (a) => this.post('/api/companion/surface-drawer', { browserId: a.options.browser, surfaceId: a.options.surface, edge: a.options.edge, action: a.options.action }),
       },
+      surface_show: {
+        name: 'Surface: show on session',
+        options: [
+          { type: 'dropdown', id: 'browser', label: 'Browser session', choices: browsers, default: browsers[0]?.id ?? '' },
+          { type: 'dropdown', id: 'surface', label: 'Surface', choices: surfaces, default: surfaces[0]?.id ?? '' },
+        ],
+        callback: (a) => this.post('/api/companion/surface-show', { browserId: a.options.browser, surfaceId: a.options.surface }),
+      },
     })
   }
 
@@ -168,6 +176,7 @@ class StageItInstance extends InstanceBase {
     const mics = this.data.mics.map((m) => ({ id: m.id, label: m.label }))
     const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
     const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
+    const surfaces = this.data.surfaces.map((s) => ({ id: s.id, label: s.name }))
     this.setFeedbackDefinitions({
       mic_cue_is: {
         type: 'boolean',
@@ -225,6 +234,20 @@ class StageItInstance extends InstanceBase {
         callback: (fb) => {
           const d = this.data.displays.find((x) => x.browserId === fb.options.browser)
           return !!d && d.openEdge === fb.options.edge
+        },
+      },
+      surface_is: {
+        type: 'boolean',
+        name: 'Session is showing surface',
+        description: 'Colour a button when a session is currently showing that surface.',
+        defaultStyle: { bgcolor: combineRgb(30, 110, 180), color: combineRgb(255, 255, 255) },
+        options: [
+          { type: 'dropdown', id: 'browser', label: 'Browser session', choices: browsers, default: browsers[0]?.id ?? '' },
+          { type: 'dropdown', id: 'surface', label: 'Surface', choices: surfaces, default: surfaces[0]?.id ?? '' },
+        ],
+        callback: (fb) => {
+          const d = this.data.displays.find((x) => x.browserId === fb.options.browser)
+          return !!d && d.surfaceId === fb.options.surface
         },
       },
     })
@@ -286,6 +309,19 @@ class StageItInstance extends InstanceBase {
         style: { text: `${d.surfaceName ?? 'Drawer'}\\n◧ LEFT`, size: '14', color: white, bgcolor: dark },
         steps: [{ down: [{ actionId: 'surface_drawer', options: { browser: d.browserId, surface: d.surfaceId ?? '', edge: 'left', action: 'toggle' } }], up: [] }],
         feedbacks: [{ feedbackId: 'drawer_is_open', options: { browser: d.browserId, edge: 'left' }, style: { bgcolor: combineRgb(40, 90, 200), color: white } }],
+      }
+    }
+    // One button per surface — shows it on a chosen browser session (set the
+    // session on the button after dragging it out). Lights when that session is
+    // already showing the surface.
+    for (const s of this.data.surfaces) {
+      presets[`surface_${s.id}`] = {
+        type: 'button',
+        category: 'Surfaces',
+        name: `Show: ${s.name}`,
+        style: { text: `SHOW\\n${s.name}`, size: '14', color: white, bgcolor: dark },
+        steps: [{ down: [{ actionId: 'surface_show', options: { browser: '', surface: s.id } }], up: [] }],
+        feedbacks: [{ feedbackId: 'surface_is', options: { browser: '', surface: s.id }, style: { bgcolor: combineRgb(30, 110, 180), color: white } }],
       }
     }
     this.setPresetDefinitions(presets)

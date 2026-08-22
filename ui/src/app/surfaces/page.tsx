@@ -16,6 +16,7 @@ import { useServiceList } from '@/widgets/runsheet'
 import { widgetsForType, widgetsForFeature, getWidget } from '@/widgets/registry'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { Pullouts } from '@/components/surfaces/pullouts'
+import { LiveDisplays } from '@/components/surfaces/live-displays'
 import { useMeasure } from '@/components/surfaces/use-measure'
 import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
 import type { Instance, ConnectorType } from '@/lib/types'
@@ -128,6 +129,7 @@ export default function SurfacesPage() {
       <div className="h-screen flex flex-col overflow-hidden">
         <AppHeader app="surfaces" state={state} wsConnected={connected} tick={tick}>
           <div className="ml-auto flex items-center gap-2">
+            <LiveDisplays list={list} />
             <SurfacePicker list={list} current={surface} onPick={load} onNew={() => { setSurface(emptySurface()); setSel(null) }} />
             {edit && <input value={surface.name} onChange={(e) => setSurface({ ...surface, name: e.target.value })} className="bg-input/40 border border-border rounded-md px-2 py-1 text-[12px] w-36" />}
             {edit && <select value={surface.display} onChange={(e) => setSurface({ ...surface, display: e.target.value as Display })} className="bg-input/40 border border-border rounded-md px-2 py-1.5 text-[12px]">{DISPLAYS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}</select>}

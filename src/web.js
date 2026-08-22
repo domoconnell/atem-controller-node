@@ -177,6 +177,14 @@ export class WebServer {
       try { await this.sequencer?.goto(req.params.name); res.json({ ok: true }) }
       catch (e) { res.status(400).json({ ok: false, error: e.message }) }
     })
+    // Tell a browser session to switch to a different surface (the surface page
+    // swaps in place — no reload — and re-registers under the new surface).
+    app.post('/api/companion/surface-show', (req, res) => {
+      const { browserId, surfaceId } = req.body ?? {}
+      if (!browserId || !surfaceId) return res.status(400).json({ ok: false, error: 'browserId and surfaceId required' })
+      this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { showSurface: surfaceId, at: Date.now() })
+      res.json({ ok: true })
+    })
 
     // ---- Runsheet services (timed segments with people + mics) ----
     app.get('/api/features/services', (_req, res) => res.json({ ok: true, services: this.store?.listServices() ?? [] }))
@@ -702,6 +710,13 @@ export class WebServer {
       const [browserId, surfaceId, target, action] = rest
       if (!browserId || !target || !action) throw new Error('surface control needs browser id, target and action')
       this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { surfaceId: surfaceId ?? null, target, action, at: Date.now() })
+      return
+    }
+    if (section === 'surface-show') {
+      // /sil/surface-show/<browserId>/<surfaceId>
+      const [browserId, surfaceId] = rest
+      if (!browserId || !surfaceId) throw new Error('surface-show needs a browser id and surface id')
+      this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { showSurface: surfaceId, at: Date.now() })
       return
     }
     throw new Error(`unknown /sil/${section ?? ''}`)
