@@ -8,6 +8,7 @@ import '@/widgets/mics'
 import '@/widgets/atem'
 import '@/widgets/recorders'
 import '@/widgets/runsheet'
+import '@/widgets/calls'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
 import { displayDef, gridDims, normaliseSurface, type Surface, type Layout, type Edge } from '@/components/surfaces/model'
@@ -99,6 +100,12 @@ export default function SurfaceViewer() {
     }).catch(() => {})
   }, [control, surface])
 
+  // Incoming calls for this session (usr:calls:<browserId>) — drives the
+  // flashing popover + whole-screen pulsing border.
+  const callState = useTopic(browserId ? `usr:calls:${browserId}` : null) as { name?: string | null; calls?: { from: string; fromName: string; at: number }[] } | null
+  const incoming = callState?.calls ?? []
+  const clearCalls = () => { if (browserId) fetch('/api/companion/call/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: browserId }) }).catch(() => {}) }
+
   useEffect(() => {
     fetch('/api/instances').then((r) => r.json()).then((b) => setInstances((b.instances ?? []).map((i: IRef) => ({ id: i.id, typeId: i.typeId, name: i.name })))).catch(() => {})
     const id = new URLSearchParams(window.location.search).get('s')
@@ -120,7 +127,23 @@ export default function SurfaceViewer() {
       </div>
 
       <Pullouts surface={surface} instances={instances} openEdge={openEdge} onOpenEdge={setOpenEdge} />
-      {browserId && <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-foreground/70 tabular-nums pointer-events-none select-none bg-black/45 rounded-b-md px-2 py-0.5 border border-t-0 border-border/50 backdrop-blur-sm">{browserId}</div>}
+      {browserId && <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-foreground/70 tabular-nums pointer-events-none select-none bg-black/45 rounded-b-md px-2 py-0.5 border border-t-0 border-border/50 backdrop-blur-sm">{callState?.name || browserId}</div>}
+
+      {/* Backstage call — pulsing whole-screen border + flashing popover. */}
+      {incoming.length > 0 && (
+        <>
+          <div className="call-border pointer-events-none absolute inset-0 z-[60]" style={{ boxShadow: 'inset 0 0 0 5px oklch(0.63 0.24 25), inset 0 0 40px -6px oklch(0.63 0.24 25 / 0.8)' }} aria-hidden />
+          <div className="call-flash absolute inset-x-0 top-1/2 z-[70] flex justify-center px-6">
+            <div className="rounded-2xl bg-black/85 border-2 px-10 py-6 shadow-2xl text-center backdrop-blur-md" style={{ borderColor: 'oklch(0.63 0.24 25)' }}>
+              <div className="text-[11px] uppercase tracking-[0.28em] font-bold" style={{ color: 'oklch(0.7 0.22 25)' }}>Incoming call</div>
+              <div className="mt-2 text-[clamp(1.6rem,5vw,3rem)] font-black leading-none text-white">
+                {incoming.map((c) => c.fromName).join(', ')} <span style={{ color: 'oklch(0.7 0.22 25)' }}>Calling</span>
+              </div>
+              <button onClick={clearCalls} className="mt-4 inline-flex items-center gap-1.5 rounded-lg text-white px-5 py-2 text-[14px] font-bold hover:brightness-110 active:scale-95" style={{ background: 'oklch(0.55 0.22 25)' }}>Clear</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -227,4 +227,16 @@
     animation: stripe-move 1s linear infinite;
   }
   @keyframes stripe-move { to { background-position: 28px 0; } }
+
+  /* Backstage call: the popover flashes on ~2s / off ~2s so it grabs attention
+     without permanently covering a possibly-critical surface. */
+  @keyframes call-flash {
+    0%, 44% { opacity: 1; transform: translateY(-50%) scale(1); }
+    50%, 94% { opacity: 0; transform: translateY(-50%) scale(0.97); }
+    100% { opacity: 1; transform: translateY(-50%) scale(1); }
+  }
+  .call-flash { animation: call-flash 4s ease-in-out infinite; }
+  /* The whole-screen inner border breathes while a call is active. */
+  @keyframes call-border { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+  .call-border { animation: call-border 1.1s ease-in-out infinite; }
 }

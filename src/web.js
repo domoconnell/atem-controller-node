@@ -26,6 +26,10 @@ export class WebServer {
     this.sennheiser = sennheiser
     this.connectorEngine = connectorEngine
     this.store = store
+    // Backstage "call" system: named browser sessions (positions) can call each
+    // other. calls: [{ from, to, at }] where from/to are browserIds.
+    this.calls = []
+    this.sessionNames = (() => { try { return { ...(this.store?.allSettings()?.sessionNames ?? {}) } } catch { return {} } })()
 
     const app = express()
     app.use(express.json())
@@ -150,6 +154,7 @@ export class WebServer {
         mics: (this.store?.listMics() ?? []).map((m) => ({ id: m.id, label: m.label, cue: m.cue ?? 'off', muted: this._micMuted(m) })),
         surfaces: (this.store?.listSurfaces() ?? []).map((s) => ({ id: s.id, name: s.name })),
         displays: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c),
+        calls: this.calls.map((c) => ({ from: c.from, fromName: this.sessionNames[c.from] ?? c.from, to: c.to, toName: this.sessionNames[c.to] ?? c.to, at: c.at })),
         looks: (this.looks?.list?.() ?? []).map((l) => ({ name: l.name })),
         activeLook: this.looks?.currentLook ?? null,
         runsheet: { service: svc?.name ?? null, running: idx != null, now: this._segTitle(now), next: this._segTitle(next), nowTime: now?.time ?? null },
@@ -184,6 +189,28 @@ export class WebServer {
       if (!browserId || !surfaceId) return res.status(400).json({ ok: false, error: 'browserId and surfaceId required' })
       this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { showSurface: surfaceId, at: Date.now() })
       res.json({ ok: true })
+    })
+    // ---- Backstage call system (from/to are browserIds = positions) ----
+    app.post('/api/companion/call', (req, res) => {
+      const { from, to } = req.body ?? {}
+      if (!from || !to) return res.status(400).json({ ok: false, error: 'from and to required' })
+      this.addCall(from, to); res.json({ ok: true })
+    })
+    app.post('/api/companion/call/cancel', (req, res) => {
+      const { from, to } = req.body ?? {}
+      if (!from || !to) return res.status(400).json({ ok: false, error: 'from and to required' })
+      this.cancelCall(from, to); res.json({ ok: true })
+    })
+    app.post('/api/companion/call/clear', (req, res) => {
+      const { to } = req.body ?? {}
+      if (!to) return res.status(400).json({ ok: false, error: 'to required' })
+      this.clearCalls(to); res.json({ ok: true })
+    })
+    // Name a browser session (position). Central management from the surfaces app.
+    app.put('/api/session-name', (req, res) => {
+      const { browserId, name } = req.body ?? {}
+      if (!browserId) return res.status(400).json({ ok: false, error: 'browserId required' })
+      this.setSessionName(browserId, name); res.json({ ok: true })
     })
 
     // ---- Runsheet services (timed segments with people + mics) ----
@@ -504,7 +531,8 @@ export class WebServer {
           else if (msg.t === 'register' && msg.data && typeof msg.data.browserId === 'string') {
             // A surface display announcing itself, so OSC can target it and
             // Settings can list which browser is showing which surface.
-            ;(this.surfaceClients ??= new Map()).set(msg.data.browserId, { browserId: msg.data.browserId, surfaceId: msg.data.surfaceId ?? null, surfaceName: msg.data.surfaceName ?? null, openEdge: msg.data.openEdge ?? null, since: Date.now(), _ws: ws })
+            ;(this.surfaceClients ??= new Map()).set(msg.data.browserId, { browserId: msg.data.browserId, surfaceId: msg.data.surfaceId ?? null, surfaceName: msg.data.surfaceName ?? null, openEdge: msg.data.openEdge ?? null, name: this.sessionNames[msg.data.browserId] ?? null, since: Date.now(), _ws: ws })
+            this.publishCalls(msg.data.browserId) // send this session its name + any pending calls
           }
         })
         ws.on('close', () => {
@@ -719,6 +747,9 @@ export class WebServer {
       this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { showSurface: surfaceId, at: Date.now() })
       return
     }
+    if (section === 'call') { const [from, to] = rest; if (!from || !to) throw new Error('call needs from and to'); this.addCall(from, to); return }
+    if (section === 'call-cancel') { const [from, to] = rest; if (!from || !to) throw new Error('call-cancel needs from and to'); this.cancelCall(from, to); return }
+    if (section === 'call-clear') { const [to] = rest; if (!to) throw new Error('call-clear needs a target'); this.clearCalls(to); return }
     throw new Error(`unknown /sil/${section ?? ''}`)
   }
 
@@ -737,6 +768,30 @@ export class WebServer {
     o.sendCompanionVar('runsheet_now_time', now?.time ?? '')
     o.sendCompanionVar('runsheet_running', idx != null ? 'true' : 'false')
   }
+  // ---- Backstage call system ------------------------------------------
+  _callsFor(browserId) {
+    return this.calls.filter((c) => c.to === browserId).map((c) => ({ from: c.from, fromName: this.sessionNames[c.from] ?? c.from, at: c.at }))
+  }
+  /** Push a session its own name + its incoming calls (usr:calls:<browserId>). */
+  publishCalls(browserId) {
+    this.connectorEngine?.hub?.publish(`usr:calls:${browserId}`, { name: this.sessionNames[browserId] ?? null, calls: this._callsFor(browserId) })
+  }
+  addCall(from, to) {
+    if (!from || !to || from === to) return
+    if (!this.calls.some((c) => c.from === from && c.to === to)) this.calls.push({ from, to, at: Date.now() })
+    this.publishCalls(to)
+  }
+  cancelCall(from, to) { this.calls = this.calls.filter((c) => !(c.from === from && c.to === to)); this.publishCalls(to) }
+  clearCalls(to) { this.calls = this.calls.filter((c) => c.to !== to); this.publishCalls(to) }
+  setSessionName(browserId, name) {
+    const n = String(name ?? '').trim()
+    if (n) this.sessionNames[browserId] = n; else delete this.sessionNames[browserId]
+    try { this.store?.setSetting('sessionNames', this.sessionNames) } catch { /* names are best-effort persisted */ }
+    const c = this.surfaceClients?.get(browserId); if (c) c.name = n || null
+    this.publishCalls(browserId) // so the session learns its own name
+    this.scheduleBroadcast?.()
+  }
+
   pushCompanionMics() {
     const o = this.oscServer; if (!o?.sendCompanionVar) return
     for (const m of this.store?.listMics() ?? []) {

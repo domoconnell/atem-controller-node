@@ -20,7 +20,7 @@ class StageItInstance extends InstanceBase {
 
   async init(config) {
     this.config = config
-    this.data = { mics: [], surfaces: [], displays: [], looks: [], activeLook: null, runsheet: {} }
+    this.data = { mics: [], surfaces: [], displays: [], looks: [], activeLook: null, runsheet: {}, calls: [] }
     this._sig = '' // signature of the option-affecting data, to know when to rebuild defs
     this.updateStatus(InstanceStatus.Connecting)
     this.rebuild()
@@ -60,13 +60,13 @@ class StageItInstance extends InstanceBase {
       const r = await fetch(`${this.base()}/api/companion/state`, { signal: AbortSignal.timeout(3000) })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const s = await r.json()
-      this.data = { mics: s.mics ?? [], surfaces: s.surfaces ?? [], displays: s.displays ?? [], looks: s.looks ?? [], activeLook: s.activeLook ?? null, runsheet: s.runsheet ?? {} }
+      this.data = { mics: s.mics ?? [], surfaces: s.surfaces ?? [], displays: s.displays ?? [], looks: s.looks ?? [], activeLook: s.activeLook ?? null, runsheet: s.runsheet ?? {}, calls: s.calls ?? [] }
       this.updateStatus(InstanceStatus.Ok)
       // Rebuild dropdown-bearing definitions only when the option lists change.
-      const sig = JSON.stringify([this.data.mics.map((m) => m.id), this.data.surfaces.map((x) => x.id), this.data.displays.map((d) => d.browserId), this.data.looks.map((l) => l.name)])
+      const sig = JSON.stringify([this.data.mics.map((m) => m.id), this.data.surfaces.map((x) => x.id), this.data.displays.map((d) => d.browserId + ':' + (d.name || '')), this.data.looks.map((l) => l.name)])
       if (sig !== this._sig) { this._sig = sig; this.rebuild() }
       this.pushValues()
-      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running', 'look_is_active', 'drawer_is_open', 'surface_is')
+      this.checkFeedbacks('mic_cue_is', 'mic_muted', 'runsheet_running', 'look_is_active', 'drawer_is_open', 'surface_is', 'call_incoming')
     } catch (e) {
       this.updateStatus(InstanceStatus.ConnectionFailure, e.message)
     }
@@ -128,6 +128,8 @@ class StageItInstance extends InstanceBase {
     // it's showing that surface" — it fires the moment the session lands there.
     const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
     const surfaces = this.data.surfaces.map((s) => ({ id: s.id, label: s.name }))
+    // Named positions (Dave FOH, Joe Mons, …) for the call system.
+    const positions = this.data.displays.map((d) => ({ id: d.browserId, label: d.name || d.surfaceName || d.browserId }))
     const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
     const cueChoices = [{ id: 'toggle', label: 'Toggle' }, { id: 'live', label: 'Live' }, { id: 'standby', label: 'Standby' }, { id: 'off', label: 'Off' }]
     const edgeChoices = ['left', 'right', 'top', 'bottom'].map((e) => ({ id: e, label: e }))
@@ -168,6 +170,29 @@ class StageItInstance extends InstanceBase {
         ],
         callback: (a) => this.post('/api/companion/surface-show', { browserId: a.options.browser, surfaceId: a.options.surface }),
       },
+      call: {
+        name: 'Call: ring a position',
+        options: [
+          { type: 'dropdown', id: 'from', label: 'From (this surface)', choices: positions, default: positions[0]?.id ?? '' },
+          { type: 'dropdown', id: 'to', label: 'Call', choices: positions, default: positions[1]?.id ?? positions[0]?.id ?? '' },
+        ],
+        callback: (a) => this.post('/api/companion/call', { from: a.options.from, to: a.options.to }),
+      },
+      call_cancel: {
+        name: 'Call: cancel my call',
+        options: [
+          { type: 'dropdown', id: 'from', label: 'From (this surface)', choices: positions, default: positions[0]?.id ?? '' },
+          { type: 'dropdown', id: 'to', label: 'Cancel call to', choices: positions, default: positions[1]?.id ?? positions[0]?.id ?? '' },
+        ],
+        callback: (a) => this.post('/api/companion/call/cancel', { from: a.options.from, to: a.options.to }),
+      },
+      call_clear: {
+        name: 'Call: clear incoming (this position)',
+        options: [
+          { type: 'dropdown', id: 'position', label: 'Position', choices: positions, default: positions[0]?.id ?? '' },
+        ],
+        callback: (a) => this.post('/api/companion/call/clear', { to: a.options.position }),
+      },
     })
   }
 
@@ -177,6 +202,7 @@ class StageItInstance extends InstanceBase {
     const looks = this.data.looks.map((l) => ({ id: l.name, label: l.name }))
     const browsers = this.data.displays.map((d) => ({ id: d.browserId, label: `${d.surfaceName ?? d.surfaceId ?? '—'} · ${d.browserId}` }))
     const surfaces = this.data.surfaces.map((s) => ({ id: s.id, label: s.name }))
+    const positions = this.data.displays.map((d) => ({ id: d.browserId, label: d.name || d.surfaceName || d.browserId }))
     this.setFeedbackDefinitions({
       mic_cue_is: {
         type: 'boolean',
@@ -250,6 +276,16 @@ class StageItInstance extends InstanceBase {
           return !!d && d.surfaceId === fb.options.surface
         },
       },
+      call_incoming: {
+        type: 'boolean',
+        name: 'Position has an incoming call',
+        description: 'Colour a button red when someone is calling that position.',
+        defaultStyle: { bgcolor: combineRgb(200, 30, 30), color: combineRgb(255, 255, 255) },
+        options: [
+          { type: 'dropdown', id: 'position', label: 'Position', choices: positions, default: positions[0]?.id ?? '' },
+        ],
+        callback: (fb) => this.data.calls.some((c) => c.to === fb.options.position),
+      },
     })
   }
 
@@ -322,6 +358,28 @@ class StageItInstance extends InstanceBase {
         style: { text: `SHOW\\n${s.name}`, size: '14', color: white, bgcolor: dark },
         steps: [{ down: [{ actionId: 'surface_show', options: { browser: '', surface: s.id } }], up: [] }],
         feedbacks: [{ feedbackId: 'surface_is', options: { browser: '', surface: s.id }, style: { bgcolor: combineRgb(30, 110, 180), color: white } }],
+      }
+    }
+    // Calls — one "Call <name>" button per position (set the "From" on the
+    // button after dragging it out), plus a "Clear" button per position that
+    // lights red while that position is being called.
+    for (const d of this.data.displays) {
+      const nm = d.name || d.surfaceName || d.browserId
+      presets[`call_${d.browserId}`] = {
+        type: 'button',
+        category: 'Calls',
+        name: `Call ${nm}`,
+        style: { text: `CALL\\n${nm}`, size: '14', color: white, bgcolor: dark },
+        steps: [{ down: [{ actionId: 'call', options: { from: '', to: d.browserId } }], up: [] }],
+        feedbacks: [{ feedbackId: 'call_incoming', options: { position: d.browserId }, style: { bgcolor: combineRgb(200, 30, 30), color: white } }],
+      }
+      presets[`call_clear_${d.browserId}`] = {
+        type: 'button',
+        category: 'Calls',
+        name: `${nm} — clear incoming`,
+        style: { text: `CLEAR\\n${nm}`, size: '14', color: white, bgcolor: combineRgb(60, 20, 20) },
+        steps: [{ down: [{ actionId: 'call_clear', options: { position: d.browserId } }], up: [] }],
+        feedbacks: [{ feedbackId: 'call_incoming', options: { position: d.browserId }, style: { bgcolor: combineRgb(200, 30, 30), color: white } }],
       }
     }
     this.setPresetDefinitions(presets)
