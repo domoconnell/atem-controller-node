@@ -65,6 +65,15 @@ function behindTone(sec: number | null): string {
 /** Signed "+m:ss" / "-m:ss" / "0:00" for a behind-schedule delta. */
 function fmtSigned(sec: number): string { return sec > 0 ? `+${fmtDuration(sec)}` : fmtDuration(sec) }
 
+/** A coarse wall-clock that re-renders every 20s, so the scheduled-service
+ *  selection rolls over to the next service at the right time without needing a
+ *  running timer. */
+function useNow(): number {
+  const [t, setT] = useState(() => Date.now())
+  useEffect(() => { const h = setInterval(() => setT(Date.now()), 20_000); return () => clearInterval(h) }, [])
+  return t
+}
+
 /** Re-renders about twice a second so live timers tick. Only runs when enabled
  *  (a segment is actually running), so idle widgets stay quiet. */
 function useTick(enabled: boolean): number {
@@ -171,7 +180,8 @@ function SegBlock({ label, tone, seg, mics, clock }: { label: string; tone: 'liv
 function NowNext({ config, title }: WidgetProps) {
   const services = useServicesTopic()
   const mics = useMicDefs()
-  const svc = resolveService(services, config.serviceId as string | undefined)
+  const clock = useNow()
+  const svc = resolveService(services, config.serviceId as string | undefined, clock)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   usePulseOn(idx)
@@ -203,7 +213,8 @@ registerWidget({ type: 'runsheet-nownext', label: 'Runsheet · Now / Next', defa
 function RunsheetList({ config, title }: WidgetProps) {
   const services = useServicesTopic()
   const mics = useMicDefs()
-  const svc = resolveService(services, config.serviceId as string | undefined)
+  const clock = useNow()
+  const svc = resolveService(services, config.serviceId as string | undefined, clock)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   usePulseOn(idx)
@@ -321,7 +332,8 @@ registerWidget({ type: 'runsheet-list', label: 'Runsheet · running order', defa
 function RunsheetStrip({ config }: WidgetProps) {
   const services = useServicesTopic()
   const mics = useMicDefs()
-  const svc = resolveService(services, config.serviceId as string | undefined)
+  const clock = useNow()
+  const svc = resolveService(services, config.serviceId as string | undefined, clock)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   usePulseOn(idx)
@@ -354,7 +366,8 @@ registerWidget({ type: 'runsheet-strip', label: 'Runsheet · strip', strip: true
 function RunsheetControl({ config, title }: WidgetProps) {
   const services = useServicesTopic()
   const mics = useMicDefs()
-  const svc = resolveService(services, config.serviceId as string | undefined)
+  const clock = useNow()
+  const svc = resolveService(services, config.serviceId as string | undefined, clock)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   usePulseOn(idx)

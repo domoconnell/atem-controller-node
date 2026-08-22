@@ -31,7 +31,9 @@ export interface Segment { id: string; title: string; titleOverride?: string; ti
 /** `actuals`: segId -> wall-clock ms the item was actually made active (stamped
  *  each time the playhead lands on it). Lets us show the *frozen* how-far-behind
  *  a past item ended up, independent of what happens later. */
-export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; activeStartedAt?: number | null; actuals?: Record<string, number>; proLink?: unknown; startTime?: string; startSegmentId?: string }
+/** `date` "YYYY-MM-DD" + `startTime` place the service on a calendar so the
+ *  dashboard can auto-select the current/next one instead of always the first. */
+export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; activeStartedAt?: number | null; actuals?: Record<string, number>; proLink?: unknown; startTime?: string; startSegmentId?: string; date?: string }
 
 /** A segment's planned duration "M:SS" / "MM:SS" / "H:MM:SS" -> seconds, or null
  *  if blank/invalid. Minutes and seconds fields must each be < 60. */
@@ -217,12 +219,52 @@ export function sectionFor(segs: Segment[], idx: number | null): Segment | null 
   return null
 }
 
+/** A dated service's scheduled start as a timestamp (its `date` at `startTime`),
+ *  or null if it has no date (an undated template, excluded from the schedule). */
+export function scheduledStart(svc: Service): number | null {
+  if (!svc.date) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(svc.date.trim())
+  if (!m) return null
+  const sec = parseClock(svc.startTime) ?? 0
+  return new Date(+m[1], +m[2] - 1, +m[3], Math.floor(sec / 3600), Math.floor((sec % 3600) / 60), 0, 0).getTime()
+}
+/** Total planned run length (seconds) from the start item to the end. */
+export function serviceDurationSec(svc: Service): number {
+  const segs = svc.segments ?? []
+  const startIdx = svc.startSegmentId ? segs.findIndex((s) => s.id === svc.startSegmentId) : (firstItemIndex(segs) ?? 0)
+  let total = 0
+  for (let j = Math.max(0, startIdx); j < segs.length; j++) if (!isHeader(segs[j])) total += parseDuration(segs[j].time) ?? 0
+  return total
+}
+/** The scheduled service that should be showing at `now`: the dated services in
+ *  time order, handing over to the next at the MIDPOINT between one's planned end
+ *  and the next's start. Before the first, it's the first; after the last, it's
+ *  the last. Null if no service is dated. */
+export function pickScheduledService(services: Service[], now: number): Service | undefined {
+  const dated = services
+    .map((s) => ({ s, start: scheduledStart(s) }))
+    .filter((x): x is { s: Service; start: number } => x.start != null)
+    .sort((a, b) => a.start - b.start)
+  if (dated.length === 0) return undefined
+  for (let i = 0; i < dated.length; i++) {
+    const next = dated[i + 1]
+    if (!next) return dated[i].s
+    const end = dated[i].start + serviceDurationSec(dated[i].s) * 1000
+    const boundary = (end + next.start) / 2
+    if (now < boundary) return dated[i].s
+  }
+  return dated[dated.length - 1].s
+}
+
 /** Resolve which service a widget targets: a pinned id, else the running one
- *  (activeIndex set), else the first service. */
-export function resolveService(services: Service[], serviceId?: string): Service | undefined {
-  return (serviceId ? services.find((s) => s.id === serviceId) : undefined)
-    ?? services.find((s) => s.activeIndex != null)
-    ?? services[0]
+ *  (activeIndex set), else — when `now` is given and services are dated — the
+ *  scheduled current/next one, else the first service. */
+export function resolveService(services: Service[], serviceId?: string, now?: number): Service | undefined {
+  if (serviceId) { const pinned = services.find((s) => s.id === serviceId); if (pinned) return pinned }
+  const running = services.find((s) => s.activeIndex != null)
+  if (running) return running
+  if (now != null) { const scheduled = pickScheduledService(services, now); if (scheduled) return scheduled }
+  return services[0]
 }
 
 interface MicLike { id: string; cue?: string }

@@ -686,7 +686,28 @@ export class WebServer {
   _isHeader(s) { return s?.kind === 'header' }
   _nextItemIndex(segs, from) { let i = from == null ? -1 : from; do { i++ } while (i < segs.length && this._isHeader(segs[i])); return i < segs.length ? i : null }
   _prevItemIndex(segs, from) { let i = from == null ? segs.length : from; do { i-- } while (i >= 0 && this._isHeader(segs[i])); return i >= 0 ? i : null }
-  _runningService() { const svcs = this.store?.listServices() ?? []; return svcs.find((s) => s.activeIndex != null) ?? svcs[0] }
+  _runningService() {
+    const svcs = this.store?.listServices() ?? []
+    return svcs.find((s) => s.activeIndex != null) ?? this._scheduledService(svcs) ?? svcs[0]
+  }
+  /** The dated service current at `now`, handing over at the midpoint between one
+   *  service's planned end and the next's start. Mirrors pickScheduledService in
+   *  the UI so Companion/OSC target the same service the dashboard shows. */
+  _scheduledService(svcs = this.store?.listServices() ?? [], now = Date.now()) {
+    const clockSec = (str) => { const m = /^(\d{1,2}):(\d{2})$/.exec((str ?? '').trim()); return m ? +m[1] * 3600 + +m[2] * 60 : 0 }
+    const durSec = (str) => { if (!str) return 0; const p = String(str).trim().split(':').map(Number); if (p.some(isNaN)) return 0; return p.reduce((a, n) => a * 60 + n, 0) }
+    const start = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((s.date ?? '').trim()); if (!m) return null; const sec = clockSec(s.startTime); return new Date(+m[1], +m[2] - 1, +m[3], Math.floor(sec / 3600), Math.floor((sec % 3600) / 60), 0, 0).getTime() }
+    const total = (s) => { const segs = s.segments ?? []; const si = s.startSegmentId ? segs.findIndex((x) => x.id === s.startSegmentId) : 0; let t = 0; for (let j = Math.max(0, si); j < segs.length; j++) if (!this._isHeader(segs[j])) t += durSec(segs[j]?.time); return t }
+    const dated = svcs.map((s) => ({ s, start: start(s) })).filter((x) => x.start != null).sort((a, b) => a.start - b.start)
+    if (dated.length === 0) return null
+    for (let i = 0; i < dated.length; i++) {
+      const next = dated[i + 1]
+      if (!next) return dated[i].s
+      const end = dated[i].start + total(dated[i].s) * 1000
+      if (now < (end + next.start) / 2) return dated[i].s
+    }
+    return dated[dated.length - 1].s
+  }
   _segTitle(s) { return s ? (s.titleOverride?.trim() ? s.titleOverride : s.title) : '' }
 
   /** Live mute of a composite mic — DiGiCo console mute, else Sennheiser tx mute

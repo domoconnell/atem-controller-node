@@ -75,7 +75,7 @@ function ConnectionsCard({ instances, status }: { instances: Inst[]; status: Rec
 /** The running service's now / next, live over the shared hub. */
 function RunsheetCard() {
   const d = useTopic('feature:services') as { services?: Service[] } | null
-  const svc = resolveService(d?.services ?? [])
+  const svc = resolveService(d?.services ?? [], undefined, Date.now())
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   const now = idx != null ? segs[idx] ?? null : null

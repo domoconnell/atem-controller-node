@@ -129,7 +129,7 @@ function MicCard({ mic, nowNext }: { mic: MicObj; nowNext?: { now?: string; next
 /** Now/next person name per mic id, from the running service. */
 function useMicNowNext(): Map<string, { now?: string; next?: string }> {
   const d = useTopic('feature:services') as { services?: Service[] } | null
-  const svc = resolveService(d?.services ?? [])
+  const svc = resolveService(d?.services ?? [], undefined, Date.now())
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
   const nowSeg = idx != null ? segs[idx] ?? null : null

@@ -12,7 +12,7 @@ import { useTopic } from '@/hooks/use-topic'
 interface Person { name: string; micId?: string; lead?: boolean }
 interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean; actions?: RunAction[] }
 interface ProLink { playlistId: string; playlistName?: string; lastSync?: number }
-interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink; startTime?: string; startSegmentId?: string }
+interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink; startTime?: string; startSegmentId?: string; date?: string }
 interface MicDef { id: string; label: string }
 interface Playlist { id: string; name: string; path?: string }
 
@@ -112,6 +112,11 @@ export default function RunsheetPage() {
             <aside className="w-72 shrink-0 border-r border-border/70 overflow-y-auto p-4 space-y-5 bg-background/40">
               <Field label="Service name">
                 <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-full')} />
+              </Field>
+              <Field label="Date">
+                <input type="date" value={svc.date ?? ''} onChange={(e) => update({ date: e.target.value || undefined })}
+                  title="Give the service a date so the dashboard auto-selects the current / next one by the clock. Leave blank to keep it as an undated template."
+                  className={cn(sc, 'w-full tabular-nums')} />
               </Field>
               <Field label="Start time">
                 <input value={svc.startTime ?? ''} onChange={(e) => update({ startTime: e.target.value })} placeholder="10:30"
