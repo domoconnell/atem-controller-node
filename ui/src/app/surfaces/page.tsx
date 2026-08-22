@@ -19,7 +19,7 @@ import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { Pullouts } from '@/components/surfaces/pullouts'
 import { LiveDisplays } from '@/components/surfaces/live-displays'
 import { useMeasure } from '@/components/surfaces/use-measure'
-import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
+import { DISPLAYS, displayDef, gridDims, emptySurface, normaliseSurface, stripFlexStyle, type Surface, type Display, type Edge, type Layout } from '@/components/surfaces/model'
 import type { Instance, ConnectorType } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Plus, Pencil, Save, Eye, Trash2, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, X, Loader2, Check } from 'lucide-react'
@@ -214,7 +214,7 @@ function RegionStrip({ region, surface, edit, sel, instances, onSelect, onRemove
       {widgets.length === 0 && <div className="text-[10px] text-muted-foreground/40 grid place-items-center w-full uppercase tracking-wider">{region}</div>}
       {widgets.map((p) => (
         <div key={p.i} onClick={(e) => { e.stopPropagation(); if (edit) onSelect(region, p.i) }}
-          style={strip ? (p.config.stripW === 0 ? { flex: '0 0 auto' } : { flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 }) : undefined}
+          style={strip ? stripFlexStyle(p.config) : undefined}
           className={cn('relative', strip ? 'min-w-0 h-full' : horizontal ? 'w-52 h-full shrink-0' : 'w-full h-24 shrink-0',
             edit && sel?.i === p.i && 'ring-1 ring-primary rounded-lg')}>
           <WidgetView p={p} instances={instances} />
@@ -369,6 +369,13 @@ function ConfigPanel({ placement, instances, types, region, onChange, onMove, on
 }) {
   const isStrip = region === 'header' || region === 'footer'
   const stripW = (placement.config.stripW as number | undefined) ?? 1
+  const rawPx = placement.config.stripPx as number | undefined
+  const stripPx = rawPx && rawPx > 0 ? rawPx : 160
+  const widthMode: 'fixed' | 'flex' | 'fit' = rawPx && rawPx > 0 ? 'fixed' : placement.config.stripW === 0 ? 'fit' : 'flex'
+  const setWidthMode = (m: 'fixed' | 'flex' | 'fit') => onChange({ config:
+    m === 'fit' ? { stripW: 0, stripPx: undefined }
+    : m === 'fixed' ? { stripPx, stripW: undefined }
+    : { stripW: stripW > 0 ? stripW : 1, stripPx: undefined } })
   const def = getWidget(placement.widgetType)
   const inst = instances.find((i) => i.id === placement.instanceId)
   const typeId = inst?.typeId ?? (placement.config.typeId as string | undefined)
@@ -386,11 +393,26 @@ function ConfigPanel({ placement, instances, types, region, onChange, onMove, on
       <F label="Title"><input value={placement.title ?? ''} placeholder={def?.label} onChange={(e) => onChange({ title: e.target.value })} className={sc} /></F>
       {isStrip && (
         <>
-          <F label={`Width · ${stripW === 0 ? 'fit content' : `${stripW}×`}`}>
-            <div className="flex items-center gap-2">
-              <input type="range" min={0} max={6} step={1} value={stripW} onChange={(e) => set('stripW', Number(e.target.value))} className="flex-1 accent-primary" />
-              <span className="text-[12px] tabular-nums w-9 text-right">{stripW === 0 ? 'fit' : `${stripW}×`}</span>
+          <F label="Width">
+            <div className="flex gap-1 mb-2">
+              {(['fixed', 'flex', 'fit'] as const).map((m) => (
+                <button key={m} onClick={() => setWidthMode(m)}
+                  className={cn('flex-1 text-[11px] rounded-md py-1 border capitalize', widthMode === m ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent')}>{m}</button>
+              ))}
             </div>
+            {widthMode === 'fixed' && (
+              <div className="flex items-center gap-2">
+                <input type="range" min={64} max={520} step={8} value={stripPx} onChange={(e) => onChange({ config: { stripPx: Number(e.target.value), stripW: undefined } })} className="flex-1 accent-primary" />
+                <span className="text-[12px] tabular-nums w-12 text-right">{stripPx}px</span>
+              </div>
+            )}
+            {widthMode === 'flex' && (
+              <div className="flex items-center gap-2">
+                <input type="range" min={1} max={6} step={1} value={stripW || 1} onChange={(e) => onChange({ config: { stripW: Number(e.target.value), stripPx: undefined } })} className="flex-1 accent-primary" />
+                <span className="text-[12px] tabular-nums w-9 text-right">{stripW || 1}×</span>
+              </div>
+            )}
+            {widthMode === 'fit' && <p className="text-[11px] text-muted-foreground leading-snug">Sizes to the widget’s own content — best for a logo.</p>}
           </F>
           <F label="Order">
             <div className="flex gap-2">

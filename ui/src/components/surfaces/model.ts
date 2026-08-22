@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import type { Placement } from './widget-view'
 
 export type Display = '16:9' | 'ultrawide' | '9:16'
@@ -12,6 +13,19 @@ export const displayDef = (d: Display) => DISPLAYS.find((x) => x.id === d) ?? DI
 export function gridDims(d: Display) { const def = displayDef(d); return { cols: def.cols, rows: Math.max(1, Math.round(def.cols / def.aspect)) } }
 
 export type Layout = { i: string; x: number; y: number; w: number; h: number }
+
+/** How a header/footer strip widget sizes horizontally, from its config:
+ *   stripPx > 0  → fixed pixel width  (flex: 0 0 Npx)   — best for clock/call
+ *   stripW === 0 → fit content        (flex: 0 0 auto)  — best for a logo
+ *   else         → flex-grow share    (grow N, basis 0) — fills leftover space
+ * Fixed width wins when set, so a clock can sit at a sensible ~160px instead of
+ * being crushed to content or ballooning to a full 1× share. */
+export function stripFlexStyle(config: Record<string, unknown>): CSSProperties {
+  const px = config.stripPx as number | undefined
+  if (typeof px === 'number' && px > 0) return { flex: `0 0 ${px}px` }
+  if (config.stripW === 0) return { flex: '0 0 auto' }
+  return { flexGrow: (config.stripW as number) || 1, flexBasis: 0 }
+}
 export interface Region { enabled: boolean; widgets: Placement[] }
 export type Edge = 'left' | 'right' | 'top' | 'bottom'
 export interface Surface {

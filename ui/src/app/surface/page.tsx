@@ -11,7 +11,7 @@ import '@/widgets/runsheet'
 import '@/widgets/calls'
 import { WidgetView, type Placement } from '@/components/surfaces/widget-view'
 import { useMeasure } from '@/components/surfaces/use-measure'
-import { displayDef, gridDims, normaliseSurface, type Surface, type Layout, type Edge } from '@/components/surfaces/model'
+import { displayDef, gridDims, normaliseSurface, stripFlexStyle, type Surface, type Layout, type Edge } from '@/components/surfaces/model'
 import { Pullouts } from '@/components/surfaces/pullouts'
 import { useTopic } from '@/hooks/use-topic'
 import { realtime } from '@/lib/realtime'
@@ -35,7 +35,7 @@ type IRef = { id: string; typeId: string; name: string }
 function Strip({ widgets, instances }: { widgets: Placement[]; instances: IRef[] }) {
   return (
     <div className="glass-strip flex gap-2 p-2 h-16 overflow-hidden shrink-0 border-y">
-      {widgets.map((p) => (<div key={p.i} className="min-w-0 h-full" style={p.config.stripW === 0 ? { flex: '0 0 auto' } : { flexGrow: (p.config.stripW as number) || 1, flexBasis: 0 }}><WidgetView p={p} instances={instances} /></div>))}
+      {widgets.map((p) => (<div key={p.i} className="min-w-0 h-full" style={stripFlexStyle(p.config)}><WidgetView p={p} instances={instances} /></div>))}
     </div>
   )
 }
