@@ -48,7 +48,7 @@ function MainGrid({ surface, instances }: { surface: Surface; instances: IRef[] 
     <div ref={ref} className="flex-1 min-h-0 min-w-0 overflow-hidden">
       {w > 0 && h > 0 && (
         <Grid key={`${surface.id}:${surface.display}`} className="layout" layouts={{ lg: surface.main.layout }} breakpoints={{ lg: 0 }} cols={{ lg: cols }} rowHeight={rowH} maxRows={rows} margin={[0, 0]} containerPadding={[0, 0]} compactType={null} isDraggable={false} isResizable={false}>
-          {surface.main.widgets.map((p) => (<div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }} className="p-1.5"><WidgetView p={p} instances={instances} /></div>))}
+          {surface.main.widgets.map((p) => (<div key={p.i} data-grid={{ ...(lmap[p.i] ?? { x: 0, y: 0, w: 3, h: 2 }), i: p.i }} className="p-2.5"><WidgetView p={p} instances={instances} /></div>))}
         </Grid>
       )}
     </div>
@@ -106,11 +106,18 @@ export default function SurfaceViewer() {
   const P = surface.pullouts
   return (
     <div className="h-screen w-screen surface-bg flex flex-col relative overflow-hidden">
-      {surface.header.enabled && <Strip widgets={surface.header.widgets} instances={instances} />}
-      <div className="flex flex-1 min-h-0">
-        <MainGrid surface={surface} instances={instances} />
+      <div className="surface-aurora" />
+      <div className="relative z-10 flex flex-col flex-1 min-h-0">
+        {surface.header.enabled && <Strip widgets={surface.header.widgets} instances={instances} />}
+        <div className="flex flex-1 min-h-0">
+          <MainGrid surface={surface} instances={instances} />
+        </div>
+        {surface.footer.enabled && <Strip widgets={surface.footer.widgets} instances={instances} />}
       </div>
-      {surface.footer.enabled && <Strip widgets={surface.footer.widgets} instances={instances} />}
+      <span className="hud-corner hud-tl" />
+      <span className="hud-corner hud-tr" />
+      <span className="hud-corner hud-bl" />
+      <span className="hud-corner hud-br" />
 
       <Pullouts surface={surface} instances={instances} openEdge={openEdge} onOpenEdge={setOpenEdge} />
       {browserId && <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-foreground/70 tabular-nums pointer-events-none select-none bg-black/45 rounded-b-md px-2 py-0.5 border border-t-0 border-border/50 backdrop-blur-sm">{browserId}</div>}
