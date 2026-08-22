@@ -5,13 +5,44 @@ import { useMicDefs, useMicLive, CUE, batTint, MiniBar } from './mics'
 import { useTopic } from '@/hooks/use-topic'
 import { usePulseOn } from '@/components/surfaces/pulse'
 import { cn } from '@/lib/utils'
-import { MicOff, Star, SkipBack, SkipForward, Square } from 'lucide-react'
+import { MicOff, Star, SkipBack, SkipForward, Square, Zap, Sparkles, MonitorPlay, Image } from 'lucide-react'
 import type { Mic as MicObj } from '@/components/mics/mic-composite'
 import {
-  type Person, type Segment, type Service,
+  type Person, type Segment, type Service, type RunAction, type RunActionType,
   isHeader, segTitle, nextItemIndex, prevItemIndex, firstItemIndex, lastItemIndex, sectionFor, resolveService, gotoIndex,
   parseDuration, fmtDuration, computeTiming, fmtClockTs,
 } from '@/lib/runsheet'
+
+/** Action-type glyphs, shared with the runsheet app's editor. */
+const ACTION_ICON: Record<RunActionType, typeof Zap> = {
+  'atem-look': Sparkles,
+  'pp-presentation': MonitorPlay,
+  'pp-media': Image,
+  'mic-mute': MicOff,
+}
+const ACTION_LABEL: Record<RunActionType, string> = {
+  'atem-look': 'ATEM look',
+  'pp-presentation': 'ProPresenter presentation',
+  'pp-media': 'ProPresenter media',
+  'mic-mute': 'Mic mute',
+}
+/** The little row of automation icons a segment carries (enabled actions only). */
+function ActionIcons({ actions, className }: { actions?: RunAction[]; className?: string }) {
+  const on = (actions ?? []).filter((a) => a && a.enabled !== false)
+  if (on.length === 0) return null
+  return (
+    <span className={cn('inline-flex items-center gap-1 shrink-0', className)}>
+      {on.map((a) => { const I = ACTION_ICON[a.type]; return I ? <span key={a.id} title={`${ACTION_LABEL[a.type]}${actionDetail(a)}`} className="inline-flex"><I className="size-3 text-info/80" /></span> : null })}
+    </span>
+  )
+}
+function actionDetail(a: RunAction): string {
+  if (a.type === 'atem-look' && a.look) return `: ${a.look}`
+  if (a.type === 'pp-presentation' && a.presentationName) return `: ${a.presentationName}`
+  if (a.type === 'pp-media' && a.itemName) return `: ${a.itemName}`
+  if (a.type === 'mic-mute' && a.micLabel) return `: ${a.muteAction ?? 'mute'} ${a.micLabel}`
+  return ''
+}
 
 /** Colour the finish estimate: on/under time is calm blue, drifting over goes
  *  amber then red as the overrun grows. */
@@ -64,6 +95,13 @@ function useServicesTopic(): Service[] {
   const d = useTopic('feature:services') as { services?: Service[] } | null
   return d?.services ?? []
 }
+/** Global automation arm state (server-wide), pushed on feature:services. */
+function useAutomationArmed(): boolean {
+  const d = useTopic('feature:services') as { automationArmed?: boolean } | null
+  return d?.automationArmed ?? true
+}
+const setAutomationArmed = (armed: boolean) =>
+  fetch('/api/features/automation', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ armed }) }).catch(() => {})
 /** Service list for the designer's "pin a service" picker. */
 export function useServiceList(): Service[] { return useServicesTopic() }
 
@@ -172,6 +210,7 @@ function RunsheetList({ config, title }: WidgetProps) {
   const nextIdx = idx != null ? nextItemIndex(segs, idx) : firstItemIndex(segs)
   const now = useTick(!!svc)                 // tick always so the finish estimate is live
   const timing = computeTiming(svc, now)
+  const armed = useAutomationArmed()
   const contRef = useRef<HTMLDivElement>(null)
   const nowRef = useRef<HTMLDivElement>(null)
   const nextRef = useRef<HTMLDivElement>(null)
@@ -189,18 +228,27 @@ function RunsheetList({ config, title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
-      {timing.estFinish != null && (
-        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
-          <span className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Est. finish</span>
-          <span className={cn('tabular-nums font-bold text-[15px] leading-none', finishTone(timing.deltaSec))}>{fmtClockTs(timing.estFinish, true)}</span>
-          {timing.deltaSec != null && (
-            <span className={cn('ml-auto tabular-nums text-[11px] font-semibold', finishTone(timing.deltaSec))}>
-              {timing.deltaSec > 0 ? '▲ ' : timing.deltaSec < -15 ? '▼ ' : '● '}{timing.deltaSec > 0 ? '+' : ''}{fmtDuration(timing.deltaSec)}
-            </span>
-          )}
-          {timing.plannedEnd != null && <span className="tabular-nums text-[10px] text-muted-foreground/60">/ {fmtClockTs(timing.plannedEnd)}</span>}
-        </div>
-      )}
+      <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border/40">
+        {timing.estFinish != null ? (
+          <>
+            <span className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Est. finish</span>
+            <span className={cn('tabular-nums font-bold text-[15px] leading-none', finishTone(timing.deltaSec))}>{fmtClockTs(timing.estFinish, true)}</span>
+            {timing.deltaSec != null && (
+              <span className={cn('tabular-nums text-[11px] font-semibold', finishTone(timing.deltaSec))}>
+                {timing.deltaSec > 0 ? '▲ ' : timing.deltaSec < -15 ? '▼ ' : '● '}{timing.deltaSec > 0 ? '+' : ''}{fmtDuration(timing.deltaSec)}
+              </span>
+            )}
+            {timing.plannedEnd != null && <span className="tabular-nums text-[10px] text-muted-foreground/60">/ {fmtClockTs(timing.plannedEnd)}</span>}
+          </>
+        ) : <span className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Running order</span>}
+        {/* Global automation arm — turns ALL segment actions on/off, from any surface. */}
+        <button onClick={() => setAutomationArmed(!armed)}
+          title={armed ? 'Automation armed — segment actions fire on cue. Tap to disable all automations.' : 'Automation OFF — no segment actions will fire. Tap to arm.'}
+          className={cn('ml-auto shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border transition-colors',
+            armed ? 'border-live/50 bg-live/15 text-live' : 'border-border bg-muted/40 text-muted-foreground')}>
+          <Zap className={cn('size-2.5', armed && 'fill-current')} /> {armed ? 'Auto' : 'Off'}
+        </button>
+      </div>
       <div ref={contRef} className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5">
         {!svc ? <div className="text-[11px] text-muted-foreground/50 px-1">No service.</div> : segs.length === 0 ? <div className="text-[11px] text-muted-foreground/50 px-1">Empty runsheet.</div> : (
           segs.map((seg, i) => {
@@ -219,6 +267,8 @@ function RunsheetList({ config, title }: WidgetProps) {
                 className={cn('rounded-md pr-2 pl-2 py-1 border-l-2', isNow ? 'bg-live/15 border-live' : isNext ? 'bg-busy/10 border-busy' : 'border-transparent')}>
                 <div className="flex items-center gap-2">
                   <span className={cn('text-[12.5px] font-semibold truncate shrink min-w-0', isNow ? 'text-live' : isNext ? 'text-busy' : '')}>{segTitle(seg)}</span>
+                  {/* automations attached to this item (dimmed while disarmed) */}
+                  <ActionIcons actions={seg.actions} className={cn(!armed && 'opacity-40 grayscale')} />
                   {/* lead mics on the same line */}
                   {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
                   {(() => {
