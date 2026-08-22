@@ -51,8 +51,10 @@ export const digicoConfigSchema = z.object({
    */
   relayEnabled: z.boolean().default(false)
     .describe('Let other OSC tools (Companion, DiGiCo iPad apps) reach this console through us. They aim their OSC at this machine on the relay port and we pass everything both ways — so many controllers can share the desk’s single OSC connection.'),
-  relayPort: z.number().int().min(0).max(65535).default(8001)
-    .describe('The port downstream clients (iPad / Companion) connect to instead of the desk.'),
+  relayReceivePort: z.number().int().min(1).max(65535).default(8001)
+    .describe('The port WE listen on for downstream clients — set this as the iPad app’s (or Companion’s) SEND port.'),
+  relaySendPort: z.number().int().min(0).max(65535).default(8002)
+    .describe('The port WE send replies to on each client — set this as the iPad app’s (or Companion’s) RECEIVE port. 0 = reply to whatever source port the client sent from (single-socket tools).'),
   relayClientTimeoutSeconds: z.number().int().min(10).max(3600).default(300)
     .describe('Forget a relay client we’ve heard nothing from for this long.'),
 })
@@ -129,10 +131,10 @@ class DigicoConnector implements Connector<DigicoConfig> {
     relay.on('message', (buffer, rinfo) => this.onRelayDatagram(buffer, rinfo))
     relay.on('error', (error) => ctx.logger.debug({ err: error }, 'relay socket error'))
     await new Promise<void>((resolve, reject) => {
-      relay.bind(ctx.config.relayPort, () => resolve())
+      relay.bind(ctx.config.relayReceivePort, () => resolve())
       relay.once('error', reject)
     })
-    ctx.logger.info({ port: ctx.config.relayPort }, 'DiGiCo OSC relay listening')
+    ctx.logger.info({ receivePort: ctx.config.relayReceivePort, sendPort: ctx.config.relaySendPort }, 'DiGiCo OSC relay listening')
   }
 
   stop(): void {
@@ -174,11 +176,16 @@ class DigicoConnector implements Connector<DigicoConfig> {
     })
   }
 
-  /** Fan a console packet out to every relay client (called from onDatagram). */
+  /** Fan a console packet out to every relay client (called from onDatagram).
+   *  Replies go to the client's configured RECEIVE port (relaySendPort) — the
+   *  iPad app expects an asymmetric port pair — or to its source port when
+   *  relaySendPort is 0 (single-socket tools). */
   private relayToClients(buffer: Buffer): void {
     if (!this.relaySocket || this.relayClients.size === 0) return
+    const fixed = this.ctx?.config.relaySendPort ?? 0
     for (const client of this.relayClients.values()) {
-      this.relaySocket.send(buffer, client.port, client.address, (error) => {
+      const port = fixed > 0 ? fixed : client.port
+      this.relaySocket.send(buffer, port, client.address, (error) => {
         if (error) this.ctx?.logger.debug({ err: error }, 'relay → client send failed')
       })
       client.fromConsole += 1
@@ -201,7 +208,11 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (!ctx) return
     ctx.publish('relay', {
       enabled: ctx.config.relayEnabled,
-      port: ctx.config.relayPort,
+      // Named from the CLIENT's point of view, for the setup instructions:
+      //  clientSendPort  = the port the iPad/Companion sends TO (= our receive)
+      //  clientReceivePort = the port it listens ON (= where we send; 0 = source)
+      clientSendPort: ctx.config.relayReceivePort,
+      clientReceivePort: ctx.config.relaySendPort,
       console: { host: ctx.config.host, sendPort: ctx.config.sendPort },
       toConsole: this.relayToConsole,
       fromConsole: this.relayFromConsole,

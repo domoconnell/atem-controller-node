@@ -74,11 +74,13 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
  *  one OSC connection, so we hold it and relay for other tools (Companion). This
  *  shows the relay port and every downstream client currently routed through us. */
 type RelayClient = { address: string; port: number; lastSeen: number; toConsole: number; fromConsole: number }
-type RelayState = { enabled?: boolean; port?: number; console?: { host: string; sendPort: number }; toConsole?: number; fromConsole?: number; clients?: RelayClient[] }
+type RelayState = { enabled?: boolean; clientSendPort?: number; clientReceivePort?: number; console?: { host: string; sendPort: number }; toConsole?: number; fromConsole?: number; clients?: RelayClient[] }
 function DigicoRelayPanel({ instanceId }: { instanceId: string }) {
   const relay = useTopic(`mi:${instanceId}:relay`) as RelayState | null
   const [, force] = useState(0)
   useEffect(() => { const t = setInterval(() => force((x) => x + 1), 1000); return () => clearInterval(t) }, []) // keep "last seen" fresh
+  // The address the operator points their iPad app at = the host they browsed to.
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'this-machine'
   if (!relay) return null
   const ago = (ts: number) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago` }
   const clients = relay.clients ?? []
@@ -88,19 +90,29 @@ function DigicoRelayPanel({ instanceId }: { instanceId: string }) {
         <ArrowLeftRight className={cn('size-4', relay.enabled ? 'text-info' : 'text-muted-foreground/50')} />
         <span className="text-[12px] font-semibold">OSC pass-through relay</span>
         <span className={cn('text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5', relay.enabled ? 'bg-info/15 text-info' : 'bg-muted/50 text-muted-foreground')}>{relay.enabled ? 'On' : 'Off'}</span>
-        {relay.enabled && <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">:{relay.port} → {relay.console?.host}:{relay.console?.sendPort}</span>}
+        {relay.enabled && <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">→ {relay.console?.host}:{relay.console?.sendPort}</span>}
       </div>
       {!relay.enabled ? (
-        <p className="text-[11px] text-muted-foreground leading-snug">Off. Enable it above to let Companion and other tools reach this console through us — point their OSC at this machine on the relay port, and they’ll share our single console connection.</p>
+        <p className="text-[11px] text-muted-foreground leading-snug">Off. Enable it above to let iPad apps and Companion reach this console through us — they point their OSC at this machine and share our single console connection.</p>
       ) : (
         <>
+          {/* Exact instructions to type into the DiGiCo iPad app / Companion. */}
+          <div className="rounded-md bg-card border border-info/30 px-2.5 py-2">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-info/80 mb-1">On the DiGiCo iPad app, set:</div>
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px] font-mono">
+              <span className="text-muted-foreground">IP</span><span className="text-foreground select-all">{host}</span>
+              <span className="text-muted-foreground">Send port</span><span className="text-foreground select-all">{relay.clientSendPort}</span>
+              <span className="text-muted-foreground">Receive port</span><span className="text-foreground select-all">{relay.clientReceivePort === 0 ? '(any)' : relay.clientReceivePort}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground/60 mt-1.5 leading-snug">Their send port is our receive, and vice-versa. Enrol as a <b className="text-foreground/80">DiGiCo Pad</b> device (iPad set), or <b className="text-foreground/80">Other OSC</b> for Companion — matching this connector’s command set.</div>
+          </div>
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground tabular-nums">
             <span className="inline-flex items-center gap-1"><Cable className="size-3" /> {clients.length} client{clients.length === 1 ? '' : 's'}</span>
             <span>▲ {relay.toConsole ?? 0} to console</span>
             <span>▼ {relay.fromConsole ?? 0} to clients</span>
           </div>
           {clients.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground/60">No clients yet. In Companion’s DiGiCo module, set the console IP to <b className="text-foreground">this machine</b> and the port to <b className="text-foreground">{relay.port}</b>.</p>
+            <p className="text-[11px] text-muted-foreground/60">No clients yet — waiting for an iPad / Companion to connect on port {relay.clientSendPort}.</p>
           ) : (
             <div className="space-y-1">
               {clients.map((c) => (
