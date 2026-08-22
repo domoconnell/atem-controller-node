@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
 import { useMicDefs, useMicLive, CUE, batTint, MiniBar } from './mics'
 import { useTopic } from '@/hooks/use-topic'
+import { usePulseOn } from '@/components/surfaces/pulse'
 import { cn } from '@/lib/utils'
 import { MicOff, Star, SkipBack, SkipForward, Square } from 'lucide-react'
 import type { Mic as MicObj } from '@/components/mics/mic-composite'
@@ -114,6 +115,7 @@ function NowNext({ config, title }: WidgetProps) {
   const svc = resolveService(services, config.serviceId as string | undefined)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
+  usePulseOn(idx)
   const now = idx != null ? segs[idx] ?? null : null
   const next = segs[idx != null ? (nextItemIndex(segs, idx) ?? -1) : (firstItemIndex(segs) ?? -1)] ?? null
   const section = sectionFor(segs, idx)
@@ -145,6 +147,7 @@ function RunsheetList({ config, title }: WidgetProps) {
   const svc = resolveService(services, config.serviceId as string | undefined)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
+  usePulseOn(idx)
   const nextIdx = idx != null ? nextItemIndex(segs, idx) : firstItemIndex(segs)
   const now = useTick(idx != null)
   const contRef = useRef<HTMLDivElement>(null)
@@ -213,6 +216,7 @@ function RunsheetStrip({ config }: WidgetProps) {
   const svc = resolveService(services, config.serviceId as string | undefined)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
+  usePulseOn(idx)
   const now = idx != null ? segs[idx] ?? null : null
   const next = segs[idx != null ? (nextItemIndex(segs, idx) ?? -1) : (firstItemIndex(segs) ?? -1)] ?? null
   const section = sectionFor(segs, idx)
@@ -245,6 +249,7 @@ function RunsheetControl({ config, title }: WidgetProps) {
   const svc = resolveService(services, config.serviceId as string | undefined)
   const segs = svc?.segments ?? []
   const idx = svc?.activeIndex ?? null
+  usePulseOn(idx)
   const first = firstItemIndex(segs), last = lastItemIndex(segs)
   const now = idx != null ? segs[idx] ?? null : null
   const next = segs[idx != null ? (nextItemIndex(segs, idx) ?? -1) : (first ?? -1)] ?? null

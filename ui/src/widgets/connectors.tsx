@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react'
 import { registerWidget, type WidgetDef, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
+import { usePulseOn } from '@/components/surfaces/pulse'
 import { statusTopic } from '@/lib/topics'
 import { cn } from '@/lib/utils'
 import { ReceiverCard } from './mics'
@@ -113,6 +114,7 @@ function ReceiverCards({ id, name }: { id: string; name: string }) {
   const d = useStream(id, 'channels') as { channels?: Ch[]; online?: boolean } | null
   const chans = d?.channels ?? []
   const online = !!d?.online
+  usePulseOn(chans.map((c) => (c.mute ? '1' : '0')).join('') + (online ? 'o' : 'x'))
   if (chans.length === 0) return <ReceiverCard ch={{ id: 'x' }} online={false} name={name} />
   return <>{chans.map((ch) => <ReceiverCard key={ch.id} ch={ch} online={online} name={chans.length > 1 ? `${name} · ${ch.id}` : name} />)}</>
 }
@@ -131,6 +133,7 @@ function MicStrip({ instanceId, title }: WidgetProps) {
   const bats = chans.map((c) => c.battery).filter((b): b is number => b != null)
   const worstBat = bats.length ? Math.min(...bats) : null
   const rf = chans.length ? Math.max(...chans.map((c) => c.rf ?? 0)) : 0
+  usePulseOn(chans.map((c) => (c.mute ? '1' : '0')).join('') + (d?.online ? 'o' : 'x'))
   return (
     <Frame icon={Mic} label={title} tint={d?.online ? 'text-[#2dd4bf]' : 'text-muted-foreground/40'}>
       {chans.some((c) => c.mute) && <Pill tone="alarm">mute</Pill>}
@@ -184,6 +187,7 @@ function splTone(v: number | null): Tone { return v == null ? 'muted' : v > 100 
 function SmaartPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'spl') as Record<string, unknown> | null
   const viol = (d?.violations as unknown[] | undefined)?.length ?? 0
+  usePulseOn(viol)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 grid grid-cols-2 gap-x-4 gap-y-1.5 content-start">
@@ -204,6 +208,7 @@ function SmaartPanel({ instanceId, title }: WidgetProps) {
 function SmaartStrip({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'spl') as Record<string, unknown> | null
   const a = num(d?.splAFast), leq = num(d?.laeq15 ?? d?.laeq1)
+  usePulseOn(splTone(a))
   return (
     <Frame icon={Volume2} label={title}>
       {leq != null && <Pill>LAeq {leq.toFixed(0)}</Pill>}
@@ -219,6 +224,7 @@ interface RunCue { id: string; name: string; elapsed: number; remaining: number;
 function QlabPanel({ instanceId, title }: WidgetProps) {
   const head = useStream(instanceId, 'playhead') as { name?: string | null } | null
   const run = useStream(instanceId, 'running') as { cues?: RunCue[] } | null
+  usePulseOn(head?.name)
   const cues = run?.cues ?? []
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
@@ -243,6 +249,7 @@ function QlabStrip({ instanceId, title }: WidgetProps) {
   const head = useStream(instanceId, 'playhead') as { name?: string | null } | null
   const run = useStream(instanceId, 'running') as { cues?: RunCue[] } | null
   const n = run?.cues?.length ?? 0
+  usePulseOn(head?.name)
   return (
     <Frame icon={Play} label={title}>
       <Pill>{head?.name || '—'}</Pill>
@@ -261,6 +268,7 @@ function ReaperPanel({ instanceId, title }: WidgetProps) {
   const tk = useStream(instanceId, 'tracks') as { tracks?: Trk[]; count?: number; armedCount?: number } | null
   const disk = useStream(instanceId, 'disk') as { freeMb?: number } | null
   const tracks = tk?.tracks ?? []
+  usePulseOn(t?.state)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-2">
@@ -283,6 +291,7 @@ function ReaperPanel({ instanceId, title }: WidgetProps) {
 }
 function ReaperStrip({ instanceId, title }: WidgetProps) {
   const t = useStream(instanceId, 'transport') as { state?: string; positionString?: string; armedCount?: number } | null
+  usePulseOn(t?.state)
   return (
     <Frame icon={Disc3} label={title}>
       {(t?.armedCount ?? 0) > 0 && <Pill tone="alarm">●{t?.armedCount}</Pill>}
@@ -301,6 +310,7 @@ function HyperdeckPanel({ instanceId, title }: WidgetProps) {
   const slot = useStream(instanceId, 'slots') as { recordingTimeSeconds?: number; videoFormat?: string; status?: string; volumeName?: string } | null
   const dev = useStream(instanceId, 'device') as { model?: string } | null
   const tc = t?.displayTimecode || t?.timecode || '––:––:––:––'
+  usePulseOn(t?.status)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 flex flex-col justify-center gap-2 px-3 pb-2">
@@ -319,6 +329,7 @@ function HyperdeckPanel({ instanceId, title }: WidgetProps) {
 }
 function HyperdeckStrip({ instanceId, title }: WidgetProps) {
   const t = useStream(instanceId, 'transport') as { status?: string; timecode?: string; displayTimecode?: string } | null
+  usePulseOn(t?.status)
   return (
     <Frame icon={Film} label={title}>
       <span className="text-[12px] tabular-nums font-mono truncate">{t?.displayTimecode || t?.timecode || '––:––:––:––'}</span>
@@ -335,6 +346,7 @@ function ppTone(s?: string): Tone { return s === 'running' ? 'live' : s === 'ove
 function ProPresenterPanel({ instanceId, title }: WidgetProps) {
   const t = useStream(instanceId, 'timers') as { timers?: PpTimer[] } | null
   const slide = useStream(instanceId, 'slide') as { current?: string; next?: string } | null
+  usePulseOn(slide?.current)
   const timers = t?.timers ?? []
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
@@ -361,6 +373,7 @@ function ProPresenterStrip({ instanceId, title }: WidgetProps) {
   const t = useStream(instanceId, 'timers') as { timers?: PpTimer[] } | null
   const timers = t?.timers ?? []
   const active = timers.find((x) => x.state === 'running') ?? timers[0]
+  usePulseOn(active?.state)
   return (
     <Frame icon={Timer} label={title}>
       {active && <span className="text-[10px] text-muted-foreground truncate">{active.name}</span>}
@@ -377,6 +390,7 @@ function UnifiPanel({ instanceId, title }: WidgetProps) {
   const s = useStream(instanceId, 'summary') as { onlineCount?: number; deviceCount?: number; clientCount?: number; wirelessClientCount?: number; siteName?: string } | null
   const d = useStream(instanceId, 'devices') as { devices?: UniDev[] } | null
   const devs = d?.devices ?? []
+  usePulseOn(`${s?.onlineCount ?? ''}/${s?.deviceCount ?? ''}`)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-2">
@@ -402,6 +416,7 @@ function UnifiPanel({ instanceId, title }: WidgetProps) {
 function UnifiStrip({ instanceId, title }: WidgetProps) {
   const s = useStream(instanceId, 'summary') as { onlineCount?: number; deviceCount?: number; clientCount?: number } | null
   const down = (s?.deviceCount ?? 0) - (s?.onlineCount ?? 0)
+  usePulseOn(`${s?.onlineCount ?? ''}/${s?.deviceCount ?? ''}`)
   return (
     <Frame icon={Wifi} label={title}>
       {s?.clientCount != null && <Pill>{s.clientCount} cl</Pill>}
@@ -419,6 +434,7 @@ function DigicoPanel({ instanceId, title }: WidgetProps) {
   const snap = useStream(instanceId, 'snapshots') as { current?: number } | null
   const chans = c?.channels ?? []
   const muted = chans.filter((x) => x.muted).length
+  usePulseOn(chans.map((x) => (x.muted ? '1' : '0')).join('') + '|' + (snap?.current ?? ''))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-1.5">
@@ -443,6 +459,7 @@ function DigicoStrip({ instanceId, title }: WidgetProps) {
   const c = useStream(instanceId, 'channels') as { channels?: DChan[] } | null
   const snap = useStream(instanceId, 'snapshots') as { current?: number } | null
   const muted = (c?.channels ?? []).filter((x) => x.muted).length
+  usePulseOn(muted + '|' + (snap?.current ?? ''))
   return (
     <Frame icon={SlidersHorizontal} label={title}>
       {muted > 0 && <Pill tone="alarm">{muted} mute</Pill>}
@@ -457,6 +474,7 @@ connector({ typeId: 'digico', label: 'DiGiCo', icon: SlidersHorizontal, Panel: D
 function WeatherPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'current') as Record<string, unknown> | null
   const t = num(d?.temperatureC), w = num(d?.windMs), g = num(d?.gustMs), r = num(d?.precipitationMm), h = num(d?.humidityPct)
+  usePulseOn(t)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 grid place-items-center">
@@ -477,6 +495,7 @@ function WeatherPanel({ instanceId, title }: WidgetProps) {
 function WeatherStrip({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'current') as Record<string, unknown> | null
   const t = num(d?.temperatureC), w = num(d?.windMs)
+  usePulseOn(t)
   return (
     <Frame icon={CloudSun} label={title}>
       {w != null && <Pill>{w.toFixed(0)} m/s</Pill>}
@@ -491,6 +510,7 @@ connector({ typeId: 'weather', label: 'Weather', icon: CloudSun, Panel: WeatherP
 function NetcheckPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'latency') as Record<string, unknown> | null
   const up = d?.up === true, rtt = num(d?.rttAvgMs), loss = num(d?.lossPct), jit = num(d?.jitterMs)
+  usePulseOn(d?.up)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 grid place-items-center">
@@ -509,6 +529,7 @@ function NetcheckPanel({ instanceId, title }: WidgetProps) {
 }
 function NetcheckStrip({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'latency') as Record<string, unknown> | null
+  usePulseOn(d?.up)
   const up = d?.up === true, rtt = num(d?.rttAvgMs)
   return (
     <Frame icon={Activity} label={title}>
@@ -532,6 +553,7 @@ function SysGauge({ label, value, warn = 85 }: { label: string; value: number | 
 }
 function SysmonPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'metrics') as Record<string, unknown> | null
+  usePulseOn([num(d?.cpuPct), num(d?.memUsedPct), num(d?.diskUsedPct)].map((v, i) => (v != null && v > (i === 2 ? 90 : 85) ? '1' : '0')).join(''))
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 flex flex-col justify-center gap-2.5 px-3 pb-2">
@@ -546,6 +568,7 @@ function SysmonPanel({ instanceId, title }: WidgetProps) {
 function SysmonStrip({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'metrics') as Record<string, unknown> | null
   const cpu = num(d?.cpuPct), mem = num(d?.memUsedPct)
+  usePulseOn((cpu != null && cpu > 85 ? '1' : '0') + (mem != null && mem > 85 ? '1' : '0'))
   return (
     <Frame icon={Cpu} label={title}>
       <Pill tone={mem != null && mem > 85 ? 'alarm' : 'muted'}>M {mem != null ? mem.toFixed(0) : '—'}%</Pill>
@@ -562,6 +585,7 @@ function CommsTranscript({ instanceId, title }: WidgetProps) {
   const data = useStream(instanceId, 'feed') as { messages?: FeedMsg[] } | null
   const msgs = data?.messages ?? []
   const ref = useRef<HTMLDivElement>(null)
+  usePulseOn(msgs[msgs.length - 1]?.id)
   const stick = useRef(true)
   useEffect(() => { const el = ref.current; if (el && stick.current) el.scrollTop = el.scrollHeight })
   const onScroll = () => { const el = ref.current; if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24 }
@@ -587,6 +611,7 @@ function CommsStrip({ instanceId, title }: WidgetProps) {
   const data = useStream(instanceId, 'feed') as { messages?: FeedMsg[] } | null
   const msgs = data?.messages ?? []
   const last = msgs[msgs.length - 1]
+  usePulseOn(last?.id)
   const flagged = msgs.filter((m) => (m.flags?.length ?? 0) > 0).length
   return (
     <Frame icon={MessageSquare} label={title}>
@@ -601,6 +626,7 @@ connector({ typeId: 'prodcom', label: 'Comms', icon: MessageSquare, Panel: Comms
 function CommsCallouts({ instanceId, title }: WidgetProps) {
   const data = useStream(instanceId, 'feed') as { messages?: FeedMsg[] } | null
   const flagged = (data?.messages ?? []).filter((m) => (m.flags?.length ?? 0) > 0)
+  usePulseOn(flagged[flagged.length - 1]?.id)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-2 space-y-1.5">
@@ -624,6 +650,7 @@ registerWidget({ type: 'prodcom-callouts', label: 'Comms · call-outs', supporte
 
 function AtemPanel({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'program') as { program?: number; preview?: number; connected?: boolean; simulated?: boolean } | null
+  usePulseOn(d?.program)
   return (
     <div className="h-full flex flex-col"><Title>{title}</Title>
       <div className="flex-1 min-h-0 flex flex-col justify-center gap-3 px-4 pb-2">
@@ -642,6 +669,7 @@ function AtemPanel({ instanceId, title }: WidgetProps) {
 }
 function AtemStrip({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'program') as { program?: number; preview?: number; connected?: boolean } | null
+  usePulseOn(d?.program)
   return (
     <Frame icon={Video} label={title} tint={d?.connected ? undefined : 'text-muted-foreground/40'}>
       <Pill tone="live">PV {d?.preview ?? '—'}</Pill>
@@ -655,6 +683,7 @@ connector({ typeId: 'atem', label: 'ATEM', icon: Video, Panel: AtemPanel, Strip:
 
 function StatusRow({ id, name }: { id: string; name: string }) {
   const st = (useTopic(statusTopic(id)) as { state?: string } | null)?.state ?? 'connecting'
+  usePulseOn(st)
   return (
     <div className="flex items-center gap-2 py-1">
       <span className={cn('size-2 rounded-full shrink-0', DOT[st] ?? 'bg-busy')} />

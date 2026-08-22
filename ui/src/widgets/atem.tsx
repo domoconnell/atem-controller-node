@@ -4,6 +4,7 @@ import { useAtemState } from '@/hooks/use-atem-state'
 import { SsMonitor } from '@/components/atem/ss-monitor'
 import { liveScene } from '@/lib/scene'
 import { cn } from '@/lib/utils'
+import { usePulseOn } from '@/components/surfaces/pulse'
 
 /** The live ATEM program — the same broadcast monitor as the ATEM Transitions
  *  designer (SuperSource plate + boxes, mixes rendered in flight), sized to fit
@@ -12,6 +13,7 @@ function AtemProgram({ title }: WidgetProps) {
   const { state } = useAtemState()
   const inputName = (id: number) => state?.atem?.inputs?.[id] ?? String(id)
   const me = state?.atem?.mixEffects?.[state?.mainMe ?? 0]
+  usePulseOn(me?.programInput)
   const live = state ? liveScene(state) : null
   return (
     <div className="h-full w-full flex flex-col p-1.5">

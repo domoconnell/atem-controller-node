@@ -193,12 +193,6 @@
   .fx-orbit .react-grid-item:nth-child(3n) .glass::after { animation-delay: -3.4s; }
   .fx-orbit .react-grid-item:nth-child(5n) .glass::after { animation-delay: -4.7s; }
 
-  /* gentle pulse when a widget's data changes (throttled in JS) */
-  @keyframes widget-pulse {
-    0%   { box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 12px 34px -20px oklch(0 0 0 / 0.85), 0 0 0 1px oklch(0.74 0.15 232 / 0.55), 0 0 20px -1px oklch(0.74 0.15 232 / 0.5); }
-    100% { box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 12px 34px -20px oklch(0 0 0 / 0.85), 0 0 0 1px oklch(0.74 0.15 232 / 0), 0 0 20px -1px oklch(0.74 0.15 232 / 0); }
-  }
-  .widget-pulse { animation: widget-pulse 0.9s ease-out; }
   /* Selected widget in the designer: primary ring + glow. */
   .glass-selected {
     border-color: var(--primary);

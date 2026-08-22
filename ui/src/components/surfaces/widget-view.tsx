@@ -1,31 +1,13 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { getWidget } from '@/widgets/registry'
 import { cn } from '@/lib/utils'
 import { Settings2, X } from 'lucide-react'
+import { PulseContext } from './pulse'
 
-/** Briefly flag a pulse whenever the observed subtree changes, throttled so a
- *  constantly-updating widget (mic RF/AF) gives a gentle heartbeat, not a strobe. */
-function usePulseOnChange(ref: React.RefObject<HTMLElement | null>, throttleMs = 2400) {
-  const [pulsing, setPulsing] = useState(false)
-  const last = useRef(0)
-  useEffect(() => {
-    const el = ref.current
-    if (!el || typeof MutationObserver === 'undefined') return
-    let clear: ReturnType<typeof setTimeout>
-    const obs = new MutationObserver(() => {
-      const now = performance.now()
-      if (now - last.current < throttleMs) return
-      last.current = now
-      setPulsing(true)
-      clearTimeout(clear)
-      clear = setTimeout(() => setPulsing(false), 900)
-    })
-    obs.observe(el, { childList: true, subtree: true, characterData: true, attributes: true })
-    return () => { obs.disconnect(); clearTimeout(clear) }
-  }, [ref, throttleMs])
-  return pulsing
-}
+// Base resting shadow (must match .glass) so the pulse animation returns to it.
+const BASE_SHADOW = 'inset 0 1px 0 oklch(1 0 0 / 0.05), 0 12px 34px -20px oklch(0 0 0 / 0.85)'
+const GLOW = 'oklch(0.82 0.15 232 / 0.6)'
 
 export interface Placement { i: string; widgetType: string; instanceId: string | null; config: Record<string, unknown>; title?: string }
 export interface InstanceRef { id: string; typeId: string; name: string }
@@ -55,10 +37,21 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
   const multiInstances = def?.multi === 'all' ? instances
     : def?.multi === 'type' ? instances.filter((x) => x.typeId === boundType)
     : undefined
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const pulsing = usePulseOnChange(bodyRef)
+  const cardRef = useRef<HTMLDivElement>(null)
+  // A widget flashes its frame by calling pulse() (via usePulse/usePulseOn) on a
+  // meaningful event. WAAPI so rapid events restart the flash cleanly.
+  const pulse = useCallback(() => {
+    if (edit) return
+    cardRef.current?.animate(
+      [
+        { boxShadow: `${BASE_SHADOW}, 0 0 0 1px ${GLOW}, 0 0 22px -1px ${GLOW}` },
+        { boxShadow: `${BASE_SHADOW}, 0 0 0 1px oklch(0.82 0.15 232 / 0), 0 0 22px -1px oklch(0.82 0.15 232 / 0)` },
+      ],
+      { duration: 900, easing: 'ease-out' },
+    )
+  }, [edit])
   return (
-    <div className={cn('h-full w-full rounded-lg overflow-hidden flex flex-col glass', pulsing && !edit && 'widget-pulse', selected && 'glass-selected')}
+    <div ref={cardRef} className={cn('h-full w-full rounded-lg overflow-hidden flex flex-col glass', selected && 'glass-selected')}
       style={{ containerType: 'size' } as React.CSSProperties}>
       {edit && (
         <div className="widget-drag-handle shrink-0 h-6 flex items-center gap-1 px-2 bg-muted/40 cursor-move">
@@ -67,8 +60,8 @@ export function WidgetView({ p, instances = [], edit, selected, onSelect, onRemo
           <button onClick={(e) => { e.stopPropagation(); onRemove?.() }} className="widget-no-drag p-0.5 rounded hover:bg-accent hover:text-destructive"><X className="size-3" /></button>
         </div>
       )}
-      <div ref={bodyRef} className="flex-1 min-h-0">
-        {def ? <def.Component config={p.config} instanceId={p.instanceId} instances={multiInstances} title={title} /> : <div className="grid place-items-center h-full text-[11px] text-muted-foreground">unknown widget</div>}
+      <div className="flex-1 min-h-0">
+        {def ? <PulseContext.Provider value={pulse}><def.Component config={p.config} instanceId={p.instanceId} instances={multiInstances} title={title} /></PulseContext.Provider> : <div className="grid place-items-center h-full text-[11px] text-muted-foreground">unknown widget</div>}
       </div>
     </div>
   )
