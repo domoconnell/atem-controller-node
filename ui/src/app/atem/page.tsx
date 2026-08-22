@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { StatusBar } from '@/components/atem/status-bar'
 import { SsMonitor } from '@/components/atem/ss-monitor'
 import { MePanel } from '@/components/atem/me-panel'
+import { TransitionTimeline } from '@/components/atem/transition-timeline'
 import { LookTile } from '@/components/atem/look-tile'
 import { LookSheet } from '@/components/atem/look-sheet'
 import { PlanStoryboard } from '@/components/atem/plan-storyboard'
@@ -203,9 +204,9 @@ export default function Page() {
               </div>
             </div>
 
-            {/* ---- Right rail ---- */}
+            {/* ---- Right rail: status panel, or the live take timeline ---- */}
             <aside className="min-w-0 min-h-0 overflow-y-auto">
-              <MePanel state={state} locked={locked} />
+              {state.busy ? <TransitionTimeline busy={state.busy} /> : <MePanel state={state} locked={locked} />}
             </aside>
           </main>
         )}

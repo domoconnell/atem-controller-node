@@ -101,7 +101,7 @@ export interface Snapshot {
   currentLook: string | null
   looks: Look[]
   macros: { name: string; from?: string; to?: string }[]
-  busy: { name: string; stepIndex: number; totalSteps: number; from?: string | null; to?: string | null } | null
+  busy: { name: string; stepIndex: number; totalSteps: number; from?: string | null; to?: string | null; steps?: string[] } | null
   animating: boolean
   mainMe: number
   displayBox?: number

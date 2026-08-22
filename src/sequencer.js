@@ -103,11 +103,42 @@ export class Sequencer extends EventEmitter {
     await this._runSteps(name, steps, { from: macro.from ?? this.looks.currentLook, to: macro.to })
   }
 
+  /** A short, human label for one plan step (for the live take timeline). */
+  _stepLabel(s) {
+    const nm = (id) => this.atem?.getInputName?.(id) ?? id
+    switch (s.type) {
+      case 'setNextTransition': return `arm ${(s.selection ?? []).join(' + ') || 'mix'}`
+      case 'auto': return 'auto mix'
+      case 'cut': return 'cut'
+      case 'preview': return `preview ${nm(s.input)}`
+      case 'program': return `program ${nm(s.input)}`
+      case 'uskOnAir': return `USK${(s.keyer ?? 0) + 1} ${s.onAir ? 'on air' : 'off'}`
+      case 'animate': case 'animateBoxes': return 'animate SuperSource'
+      case 'animateUskPattern': return `morph USK${(s.keyer ?? 0) + 1}`
+      case 'setBoxes': return 'set SuperSource layout'
+      case 'setSsProperties': return 'set SuperSource art'
+      case 'uskSettings': return `configure USK${(s.keyer ?? 0) + 1}`
+      case 'mediaPlayerSource': return `media player ${(s.player ?? 0) + 1}`
+      case 'setMixRate': return `mix rate ${s.frames}f`
+      case 'hyperdeck': case 'hyperdeckEnsure': return `HyperDeck ${s.status ?? s.command ?? ''}`.trim()
+      case 'setCurrentLook': return `set current look`
+      case 'applyLook': return `apply ${s.look}`
+      case 'propresenter': {
+        const b = []; if (s.look) b.push('look'); if (s.media) b.push('background'); if (s.macro) b.push('macro')
+        return `ProPresenter ${b.join(' + ')}`.trim()
+      }
+      case 'wait': return `wait ${s.ms ?? ''}ms`.replace('  ', ' ')
+      case 'waitForTransition': return 'wait for mix'
+      default: return s.type
+    }
+  }
+
   async _runSteps(name, steps, meta = {}) {
     if (this.busy) throw new Error(`Sequencer busy running '${this.current.name}'`)
     this.current = {
       name, stepIndex: 0, totalSteps: steps.length,
       from: meta.from ?? null, to: meta.to ?? null,
+      steps: steps.map((s) => this._stepLabel(s)),
     }
     this._stopRequested = false
     this.emit('busy', this.current)
