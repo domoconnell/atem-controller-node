@@ -162,12 +162,43 @@
     border: 0;
     box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05);
   }
-  /* HUD corner brackets — an instrument-panel signature framing the whole screen. */
-  .hud-corner { position: absolute; width: 20px; height: 20px; z-index: 40; pointer-events: none; border-color: oklch(0.72 0.13 232 / 0.55); }
-  .hud-tl { top: 7px; left: 7px; border-top: 2px solid; border-left: 2px solid; }
-  .hud-tr { top: 7px; right: 7px; border-top: 2px solid; border-right: 2px solid; }
-  .hud-bl { bottom: 7px; left: 7px; border-bottom: 2px solid; border-left: 2px solid; }
-  .hud-br { bottom: 7px; right: 7px; border-bottom: 2px solid; border-right: 2px solid; }
+  /* ---- animated accent rule --------------------------------------------------
+     Two styles, chosen per surface (fx-sweep / fx-orbit). */
+  /* sweep: a bright node travels back and forth along the top edge */
+  .fx-sweep .glass::before {
+    background: linear-gradient(90deg, transparent 0%, oklch(0.74 0.15 232 / 0.9) 50%, transparent 100%);
+    background-size: 46% 100%; background-repeat: no-repeat;
+    animation: accent-sweep 3.4s ease-in-out infinite alternate;
+  }
+  @keyframes accent-sweep { from { background-position: -6% 0; } to { background-position: 106% 0; } }
+
+  /* orbit: a glow travels around the whole widget border */
+  @property --orbit-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+  .fx-orbit .glass::before { display: none; }
+  .fx-orbit .glass::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.3px; pointer-events: none;
+    background: conic-gradient(from var(--orbit-a),
+      transparent 0 68%,
+      oklch(0.80 0.15 232 / 0.85) 80%,
+      oklch(0.90 0.11 210 / 0.6) 84%,
+      transparent 90%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    animation: orbit-run 5.5s linear infinite;
+  }
+  @keyframes orbit-run { to { --orbit-a: 360deg; } }
+  /* desync neighbours so they don't all travel together */
+  .fx-orbit .react-grid-item:nth-child(2n) .glass::after { animation-delay: -1.9s; }
+  .fx-orbit .react-grid-item:nth-child(3n) .glass::after { animation-delay: -3.4s; }
+  .fx-orbit .react-grid-item:nth-child(5n) .glass::after { animation-delay: -4.7s; }
+
+  /* gentle pulse when a widget's data changes (throttled in JS) */
+  @keyframes widget-pulse {
+    0%   { box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 12px 34px -20px oklch(0 0 0 / 0.85), 0 0 0 1px oklch(0.74 0.15 232 / 0.55), 0 0 20px -1px oklch(0.74 0.15 232 / 0.5); }
+    100% { box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 12px 34px -20px oklch(0 0 0 / 0.85), 0 0 0 1px oklch(0.74 0.15 232 / 0), 0 0 20px -1px oklch(0.74 0.15 232 / 0); }
+  }
+  .widget-pulse { animation: widget-pulse 0.9s ease-out; }
   /* Selected widget in the designer: primary ring + glow. */
   .glass-selected {
     border-color: var(--primary);

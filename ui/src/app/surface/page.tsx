@@ -61,6 +61,10 @@ export default function SurfaceViewer() {
   const [instances, setInstances] = useState<IRef[]>([])
   const [openEdge, setOpenEdge] = useState<Edge | null>(null)
   const browserId = useBrowserId()
+  // Animated accent style: 'orbit' (glow circles each widget) or 'sweep' (glow
+  // travels back and forth along the top). Switch live with ?fx=sweep.
+  const [fx, setFx] = useState<'orbit' | 'sweep'>('orbit')
+  useEffect(() => { const v = new URLSearchParams(window.location.search).get('fx'); if (v === 'sweep' || v === 'orbit') setFx(v) }, [])
 
   // Announce this display so OSC/Companion can target it (usr:surface:<browserId>).
   // openEdge is included so Companion drawer feedbacks can light when open.
@@ -105,7 +109,7 @@ export default function SurfaceViewer() {
   if (!surface) return <div className="h-screen grid place-items-center bg-background text-muted-foreground text-sm">Loading…</div>
   const P = surface.pullouts
   return (
-    <div className="h-screen w-screen surface-bg flex flex-col relative overflow-hidden">
+    <div className={cn('h-screen w-screen surface-bg flex flex-col relative overflow-hidden', `fx-${fx}`)}>
       <div className="surface-aurora" />
       <div className="relative z-10 flex flex-col flex-1 min-h-0">
         {surface.header.enabled && <Strip widgets={surface.header.widgets} instances={instances} />}
@@ -114,10 +118,6 @@ export default function SurfaceViewer() {
         </div>
         {surface.footer.enabled && <Strip widgets={surface.footer.widgets} instances={instances} />}
       </div>
-      <span className="hud-corner hud-tl" />
-      <span className="hud-corner hud-tr" />
-      <span className="hud-corner hud-bl" />
-      <span className="hud-corner hud-br" />
 
       <Pullouts surface={surface} instances={instances} openEdge={openEdge} onOpenEdge={setOpenEdge} />
       {browserId && <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-[10px] font-mono text-foreground/70 tabular-nums pointer-events-none select-none bg-black/45 rounded-b-md px-2 py-0.5 border border-t-0 border-border/50 backdrop-blur-sm">{browserId}</div>}
