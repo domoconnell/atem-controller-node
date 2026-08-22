@@ -232,7 +232,16 @@ export class WebServer {
       // (stop) clears the clock. Only a request that actually moves the playhead
       // touches this, so editing people/times never resets a running timer.
       const moved = req.body && Object.prototype.hasOwnProperty.call(req.body, 'activeIndex')
-      if (moved) data.activeStartedAt = req.body.activeIndex == null ? null : Date.now()
+      if (moved) {
+        const ts = req.body.activeIndex == null ? null : Date.now()
+        data.activeStartedAt = ts
+        // Stamp the actual start of the item we land on, so past items can show
+        // the how-far-behind they ended up with (frozen; see computeTiming).
+        const actuals = data.actuals && typeof data.actuals === 'object' ? { ...data.actuals } : {}
+        const seg = ts != null ? (data.segments ?? [])[req.body.activeIndex] : null
+        if (seg?.id) actuals[seg.id] = ts
+        data.actuals = actuals
+      }
       this.store.putService(req.params.id, name, data, sortOrder)
       // Moving the playhead re-cues mics server-side (the single source of truth,
       // so OSC and every client behave identically).
@@ -693,7 +702,11 @@ export class WebServer {
     const svc = this.store?.listServices().find((s) => s.id === svcId)
     if (!svc) return
     const { id, name = 'Service', sortOrder = 0, ...data } = svc
-    this.store.putService(id, name, { ...data, activeIndex: idx, activeStartedAt: idx == null ? null : Date.now() }, sortOrder)
+    const ts = idx == null ? null : Date.now()
+    const actuals = data.actuals && typeof data.actuals === 'object' ? { ...data.actuals } : {}
+    const seg = ts != null ? (data.segments ?? [])[idx] : null
+    if (seg?.id) actuals[seg.id] = ts
+    this.store.putService(id, name, { ...data, activeIndex: idx, activeStartedAt: ts, actuals }, sortOrder)
     this.applyCues({ ...svc, activeIndex: idx }, idx)
     this.publishServices()
   }

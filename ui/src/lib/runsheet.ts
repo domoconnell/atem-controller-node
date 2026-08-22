@@ -6,7 +6,10 @@ export interface Person { name: string; micId?: string; lead?: boolean }
 export interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean }
 /** `startTime` "HH:MM" is the wall-clock the service should hit at `startSegmentId`
  *  (items before it — pre-roll, countdown — are pre-service). */
-export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; activeStartedAt?: number | null; proLink?: unknown; startTime?: string; startSegmentId?: string }
+/** `actuals`: segId -> wall-clock ms the item was actually made active (stamped
+ *  each time the playhead lands on it). Lets us show the *frozen* how-far-behind
+ *  a past item ended up, independent of what happens later. */
+export interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; activeStartedAt?: number | null; actuals?: Record<string, number>; proLink?: unknown; startTime?: string; startSegmentId?: string }
 
 /** A segment's planned duration "M:SS" / "MM:SS" / "H:MM:SS" -> seconds, or null
  *  if blank/invalid. Minutes and seconds fields must each be < 60. */
@@ -64,6 +67,12 @@ export interface RunTiming {
   estFinish: number | null             // live projection of when it will finish
   deltaSec: number | null              // estFinish - plannedEnd (+ over / - under time)
   suggest: Map<string, { start: number; dur: number; trimmed: boolean }>  // per upcoming segment id
+  // Per-item "if nothing changes" baseline, for every runnable segment:
+  //  plannedStart — the originally-intended wall-clock start (fixed by the plan)
+  //  plannedDur   — the item's planned duration (seconds)
+  //  behindSec    — how far behind schedule (+late / -early). Live & identical
+  //                 for the current + upcoming items; frozen once an item is past.
+  plan: Map<string, { plannedStart: number | null; plannedDur: number; behindSec: number | null }>
 }
 
 /** The whole live-timing picture for a service at time `now` (ms):
@@ -72,7 +81,7 @@ export interface RunTiming {
  *  that shorten *flexible* items (talks) but never fixed ones (songs) to try to
  *  land back on the scheduled finish. Deterministic; no guessing. */
 export function computeTiming(svc: Service | undefined, now: number): RunTiming {
-  const empty: RunTiming = { plannedEnd: null, estFinish: null, deltaSec: null, suggest: new Map() }
+  const empty: RunTiming = { plannedEnd: null, estFinish: null, deltaSec: null, suggest: new Map(), plan: new Map() }
   if (!svc) return empty
   const segs = svc.segments ?? []
   const dur = (s: Segment) => parseDuration(s.time) ?? 0
@@ -125,7 +134,39 @@ export function computeTiming(svc: Service | undefined, now: number): RunTiming 
       clock += d * 1000
     }
   }
-  return { plannedEnd, estFinish, deltaSec, suggest }
+  // ---- Per-item baseline: planned start clock + how-far-behind ----------
+  // Planned start of each runnable item, anchored at the service start item and
+  // walked both ways (items before the anchor — pre-roll/countdown — get earlier
+  // clocks). Independent of the live run, so it's the "as scheduled" column.
+  const plannedStart = new Array<number | null>(segs.length).fill(null)
+  if (startTs != null && startIdx >= 0) {
+    let acc = 0
+    for (let j = startIdx; j < segs.length; j++) { if (isHeader(segs[j])) continue; plannedStart[j] = startTs + acc * 1000; acc += dur(segs[j]) }
+    let back = 0
+    for (let j = startIdx - 1; j >= 0; j--) { if (isHeader(segs[j])) continue; back += dur(segs[j]); plannedStart[j] = startTs - back * 1000 }
+  }
+  const actuals = svc.actuals ?? {}
+  const startedAt = (i: number): number | null => { const s = segs[i]; return s ? (actuals[s.id] ?? null) : null }
+  const plan = new Map<string, { plannedStart: number | null; plannedDur: number; behindSec: number | null }>()
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i]
+    if (isHeader(s)) continue
+    let behindSec: number | null
+    if (idx != null && i < idx) {
+      // Past item — frozen at the drift it ended up with. Its actual end is the
+      // next started item's actual start; behind = that vs the next item's plan.
+      let k: number | null = nextItemIndex(segs, i)
+      while (k != null && startedAt(k) == null) k = nextItemIndex(segs, k)
+      if (k != null && plannedStart[k] != null) behindSec = Math.round((startedAt(k)! - plannedStart[k]!) / 1000)
+      else if (plannedStart[i] != null && startedAt(i) != null) behindSec = Math.round((startedAt(i)! - plannedStart[i]!) / 1000)
+      else behindSec = null
+    } else {
+      // Current + upcoming — the live projected drift (same for all of them).
+      behindSec = deltaSec
+    }
+    plan.set(s.id, { plannedStart: plannedStart[i], plannedDur: dur(s), behindSec })
+  }
+  return { plannedEnd, estFinish, deltaSec, suggest, plan }
 }
 
 export const isHeader = (s?: Segment | null) => s?.kind === 'header'

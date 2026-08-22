@@ -22,6 +22,18 @@ function finishTone(deltaSec: number | null): string {
   return 'text-destructive'
 }
 
+/** How-far-behind colour: within a few seconds is calm, running late warms to
+ *  amber then red, running ahead is green. */
+function behindTone(sec: number | null): string {
+  if (sec == null) return 'text-muted-foreground/50'
+  if (sec > 180) return 'text-destructive'
+  if (sec > 15) return 'text-busy'
+  if (sec < -15) return 'text-live'
+  return 'text-muted-foreground'
+}
+/** Signed "+m:ss" / "-m:ss" / "0:00" for a behind-schedule delta. */
+function fmtSigned(sec: number): string { return sec > 0 ? `+${fmtDuration(sec)}` : fmtDuration(sec) }
+
 /** Re-renders about twice a second so live timers tick. Only runs when enabled
  *  (a segment is actually running), so idle widgets stay quiet. */
 function useTick(enabled: boolean): number {
@@ -212,29 +224,37 @@ function RunsheetList({ config, title }: WidgetProps) {
                   <span className="text-[12.5px] font-semibold truncate shrink min-w-0">{segTitle(seg)}</span>
                   {/* lead mics on the same line */}
                   {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
-                  <span className="ml-auto shrink-0 text-[11px] pl-1 flex items-center gap-2.5">
-                    {(() => {
-                      const sug = timing.suggest.get(seg.id)
-                      if (isNow || !sug) return null
-                      return <span className={cn('tabular-nums text-[10px]', sug.trimmed ? 'text-busy' : 'text-info/70')} title="suggested start time to stay on schedule">{fmtClockTs(sug.start)}</span>
-                    })()}
-                    {isNow ? (
-                      <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} />
-                    ) : (() => {
-                      const sug = timing.suggest.get(seg.id)
-                      const planned = parseDuration(seg.time)
-                      if (sug?.trimmed && planned != null) {
-                        const cut = Math.round(planned - sug.dur)
-                        return (
-                          <span className="flex items-center gap-1.5 tabular-nums" title={`shorten ${seg.time} → ${fmtDuration(sug.dur)} (cut ${fmtDuration(cut)})`}>
-                            <span className="text-busy font-semibold">{fmtDuration(sug.dur)}</span>
-                            <span className="text-destructive/80 text-[9px]">−{fmtDuration(cut)}</span>
-                          </span>
-                        )
-                      }
-                      return <span className="tabular-nums text-muted-foreground/70">{seg.time || ''}</span>
-                    })()}
-                  </span>
+                  {(() => {
+                    const info = timing.plan.get(seg.id)
+                    const sug = timing.suggest.get(seg.id)
+                    const planned = parseDuration(seg.time)
+                    const behind = info?.behindSec ?? null
+                    // "As planned" pill: intended start · length · how-far-behind.
+                    const plannedPill = (
+                      <span className="flex items-center gap-1.5 rounded bg-muted/40 px-1.5 py-0.5 tabular-nums text-[10px]" title="as scheduled — start · length · how far behind">
+                        {info?.plannedStart != null && <span className="text-muted-foreground/70">{fmtClockTs(info.plannedStart)}</span>}
+                        {seg.time && <span className="text-foreground/80">{seg.time}</span>}
+                        {behind != null && <span className={cn('font-semibold', behindTone(behind))}>{fmtSigned(behind)}</span>}
+                      </span>
+                    )
+                    // "Suggested" pill: only for upcoming items when a re-time is
+                    // actually being proposed (this item shifts or is trimmed).
+                    const shifts = !!sug && info?.plannedStart != null && Math.abs(sug.start - info.plannedStart) > 15000
+                    const cut = sug?.trimmed && planned != null ? Math.round(planned - sug.dur) : 0
+                    const sugPill = !isNow && sug && (sug.trimmed || shifts) ? (
+                      <span className="flex items-center gap-1.5 rounded bg-busy/15 border border-busy/30 px-1.5 py-0.5 tabular-nums text-[10px]" title={sug.trimmed ? `suggested — start ${fmtClockTs(sug.start)}, shorten ${seg.time} → ${fmtDuration(sug.dur)} (cut ${fmtDuration(cut)})` : `suggested start ${fmtClockTs(sug.start)} to stay on schedule`}>
+                        <span className="text-busy">{fmtClockTs(sug.start)}</span>
+                        {sug.trimmed && <><span className="text-busy font-semibold">{fmtDuration(sug.dur)}</span><span className="text-destructive/80 text-[9px]">−{fmtDuration(cut)}</span></>}
+                      </span>
+                    ) : null
+                    return (
+                      <span className="ml-auto shrink-0 text-[11px] pl-1 flex items-center gap-1.5">
+                        {isNow ? <SegClock seg={seg} startedAt={svc?.activeStartedAt} now={now} className="mr-0.5" /> : null}
+                        {sugPill}
+                        {plannedPill}
+                      </span>
+                    )
+                  })()}
                 </div>
                 {others.length > 0 && (
                   <div className="pl-11 pt-0.5 flex flex-wrap gap-1.5 gap-y-1 text-muted-foreground">
