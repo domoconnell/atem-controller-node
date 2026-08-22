@@ -5,12 +5,12 @@ import { AppHeader } from '@/components/app-header'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useMicDefs } from '@/widgets/mics'
 import { cn } from '@/lib/utils'
-import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading, RotateCcw } from 'lucide-react'
-import { isValidDuration, isValidClock } from '@/lib/runsheet'
+import { Plus, Trash2, ChevronDown, ChevronUp, Play, SkipForward, SkipBack, Square, X, Upload, Link2, Link2Off, RefreshCw, Star, Heading, RotateCcw, Zap, Sparkles, MonitorPlay, Image, MicOff } from 'lucide-react'
+import { isValidDuration, isValidClock, type RunAction, type RunActionType } from '@/lib/runsheet'
 import { useTopic } from '@/hooks/use-topic'
 
 interface Person { name: string; micId?: string; lead?: boolean }
-interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean }
+interface Segment { id: string; title: string; titleOverride?: string; time?: string; people: Person[]; proItemId?: string; kind?: 'header'; color?: string; flexible?: boolean; actions?: RunAction[] }
 interface ProLink { playlistId: string; playlistName?: string; lastSync?: number }
 interface Service { id: string; name: string; sortOrder?: number; segments?: Segment[]; activeIndex?: number | null; proLink?: ProLink; startTime?: string; startSegmentId?: string }
 interface MicDef { id: string; label: string }
@@ -42,8 +42,10 @@ function useServices() {
   // Read over the shared WebSocket — server-side ProPresenter syncs and every
   // other client's edits flow in as pushes; mutations below still POST/PATCH,
   // and the resulting hub broadcast updates this list. No polling.
-  const topic = useTopic('feature:services') as { services?: Service[] } | null
+  const topic = useTopic('feature:services') as { services?: Service[]; automationArmed?: boolean } | null
   const services = topic?.services ?? []
+  const armed = topic?.automationArmed ?? true
+  const setArmed = useCallback(async (v: boolean) => { await fetch('/api/features/automation', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ armed: v }) }).catch(() => {}) }, [])
   const save = useCallback(async (s: Partial<Service> & { id?: string }) => {
     const method = s.id ? 'PATCH' : 'POST'
     const url = s.id ? `/api/features/services/${s.id}` : '/api/features/services'
@@ -52,15 +54,16 @@ function useServices() {
   }, [])
   const remove = useCallback(async (id: string) => { await fetch(`/api/features/services/${id}`, { method: 'DELETE' }) }, [])
   const syncNow = useCallback(async (id: string) => { await fetch(`/api/features/services/${id}/sync`, { method: 'POST' }) }, [])
-  return { services, save, remove, syncNow }
+  return { services, save, remove, syncNow, armed, setArmed }
 }
 
 const sc = 'bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]'
 
 export default function RunsheetPage() {
   const { state, connected, tick } = useAtemState()
-  const { services, save, remove, syncNow } = useServices()
+  const { services, save, remove, syncNow, armed, setArmed } = useServices()
   const mics = useMicDefs()
+  const looks = (state?.looks ?? []) as { name: string }[]
   const [selId, setSelId] = useState<string | null>(null)
   const svc = services.find((s) => s.id === selId) ?? services[0] ?? null
   useEffect(() => { if (!selId && services[0]) setSelId(services[0].id) }, [selId, services])
@@ -129,6 +132,13 @@ export default function RunsheetPage() {
                   <button onClick={() => goto(null)} disabled={active == null} className="inline-flex items-center justify-center py-2 rounded-md bg-muted/40 hover:bg-accent disabled:opacity-30" title="Stop / clear cues"><Square className="size-4" /></button>
                 </div>
               </Field>
+              <Field label="Automation">
+                <button onClick={() => setArmed(!armed)}
+                  title={armed ? 'Armed — a segment’s actions fire automatically as it goes live. Click to disarm (e.g. to rehearse).' : 'Disarmed — segment actions are listed but won’t fire on playhead moves. Click to arm.'}
+                  className={cn('w-full inline-flex items-center justify-center gap-1.5 text-[12px] rounded-md py-2 border transition-colors', armed ? 'border-live/50 bg-live/15 text-live' : 'border-border bg-muted/30 text-muted-foreground')}>
+                  <Zap className={cn('size-3.5', armed && 'fill-current')} /> {armed ? 'Armed' : 'Disarmed'}
+                </button>
+              </Field>
               <Field label="ProPresenter">
                 <ProLinkControl link={svc.proLink}
                   onLink={async (pl) => { await save({ id: svc.id, proLink: { playlistId: pl.id, playlistName: pl.path || pl.name } }); await syncNow(svc.id) }}
@@ -154,11 +164,12 @@ export default function RunsheetPage() {
                   onRemove={() => setSegments(segments.filter((_, j) => j !== i))}
                   onMove={(dir) => move(i, dir)} />
               ) : (
-                <SegmentRow key={seg.id} seg={seg} idx={i} count={segments.length} state={active} mics={mics} synced={!!seg.proItemId}
+                <SegmentRow key={seg.id} seg={seg} idx={i} count={segments.length} state={active} mics={mics} looks={looks} segments={segments} synced={!!seg.proItemId}
                   onChange={(s) => setSegments(segments.map((x, j) => j === i ? s : x))}
                   onRemove={() => setSegments(segments.filter((_, j) => j !== i))}
                   onMove={(dir) => move(i, dir)}
-                  onGoto={() => goto(i)} />
+                  onGoto={() => goto(i)}
+                  onFire={() => fetch(`/api/features/services/${svc.id}/fire`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) }).catch(() => {})} />
               ))}
               <div className="flex gap-2">
                 <button onClick={() => setSegments([...segments, { id: uid(), title: 'Segment', people: [] }])}
@@ -224,12 +235,14 @@ function HeaderRow({ seg, idx, count, synced, onChange, onRemove, onMove }: {
   )
 }
 
-function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, onMove, onGoto }: {
-  seg: Segment; idx: number; count: number; state: number | null; mics: { id: string; label: string }[]; synced?: boolean
-  onChange: (s: Segment) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void; onGoto: () => void
+function SegmentRow({ seg, idx, count, state, mics, looks, segments, synced, onChange, onRemove, onMove, onGoto, onFire }: {
+  seg: Segment; idx: number; count: number; state: number | null; mics: { id: string; label: string }[]; looks: { name: string }[]; segments: Segment[]; synced?: boolean
+  onChange: (s: Segment) => void; onRemove: () => void; onMove: (dir: -1 | 1) => void; onGoto: () => void; onFire: () => void
 }) {
   const isNow = state === idx, isNext = state != null && state + 1 === idx
   const setPeople = (people: Person[]) => onChange({ ...seg, people })
+  const [showActions, setShowActions] = useState(false)
+  const actions = seg.actions ?? []
   return (
     <div className={cn('rounded-xl border p-3 space-y-2', isNow ? 'border-live bg-live/[0.06]' : isNext ? 'border-busy/60 bg-busy/[0.04]' : 'border-border/60 bg-card')}>
       <div className="flex items-center gap-2">
@@ -287,6 +300,143 @@ function SegmentRow({ seg, idx, count, state, mics, synced, onChange, onRemove, 
         ))}
         <button onClick={() => setPeople([...seg.people, { name: '' }])} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground rounded-md border border-dashed border-border/60 px-2 py-1 hover:bg-accent"><Plus className="size-3" /> person</button>
       </div>
+      {/* Automation actions — fire when this item goes live. */}
+      <div className="pl-7">
+        <button onClick={() => setShowActions((v) => !v)}
+          className={cn('inline-flex items-center gap-1.5 text-[11px] rounded-md px-2 py-1 transition-colors', actions.length ? 'text-info hover:bg-info/10' : 'text-muted-foreground/70 hover:bg-accent')}>
+          <Zap className={cn('size-3', actions.length && 'fill-current')} />
+          {actions.length ? `${actions.length} action${actions.length > 1 ? 's' : ''}` : 'Add actions'}
+          <ChevronDown className={cn('size-3 transition-transform', showActions && 'rotate-180')} />
+        </button>
+        {showActions && (
+          <SegmentActions seg={seg} mics={mics} looks={looks} segments={segments} onChange={onChange} onFire={onFire} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+const ACTION_META: Record<RunActionType, { label: string; icon: typeof Zap }> = {
+  'atem-look': { label: 'ATEM look', icon: Sparkles },
+  'pp-presentation': { label: 'PP presentation', icon: MonitorPlay },
+  'pp-media': { label: 'PP background media', icon: Image },
+  'mic-mute': { label: 'Mic mute', icon: MicOff },
+}
+
+/** Per-segment automation editor: a list of typed actions with add / remove /
+ *  enable, plus a manual "fire now" to test. */
+function SegmentActions({ seg, mics, looks, segments, onChange, onFire }: {
+  seg: Segment; mics: { id: string; label: string }[]; looks: { name: string }[]; segments: Segment[]
+  onChange: (s: Segment) => void; onFire: () => void
+}) {
+  const actions = seg.actions ?? []
+  const set = (list: RunAction[]) => onChange({ ...seg, actions: list })
+  const add = (type: RunActionType) => set([...actions, defaultAction(type, seg)])
+  const patch = (id: string, p: Partial<RunAction>) => set(actions.map((a) => (a.id === id ? { ...a, ...p } : a)))
+  const remove = (id: string) => set(actions.filter((a) => a.id !== id))
+  // Segments that carry a linked ProPresenter presentation, for the target picker.
+  const ppSegs = segments.filter((s) => s.proItemId && s.kind !== 'header')
+  return (
+    <div className="mt-1.5 rounded-lg border border-border/50 bg-muted/20 p-2 space-y-1.5">
+      {actions.length === 0 && <div className="text-[11px] text-muted-foreground/60 px-1 py-1">No actions yet. When this item goes live, added actions fire automatically (when automation is armed).</div>}
+      {actions.map((a) => {
+        const Icon = ACTION_META[a.type].icon
+        return (
+          <div key={a.id} className={cn('flex items-center gap-1.5 rounded-md border px-1.5 py-1', a.enabled === false ? 'border-border/40 bg-transparent opacity-50' : 'border-border/60 bg-card')}>
+            <button onClick={() => patch(a.id, { enabled: a.enabled === false })} title={a.enabled === false ? 'Disabled — click to enable' : 'Enabled — click to disable'}
+              className={cn('shrink-0 p-1 rounded', a.enabled === false ? 'text-muted-foreground/50' : 'text-info')}><Icon className="size-3.5" /></button>
+            <ActionEditor a={a} mics={mics} looks={looks} ppSegs={ppSegs} onChange={(p) => patch(a.id, p)} />
+            <button onClick={() => remove(a.id)} className="shrink-0 p-1 rounded text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10"><X className="size-3.5" /></button>
+          </div>
+        )
+      })}
+      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+        {(Object.keys(ACTION_META) as RunActionType[]).map((t) => {
+          const Icon = ACTION_META[t].icon
+          return (
+            <button key={t} onClick={() => add(t)} className="inline-flex items-center gap-1 text-[10.5px] rounded-md border border-dashed border-border/60 px-1.5 py-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <Icon className="size-3" /> {ACTION_META[t].label}
+            </button>
+          )
+        })}
+        {actions.length > 0 && (
+          <button onClick={onFire} title="Fire these actions now (ignores the arm switch)" className="ml-auto inline-flex items-center gap-1 text-[10.5px] rounded-md border border-info/40 bg-info/10 px-2 py-1 text-info hover:bg-info/20">
+            <Play className="size-3" /> Test
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function defaultAction(type: RunActionType, seg: Segment): RunAction {
+  const base = { id: uid(), type, enabled: true }
+  if (type === 'pp-presentation') return { ...base, presentationId: seg.proItemId, presentationName: seg.proItemId ? (seg.titleOverride || seg.title) : undefined, index: null }
+  if (type === 'mic-mute') return { ...base, muteAction: 'mute' }
+  return base
+}
+
+const asc = 'bg-input/40 border border-border rounded px-1.5 py-1 text-[11.5px] outline-none'
+
+/** The type-specific fields of one action. */
+function ActionEditor({ a, mics, looks, ppSegs, onChange }: {
+  a: RunAction; mics: { id: string; label: string }[]; looks: { name: string }[]; ppSegs: Segment[]
+  onChange: (p: Partial<RunAction>) => void
+}) {
+  if (a.type === 'atem-look') return (
+    <select value={a.look ?? ''} onChange={(e) => onChange({ look: e.target.value || undefined })} className={cn(asc, 'flex-1 min-w-0')}>
+      <option value="">— pick a look —</option>
+      {looks.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
+      {a.look && !looks.some((l) => l.name === a.look) && <option value={a.look}>{a.look} (missing)</option>}
+    </select>
+  )
+  if (a.type === 'pp-presentation') return (
+    <div className="flex-1 min-w-0 flex items-center gap-1.5">
+      <select value={a.presentationId ?? ''} onChange={(e) => { const s = ppSegs.find((x) => x.proItemId === e.target.value); onChange({ presentationId: e.target.value || undefined, presentationName: s ? (s.titleOverride || s.title) : undefined }) }} className={cn(asc, 'flex-1 min-w-0')}>
+        <option value="">— this segment’s presentation —</option>
+        {ppSegs.map((s) => <option key={s.id} value={s.proItemId}>{s.titleOverride || s.title}</option>)}
+      </select>
+      <input type="number" min={0} value={a.index ?? ''} onChange={(e) => onChange({ index: e.target.value === '' ? null : Number(e.target.value) })} placeholder="slide" title="Slide/cue index (blank = trigger the presentation)" className={cn(asc, 'w-16 tabular-nums')} />
+    </div>
+  )
+  if (a.type === 'pp-media') return <PpMediaEditor a={a} onChange={onChange} />
+  if (a.type === 'mic-mute') return (
+    <div className="flex-1 min-w-0 flex items-center gap-1.5">
+      <select value={a.micId ?? ''} onChange={(e) => { const m = mics.find((x) => x.id === e.target.value); onChange({ micId: e.target.value || undefined, micLabel: m?.label }) }} className={cn(asc, 'flex-1 min-w-0')}>
+        <option value="">— pick a mic —</option>
+        {mics.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+      </select>
+      <select value={a.muteAction ?? 'mute'} onChange={(e) => onChange({ muteAction: e.target.value as RunAction['muteAction'] })} className={cn(asc, 'w-24')}>
+        <option value="mute">Mute</option>
+        <option value="unmute">Unmute</option>
+        <option value="toggle">Toggle</option>
+      </select>
+    </div>
+  )
+  return null
+}
+
+interface MediaPlaylist { id: string; name: string; path?: string }
+interface MediaItem { uuid: string; name: string }
+/** PP background media picker — playlist then item, both lazily fetched. */
+function PpMediaEditor({ a, onChange }: { a: RunAction; onChange: (p: Partial<RunAction>) => void }) {
+  const [playlists, setPlaylists] = useState<MediaPlaylist[] | null>(null)
+  const [items, setItems] = useState<MediaItem[]>([])
+  useEffect(() => { fetch('/api/features/propresenter/looks').then((r) => r.json()).then((b) => setPlaylists(b.mediaPlaylists ?? [])).catch(() => setPlaylists([])) }, [])
+  useEffect(() => {
+    if (!a.playlistId) { setItems([]); return }
+    fetch(`/api/features/propresenter/media/${encodeURIComponent(a.playlistId)}`).then((r) => r.json()).then((b) => setItems(b.items ?? [])).catch(() => setItems([]))
+  }, [a.playlistId])
+  return (
+    <div className="flex-1 min-w-0 flex items-center gap-1.5">
+      <select value={a.playlistId ?? ''} onChange={(e) => { const pl = playlists?.find((p) => p.id === e.target.value); onChange({ playlistId: e.target.value || undefined, playlistName: pl?.path || pl?.name, itemId: undefined, itemName: undefined }) }} className={cn(asc, 'flex-1 min-w-0')}>
+        <option value="">{playlists == null ? 'loading…' : '— media playlist —'}</option>
+        {playlists?.map((p) => <option key={p.id} value={p.id}>{p.path || p.name}</option>)}
+      </select>
+      <select value={a.itemId ?? ''} onChange={(e) => { const it = items.find((x) => x.uuid === e.target.value); onChange({ itemId: e.target.value || undefined, itemName: it?.name }) }} disabled={!a.playlistId} className={cn(asc, 'flex-1 min-w-0 disabled:opacity-40')}>
+        <option value="">— item —</option>
+        {items.map((it) => <option key={it.uuid} value={it.uuid}>{it.name}</option>)}
+      </select>
     </div>
   )
 }
