@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Plan, PlanStep } from '@/lib/types'
 import { fetchPlan } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { ArrowRight, Scissors, Waves, Move, Film, Eye, Loader2, ShieldCheck, ShieldAlert } from 'lucide-react'
+import { ArrowRight, Scissors, Waves, Move, Film, Eye, Loader2, ShieldCheck, ShieldAlert, MonitorPlay } from 'lucide-react'
 
 /**
  * Human-readable storyboard of what the engine will do to reach `look`,
@@ -29,6 +29,12 @@ function describe(s: PlanStep, inputName: (id: number) => string): { icon: React
     case 'uskSettings': return { icon: Film, text: `configure USK${(s.keyer as number) + 1}`, tone: 'text-muted-foreground' }
     case 'mediaPlayerSource': return { icon: Film, text: `MP${(s.player as number) + 1} → still ${((s.source as { stillIndex?: number })?.stillIndex ?? 0) + 1}`, tone: 'text-busy' }
     case 'hyperdeckEnsure': return { icon: Film, text: `HyperDeck ${s.status}`, tone: 'text-muted-foreground' }
+    case 'propresenter': {
+      const lk = (s.look as { name?: string } | null)?.name
+      const mc = (s.macro as { name?: string } | null)?.name
+      const bits = [lk && `look ${lk}`, mc && `macro ${mc}`].filter(Boolean).join(' + ')
+      return { icon: MonitorPlay, text: `ProPresenter ${bits}`, tone: 'text-info' }
+    }
     case 'setMixRate': return { icon: Waves, text: `rate ${s.frames}f`, tone: 'text-muted-foreground/60' }
     default: return null
   }

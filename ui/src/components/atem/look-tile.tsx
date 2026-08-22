@@ -3,7 +3,7 @@ import type { Look, Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SsMonitor } from './ss-monitor'
 import { lookScene } from '@/lib/scene'
-import { Play, Info } from 'lucide-react'
+import { Play, Info, MonitorPlay, Zap } from 'lucide-react'
 
 export function LookTile({
   look, state, isCurrent, isTarget, grade, locked, onGoto, onSelect, onOpen,
@@ -59,6 +59,15 @@ export function LookTile({
               </>
             )}
           </div>
+          {(look.pro?.look?.name || look.pro?.macro?.name) && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-info/80 truncate" title="ProPresenter recalled with this look">
+              <MonitorPlay className="size-3 shrink-0" />
+              {look.pro?.look?.name && <span className="truncate">{look.pro.look.name}</span>}
+              {look.pro?.macro?.name && (
+                <span className="flex items-center gap-0.5 shrink-0"><Zap className="size-2.5" />{look.pro.macro.name}</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

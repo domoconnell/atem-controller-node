@@ -75,7 +75,13 @@ export interface Look {
     connected: boolean; status: string | null; clipId: number | null
     loop: boolean; singleClip: boolean; speed: number | null
   }
+  pro?: {
+    look?: { uuid?: string | null; name?: string | null; index?: number | null } | null
+    macro?: { uuid?: string | null; name?: string | null; index?: number | null } | null
+  } | null
 }
+
+export interface ProLook { uuid?: string | null; name?: string | null; index?: number | null }
 
 export interface Snapshot {
   sennheiser?: { enabled: boolean; simulated: boolean; online: number; total: number }
