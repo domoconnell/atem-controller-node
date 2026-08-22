@@ -438,7 +438,7 @@ export function SsMonitor({
       {(label || sublabel) && (
         <div className="absolute left-4 top-4 z-10 flex items-center gap-2 pointer-events-none rounded-md bg-black/55 backdrop-blur-sm pr-2 py-0.5 pl-0.5">
           {label && (
-            <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em]', tallyCls)}>
+            <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] whitespace-nowrap', tallyCls)}>
               {label}
             </span>
           )}
