@@ -16,13 +16,14 @@ import { macrosDir } from './config.js'
  * Emits: 'busy' (macro name), 'idle', 'step' ({index, total, step}), 'error'
  */
 export class Sequencer extends EventEmitter {
-  constructor(atemController, animator, lookStore, hyperdeck, engine) {
+  constructor(atemController, animator, lookStore, hyperdeck, engine, propresenter = null) {
     super()
     this.atem = atemController
     this.animator = animator
     this.looks = lookStore
     this.hyperdeck = hyperdeck
     this.engine = engine
+    this.propresenter = propresenter
     this.macros = new Map()
     this.current = null // { name, stepIndex, totalSteps }
     this._stopRequested = false
@@ -174,6 +175,10 @@ export class Sequencer extends EventEmitter {
 
       case 'setCurrentLook':
         this.looks.setCurrent(step.look)
+        break
+      case 'propresenter':
+        if (step.look) await this.propresenter?.triggerLook(step.look.uuid || step.look.name)
+        if (step.macro) await this.propresenter?.triggerMacro(step.macro.uuid || step.macro.name)
         break
 
       case 'wait':

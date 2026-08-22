@@ -26,6 +26,9 @@ export class ProPresenter extends EventEmitter {
     this._durations = new Map()
     this._maxSeen = new Map()
     this._defsFetched = 0
+    this._looksFetched = 0
+    this.currentLook = null // { uuid, name, index, stableUuid } — the live audience look
+    this.looksList = [] // [{ uuid, name, index }] — all defined audience looks
     this._mockStart = Date.now()
     this._timer = null
     // Runtime config: seeded from config.json, overridable from the Settings UI
@@ -110,6 +113,27 @@ export class ProPresenter extends EventEmitter {
       for (const name of [...this.timers.keys()]) {
         if (!seen.has(name)) { this.timers.delete(name); changed = true }
       }
+      // Current audience look + look list, for capturing/recalling a look as
+      // part of a Stage It "look". Cheap; polled ~1s. Isolated so a PP build
+      // without the looks endpoints never disturbs timer connectivity.
+      if (now - this._looksFetched > 1000) {
+        this._looksFetched = now
+        try {
+          const [cur, list] = await Promise.all([
+            this._get(`${base}/v1/look/current`).catch(() => null),
+            this._get(`${base}/v1/looks`).catch(() => null),
+          ])
+          if (Array.isArray(list)) this.looksList = list.map((l) => ({ uuid: l.id?.uuid, name: l.id?.name, index: l.id?.index }))
+          if (cur?.id) {
+            // The live look reports an EPHEMERAL uuid; resolve the stable one
+            // (used for recall) by matching the name in the look list.
+            const stable = this.looksList.find((l) => l.name === cur.id.name)?.uuid
+            const next = { uuid: cur.id.uuid, name: cur.id.name, index: cur.id.index, stableUuid: stable ?? cur.id.uuid }
+            if (this.currentLook?.name !== next.name) changed = true
+            this.currentLook = next
+          } else if (this.currentLook) { this.currentLook = null; changed = true }
+        } catch { /* looks unsupported on this PP build — leave last known */ }
+      }
       if (changed) {
         wire('rx', 'propres', 'timers-changed', short([...this.timers.values()].map((t) => `${t.name}=${Math.round(t.remaining)}s/${t.state}`).join(' '), 110))
         this.emit('update', this.snapshot())
@@ -157,6 +181,7 @@ export class ProPresenter extends EventEmitter {
       connected: this.connected,
       configured: !!this.baseUrl,
       timers: [...this.timers.values()],
+      currentLook: this.currentLook,
     }
   }
 
@@ -210,6 +235,52 @@ export class ProPresenter extends EventEmitter {
     }))
     items.sort((a, b) => a.index - b.index)
     return items
+  }
+
+  /** All audience looks: [{ uuid, name, index }]. Empty if PP unconfigured. */
+  async getLooks() {
+    const base = this.baseUrl
+    if (!base) return []
+    const list = await this._get(`${base}/v1/looks`).catch(() => [])
+    return (Array.isArray(list) ? list : []).map((l) => ({ uuid: l.id?.uuid, name: l.id?.name, index: l.id?.index }))
+  }
+
+  /** All macros: [{ uuid, name, index }]. Empty if none/unsupported. */
+  async getMacros() {
+    const base = this.baseUrl
+    if (!base) return []
+    const list = await this._get(`${base}/v1/macros`).catch(() => [])
+    return (Array.isArray(list) ? list : []).map((m) => ({ uuid: m.id?.uuid, name: m.id?.name, index: m.id?.index }))
+  }
+
+  /** Trigger an audience look by uuid or name. Idempotent on the output —
+   *  re-triggering the current look changes nothing visible. */
+  async triggerLook(idOrName) {
+    const base = this.baseUrl
+    if (!base || !idOrName) return false
+    return this._trigger(`${base}/v1/look/${encodeURIComponent(idOrName)}/trigger`)
+  }
+
+  /** Trigger a macro by uuid or name. */
+  async triggerMacro(idOrName) {
+    const base = this.baseUrl
+    if (!base || !idOrName) return false
+    return this._trigger(`${base}/v1/macro/${encodeURIComponent(idOrName)}/trigger`)
+  }
+
+  /** GET a trigger endpoint that answers 204/no-body (so _get's JSON parse
+   *  would throw). Returns true on 2xx. */
+  async _trigger(url) {
+    const path = url.replace(/^https?:\/\/[^/]+/, '')
+    wire('tx', 'propres', `GET ${path}`)
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(2000) })
+      wire('rx', 'propres', `${r.status} ${path}`)
+      return r.ok
+    } catch (e) {
+      wire('rx', 'propres', `ERR ${path} ${e.message}`)
+      return false
+    }
   }
 }
 

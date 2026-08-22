@@ -213,6 +213,24 @@ export class WebServer {
       try { res.json({ ok: true, playlists: (await this.propresenter?.getPlaylists?.()) ?? [] }) }
       catch (e) { res.status(502).json({ ok: false, error: e.message, playlists: [] }) }
     })
+
+    // ProPresenter audience looks + macros, for attaching to a Stage It look
+    // (the Record dialog). `current` is the live audience look right now.
+    app.get('/api/features/propresenter/looks', async (_req, res) => {
+      try {
+        const [looks, macros] = await Promise.all([
+          this.propresenter?.getLooks?.() ?? [],
+          this.propresenter?.getMacros?.() ?? [],
+        ])
+        res.json({ ok: true, looks, macros, current: this.propresenter?.currentLook ?? null })
+      } catch (e) { res.status(502).json({ ok: false, error: e.message, looks: [], macros: [], current: null }) }
+    })
+
+    // Set/replace a look's ProPresenter block (audience look and/or macro).
+    app.put('/api/looks/:name/pro', (req, res) => {
+      try { res.json({ ok: true, look: this.looks.setPro(req.params.name, req.body ?? null) }) }
+      catch (e) { res.status(400).json({ ok: false, error: e.message }) }
+    })
     // Force an immediate re-sync of one linked service (e.g. right after linking).
     app.post('/api/features/services/:id/sync', async (req, res) => {
       const svc = this.store?.listServices().find((s) => s.id === req.params.id)

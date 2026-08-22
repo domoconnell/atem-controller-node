@@ -25,9 +25,10 @@ const TWEENABLE = ['x', 'y', 'size', 'cropTop', 'cropBottom', 'cropLeft', 'cropR
  * plan() returns { steps, notes } - steps run on the existing sequencer.
  */
 export class TransitionEngine {
-  constructor(atemController, hyperdeck) {
+  constructor(atemController, hyperdeck, propresenter = null) {
     this.atem = atemController
     this.hyperdeck = hyperdeck
+    this.propresenter = propresenter
   }
 
   // Read live from the settings-backed config so a change in ATEM Transitions
@@ -79,6 +80,23 @@ export class TransitionEngine {
         loop: target.hyperdeck.loop,
         singleClip: target.hyperdeck.singleClip,
       })
+    }
+
+    // ---- ProPresenter audience look + macro (idempotent) ----------------
+    // Fire early so the lyric theme / background swaps as the wall transitions.
+    // The look trigger is skipped when PP already reports that look live; a
+    // macro (theme+background bundle) always fires when attached.
+    if (target.pro?.look || target.pro?.macro) {
+      const liveLook = this.propresenter?.currentLook?.name ?? null
+      const wantLook = target.pro?.look?.name ?? null
+      const needLook = !!wantLook && liveLook !== wantLook
+      if (needLook || target.pro?.macro) {
+        steps.push({ type: 'propresenter', look: needLook ? target.pro.look : null, macro: target.pro?.macro ?? null })
+        const bits = []
+        if (needLook) bits.push(`look → ${wantLook}`)
+        if (target.pro?.macro) bits.push(`macro → ${target.pro.macro.name}`)
+        notes.push(`ProPresenter: ${bits.join(', ')}`)
+      }
     }
 
     // ---- Media players ---------------------------------------------------

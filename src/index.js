@@ -47,11 +47,13 @@ try {
   console.error('[engine] failed to initialise connector engine:', e.message)
 }
 
-const looks = new LookStore(atem, hyperdeck, store)
-const engine = new TransitionEngine(atem, hyperdeck)
-const sequencer = new Sequencer(atem, animator, looks, hyperdeck, engine)
-const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
+// ProPresenter is built first so looks can record/recall the audience look and
+// the transition engine can diff against the live PP look.
 const propresenter = new ProPresenter()
+const looks = new LookStore(atem, hyperdeck, store, propresenter)
+const engine = new TransitionEngine(atem, hyperdeck, propresenter)
+const sequencer = new Sequencer(atem, animator, looks, hyperdeck, engine, propresenter)
+const oscServer = new OscServer({ atem, animator, looks, sequencer, hyperdeck })
 const verifier = new Verifier(atem, sequencer, engine, looks)
 const sennheiser = new SennheiserMonitor()
 
