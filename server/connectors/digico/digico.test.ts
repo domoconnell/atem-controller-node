@@ -72,6 +72,14 @@ describe('interpreting console messages', () => {
       { channel: 3, faderDb: -10 },
     )
     expect(interpret({ address: '/Input_Channels/3/fader', args: [0] })?.channel?.faderDb).toBe(-Infinity)
+
+    // iPad command set reports the fader as dB directly (no taper conversion).
+    expect(interpret({ address: '/Input_Channels/3/fader', args: [-10] }, true)?.channel).toMatchObject(
+      { channel: 3, faderDb: -10 },
+    )
+    expect(interpret({ address: '/Input_Channels/3/fader', args: [0] }, true)?.channel).toMatchObject(
+      { channel: 3, faderDb: 0 },
+    )
   })
 
   it('reads a snapshot fire', () => {

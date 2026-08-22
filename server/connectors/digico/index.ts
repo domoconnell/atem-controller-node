@@ -8,6 +8,7 @@ import {
   auxSendLevelMessage,
   auxSendOnMessage,
   type ChannelState,
+  commandSetProfile,
   decodeOsc,
   encodeOsc,
   faderMessage,
@@ -29,8 +30,8 @@ export const digicoConfigSchema = z.object({
     .describe('The port the CONSOLE listens on — its “Receive” port in External Control. We send commands here.'),
   receivePort: z.number().int().min(0).max(65535).default(9000)
     .describe('The port WE listen on for the console’s feedback — point the desk’s “Send to” at this machine on this port. 0 = OS-assigned.'),
-  addressPrefix: z.enum(['', '/sd']).default('/sd')
-    .describe('Command-set dialect. “/sd” = the SD/Quantum “Other OSC” set (what we implement). The iPad app uses a different (undocumented) set — for iPads, use the relay: they pass through untouched. Blank only if your firmware rejects the /sd prefix.'),
+  commandSet: z.enum(['ipad', 'osc']).default('ipad')
+    .describe('Must MATCH the console’s enabled External Control device, or commands are ignored. “iPad” = the DiGiCo Pad device (no address prefix, fader/send levels in dB) — the set consoles run with iPads connected, and Companion’s default. “OSC” = the “Other OSC” device (/sd addresses, 0..1 taper faders). (S-series is a separate scheme, not yet supported.)'),
   channelCount: z.number().int().min(0).max(128).default(32)
     .describe('How many input channels WE query at startup to pre-load names/mutes/faders. Not a console setting — just how much state we hydrate up front (the desk auto-sends changes after that).'),
   pollIntervalSeconds: z.number().int().min(5).max(600).default(30)
@@ -60,8 +61,8 @@ export type DigicoConfig = z.infer<typeof digicoConfigSchema>
 
 const fireMacroInput = z.object({ index: z.number().int().min(1).max(500) })
 const muteChannelInput = z.object({ channel: z.number().int().min(1).max(128), muted: z.boolean() })
-const faderInput = z.object({ channel: z.number().int().min(1).max(128), db: z.number().min(-90).max(10) })
-const auxSendInput = z.object({ channel: z.number().int().min(1).max(128), aux: z.number().int().min(1).max(64), db: z.number().min(-90).max(10).optional(), on: z.boolean().optional() })
+const faderInput = z.object({ channel: z.number().int().min(1).max(128), db: z.number().min(-150).max(10) })
+const auxSendInput = z.object({ channel: z.number().int().min(1).max(128), aux: z.number().int().min(1).max(64), db: z.number().min(-150).max(10).optional(), on: z.boolean().optional() })
 const snapshotInput = z.object({ number: z.number().int().min(1).max(9999) })
 const noInput = z.object({})
 
@@ -208,9 +209,13 @@ class DigicoConnector implements Connector<DigicoConfig> {
     })
   }
 
+  /** Address prefix + level encoding for the configured command set. */
+  private profile() { return commandSetProfile(this.ctx?.config.commandSet ?? 'ipad') }
+
   async exec(commandId: string, input: unknown): Promise<CommandResult> {
     const ctx = this.ctx
     if (!ctx) return commandFail('NOT_CONNECTED', 'Not connected')
+    const set = this.profile()
 
     if (commandId === 'macro.fire') {
       if (!ctx.config.allowMacroFire) {
@@ -218,7 +223,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
       }
       const parsed = fireMacroInput.safeParse(input)
       if (!parsed.success) return commandFail('INVALID_INPUT', 'Pick a macro number')
-      this.send(fireMacroMessage(ctx.config.addressPrefix, parsed.data.index))
+      this.send(fireMacroMessage(set.prefix, parsed.data.index))
       return commandOk()
     }
 
@@ -227,7 +232,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (commandId === 'channel.mute') {
       const parsed = muteChannelInput.safeParse(input)
       if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { channel, muted }')
-      this.send(muteChannelMessage(ctx.config.addressPrefix, parsed.data.channel, parsed.data.muted))
+      this.send(muteChannelMessage(set.prefix, parsed.data.channel, parsed.data.muted))
       return commandOk()
     }
 
@@ -235,7 +240,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (commandId === 'channel.fader') {
       const parsed = faderInput.safeParse(input)
       if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { channel, db }')
-      this.send(faderMessage(ctx.config.addressPrefix, parsed.data.channel, parsed.data.db))
+      this.send(faderMessage(set.prefix, parsed.data.channel, parsed.data.db, set.directDb))
       return commandOk()
     }
 
@@ -244,8 +249,8 @@ class DigicoConnector implements Connector<DigicoConfig> {
       const parsed = auxSendInput.safeParse(input)
       if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { channel, aux, db?, on? }')
       const { channel, aux, db, on } = parsed.data
-      if (db !== undefined) this.send(auxSendLevelMessage(ctx.config.addressPrefix, channel, aux, db))
-      if (on !== undefined) this.send(auxSendOnMessage(ctx.config.addressPrefix, channel, aux, on))
+      if (db !== undefined) this.send(auxSendLevelMessage(set.prefix, channel, aux, db, set.directDb))
+      if (on !== undefined) this.send(auxSendOnMessage(set.prefix, channel, aux, on))
       return commandOk()
     }
 
@@ -253,11 +258,11 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (commandId === 'snapshot.fire') {
       const parsed = snapshotInput.safeParse(input)
       if (!parsed.success) return commandFail('INVALID_INPUT', 'Need { number }')
-      this.send(snapshotFireMessage(ctx.config.addressPrefix, parsed.data.number))
+      this.send(snapshotFireMessage(set.prefix, parsed.data.number))
       return commandOk()
     }
-    if (commandId === 'snapshot.next') { this.send(snapshotNextMessage(ctx.config.addressPrefix)); return commandOk() }
-    if (commandId === 'snapshot.prev') { this.send(snapshotPrevMessage(ctx.config.addressPrefix)); return commandOk() }
+    if (commandId === 'snapshot.next') { this.send(snapshotNextMessage(set.prefix)); return commandOk() }
+    if (commandId === 'snapshot.prev') { this.send(snapshotPrevMessage(set.prefix)); return commandOk() }
 
     return commandFail('NOT_FOUND', `Unknown command ${commandId}`)
   }
@@ -274,7 +279,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
     const message = decodeOsc(buffer)
     if (!message) return // not OSC, or truncated; the console will send more
 
-    const update = interpret(message)
+    const update = interpret(message, this.profile().directDb)
     if (!update) return
 
     ctx.setStatus('online')
@@ -332,7 +337,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private query(): void {
     const ctx = this.ctx
     if (!ctx) return
-    for (const message of queryMessages(ctx.config.addressPrefix, ctx.config.channelCount)) {
+    for (const message of queryMessages(this.profile().prefix, ctx.config.channelCount)) {
       this.send(message)
     }
   }

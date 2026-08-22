@@ -152,6 +152,29 @@ export function dbToFader(db: number): number {
   return 1
 }
 
+// ------------------------------------------------------------------ command sets
+
+/**
+ * The DiGiCo command set, as the Bitfocus companion-module-digico-osc splits it
+ * (its `series` config). Confirmed from that open-source module:
+ *   - iPad ("DiGiCo Pad" device): addresses have NO prefix, and fader/send
+ *     LEVELS are direct dB (−150 = OFF … +10). This is Companion's default and
+ *     the set a console runs when iPads are connected.
+ *   - OSC ("Other OSC" device):  addresses are `/sd/…`, and fader/send levels
+ *     are the 0..1 taper.
+ * The set must MATCH the console's enabled External Control device, or commands
+ * are ignored. (S-series is a third, different scheme — not handled yet.)
+ */
+export type CommandSet = 'ipad' | 'osc'
+export interface CommandSetProfile { prefix: string; directDb: boolean }
+export function commandSetProfile(set: CommandSet | string): CommandSetProfile {
+  return set === 'osc' ? { prefix: '/sd', directDb: false } : { prefix: '', directDb: true }
+}
+/** Encode a dB level for the chosen set: direct dB (iPad) or 0..1 taper (OSC). */
+export const encodeLevel = (db: number, directDb: boolean): number => (directDb ? db : dbToFader(db))
+/** Decode a level value from the console into dB, per set. */
+export const decodeLevel = (v: number, directDb: boolean): number => (directDb ? v : faderToDb(v))
+
 // ------------------------------------------------------------------ addresses
 
 /** Strips an optional `/sd` prefix so both firmware dialects parse the same. */
@@ -202,7 +225,7 @@ export function parseAuxSend(address: string): { ch: number; aux: number; leaf: 
  * name is the reason the message bridge works at all: a console operator can
  * label a macro "Mic 3 down" and the dashboard sees that text.
  */
-export function interpret(message: OscMessage): DigicoUpdate | null {
+export function interpret(message: OscMessage, directDb = false): DigicoUpdate | null {
   const address = normaliseAddress(message.address)
 
   const macro = /^\/Macros\/Buttons\/state$/.exec(address)
@@ -232,8 +255,8 @@ export function interpret(message: OscMessage): DigicoUpdate | null {
       return { channel: { channel: number, name: null, muted: Number(value) > 0, faderDb: null } }
     }
     if (leaf === 'fader') {
-      // The console reports the raw 0..1 taper float; convert to dB properly.
-      const db = typeof value === 'number' ? faderToDb(value) : null
+      // iPad set reports dB directly; OSC set reports the 0..1 taper float.
+      const db = typeof value === 'number' ? decodeLevel(value, directDb) : null
       return { channel: { channel: number, name: null, muted: null, faderDb: db == null || db === -Infinity ? db : Math.round(db * 10) / 10 } }
     }
     // Aux sends (ch → aux): level / on / pan — the IEM-mixing surface.
@@ -243,7 +266,7 @@ export function interpret(message: OscMessage): DigicoUpdate | null {
       return {
         auxSend: {
           ch: aux.ch, aux: aux.aux,
-          level: aux.leaf === 'send_level' && typeof v === 'number' ? faderToDb(v) : undefined,
+          level: aux.leaf === 'send_level' && typeof v === 'number' ? decodeLevel(v, directDb) : undefined,
           on: aux.leaf === 'send_on' ? Number(v) > 0 : undefined,
           pan: aux.leaf === 'send_pan' && typeof v === 'number' ? v : undefined,
         },
@@ -286,14 +309,14 @@ export function muteChannelMessage(prefix: string, channel: number, muted: boole
   return { address: `${prefix}/Input_Channels/${channel}/mute`, args: [muted ? 1 : 0] }
 }
 
-/** Set an input channel's fader to a dB level (converted onto the 0..1 taper). */
-export function faderMessage(prefix: string, channel: number, db: number): OscMessage {
-  return { address: `${prefix}/Input_Channels/${channel}/fader`, args: [dbToFader(db)] }
+/** Set an input channel's fader to a dB level (encoded for the active set). */
+export function faderMessage(prefix: string, channel: number, db: number, directDb = false): OscMessage {
+  return { address: `${prefix}/Input_Channels/${channel}/fader`, args: [encodeLevel(db, directDb)] }
 }
 
-/** Set a channel→aux send level (dB → 0..1 taper). */
-export function auxSendLevelMessage(prefix: string, channel: number, aux: number, db: number): OscMessage {
-  return { address: `${prefix}/Input_Channels/${channel}/Aux_Send/${aux}/send_level`, args: [dbToFader(db)] }
+/** Set a channel→aux send level in dB (encoded for the active set). */
+export function auxSendLevelMessage(prefix: string, channel: number, aux: number, db: number, directDb = false): OscMessage {
+  return { address: `${prefix}/Input_Channels/${channel}/Aux_Send/${aux}/send_level`, args: [encodeLevel(db, directDb)] }
 }
 /** Turn a channel→aux send on/off. */
 export function auxSendOnMessage(prefix: string, channel: number, aux: number, on: boolean): OscMessage {
