@@ -3,8 +3,9 @@ import type { Snapshot } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { cmd } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Play, Square, Repeat, Zap, ArrowLeftRight } from 'lucide-react'
+import { Play, Square, Repeat, Zap, ArrowLeftRight, MonitorPlay } from 'lucide-react'
 import { sourceColor } from './ss-monitor'
+import { ppMediaThumb } from '@/lib/scene'
 
 // Compact source names for the keyer tiles.
 function shortSource(n: string): string {
@@ -121,6 +122,23 @@ export function MePanel({ state, locked }: { state: Snapshot; locked: boolean })
           <Button size="sm" variant="secondary" className="h-8 text-[11px]" disabled={locked} onClick={() => cmd('/hyperdeck/stop')}><Square className="size-3.5" /> Stop</Button>
         </div>
       </div>
+
+      {state.propresenter?.configured && (
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 flex items-center gap-1.5">
+            <MonitorPlay className="size-3" /> ProPresenter
+            {!state.propresenter.connected && <span className="text-[9px] normal-case tracking-normal text-destructive/80">offline</span>}
+          </div>
+          <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-2">
+            <Row k="Look"><span className={cn(state.propresenter.currentLook?.name && 'text-info')}>{state.propresenter.currentLook?.name ?? '—'}</span></Row>
+            <Row k="Background">{state.propresenter.currentMedia?.item?.name ?? '—'}</Row>
+            {ppMediaThumb(state.propresenter.currentMedia, 300) && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={ppMediaThumb(state.propresenter.currentMedia, 300)!} alt="" className="w-full aspect-video object-cover rounded-md border border-border/60" />
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="pt-1 flex gap-2">
         <Button size="sm" variant="ghost" className="h-8 text-[11px] text-muted-foreground" onClick={() => cmd('/reload')}>

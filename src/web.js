@@ -258,6 +258,14 @@ export class WebServer {
       try { res.json({ ok: true, look: this.looks.setPro(req.params.name, req.body ?? null) }) }
       catch (e) { res.status(400).json({ ok: false, error: e.message }) }
     })
+
+    // Copy a look under a new name (create without a live switcher).
+    app.post('/api/looks/duplicate', (req, res) => {
+      const { from, to, enableBox } = req.body ?? {}
+      if (!from || !to) return res.status(400).json({ ok: false, error: 'from and to required' })
+      try { res.json({ ok: true, look: this.looks.duplicate(from, to, { enableBox }) }) }
+      catch (e) { res.status(400).json({ ok: false, error: e.message }) }
+    })
     // Force an immediate re-sync of one linked service (e.g. right after linking).
     app.post('/api/features/services/:id/sync', async (req, res) => {
       const svc = this.store?.listServices().find((s) => s.id === req.params.id)

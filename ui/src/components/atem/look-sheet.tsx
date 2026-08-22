@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SsMonitor } from './ss-monitor'
-import { lookScene } from '@/lib/scene'
+import { lookScene, ppMediaThumb } from '@/lib/scene'
 import { Play, Route, Zap, MoveRight, RefreshCcw, Trash2 } from 'lucide-react'
 
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
@@ -58,7 +58,7 @@ export function LookSheet({
         </SheetHeader>
 
         <div className="px-5">
-          <SsMonitor scene={lookScene(look)} inputName={inputName} label={isCurrent ? 'PGM' : 'Look'} tally={isCurrent ? 'pgm' : 'plain'} sublabel={look.me?.programInputName} />
+          <SsMonitor scene={lookScene(look)} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media)} displayBox={state.displayBox} label={isCurrent ? 'PGM' : 'Look'} tally={isCurrent ? 'pgm' : 'plain'} sublabel={look.me?.programInputName} />
         </div>
 
         <div className="px-5 pt-3 grid grid-cols-4 gap-1.5">
@@ -128,6 +128,14 @@ export function LookSheet({
                 <div>
                   <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">HyperDeck</div>
                   <KV k="Transport" v={look.hyperdeck.connected ? `${look.hyperdeck.status} · clip ${look.hyperdeck.clipId ?? '—'}${look.hyperdeck.loop ? ' · loop' : ''}${look.hyperdeck.singleClip ? ' · single' : ''}` : 'not connected'} />
+                </div>
+              )}
+              {look.pro && (look.pro.look?.name || look.pro.media?.item?.name || look.pro.macro?.name) && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">ProPresenter</div>
+                  {look.pro.look?.name && <KV k="Look" v={<b className="text-info">{look.pro.look.name}</b>} />}
+                  {look.pro.media?.item?.name && <KV k="Background" v={<><b>{look.pro.media.item.name}</b>{look.pro.media.playlist?.name ? <span className="text-muted-foreground"> · {look.pro.media.playlist.name}</span> : null}</>} />}
+                  {look.pro.macro?.name && <KV k="Macro" v={look.pro.macro.name} />}
                 </div>
               )}
             </div>}

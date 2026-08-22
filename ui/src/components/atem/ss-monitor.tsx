@@ -270,25 +270,49 @@ export function SsMonitor({
           }
         })
       } else {
-        // direct feed: full-frame plate
+        // direct feed: full-frame plate — or, when this direct feed IS the
+        // ProMain input (the source the displayBox carries), the ProPresenter
+        // background media full-frame, since the whole output is ProPresenter.
         const col = sourceColor(s.program)
-        const g = ctx.createLinearGradient(0, 0, W, H)
-        g.addColorStop(0, hexA(col, 0.40)); g.addColorStop(1, hexA(col, 0.18))
-        ctx.fillStyle = g
-        ctx.fillRect(0, 0, W, H)
+        const promainSrc = displayBox != null ? s.boxes?.[displayBox]?.source : undefined
+        const im = drawMedia && mediaImg.current?.ready && promainSrc != null && s.program === promainSrc ? mediaImg.current.img : null
+        if (im) {
+          const ar = im.width / im.height, far = W / H
+          let dw, dh, dx, dy
+          if (ar > far) { dh = H; dw = dh * ar; dx = -(dw - W) / 2; dy = 0 }
+          else { dw = W; dh = dw / ar; dx = 0; dy = -(dh - H) / 2 }
+          ctx.save(); ctx.globalAlpha = alpha
+          try { ctx.drawImage(im, dx, dy, dw, dh) } catch { /* decode not ready */ }
+          ctx.restore()
+        } else {
+          const g = ctx.createLinearGradient(0, 0, W, H)
+          g.addColorStop(0, hexA(col, 0.40)); g.addColorStop(1, hexA(col, 0.18))
+          ctx.fillStyle = g
+          ctx.fillRect(0, 0, W, H)
+        }
         ctx.strokeStyle = hexA(col, 0.7)
         ctx.lineWidth = 2 * dpr
         ctx.strokeRect(1, 1, W - 2, H - 2)
         if (labels && showLabels) {
           const fs = big ? 22 * dpr : Math.max(9 * dpr, H / 6)
-          ctx.font = `800 ${fs}px ui-sans-serif, system-ui, sans-serif`
-          ctx.fillStyle = hexA(col, 0.95)
-          ctx.textAlign = 'center'
-          ctx.fillText(name(s.program), W / 2, H / 2 + fs / 3)
-          if (big) {
-            ctx.font = `600 ${11 * dpr}px ui-sans-serif, system-ui, sans-serif`
-            ctx.fillStyle = 'rgba(255,255,255,0.45)'
-            ctx.fillText('direct feed', W / 2, H / 2 + fs / 3 + 16 * dpr)
+          if (im) {
+            // media is showing — a small corner label, not a big centred plate name
+            if (big) {
+              ctx.font = `700 ${11 * dpr}px ui-sans-serif, system-ui, sans-serif`
+              ctx.fillStyle = 'rgba(255,255,255,0.8)'
+              ctx.textAlign = 'left'
+              ctx.fillText(`${name(s.program)} · ProPresenter`, 10 * dpr, H - 10 * dpr)
+            }
+          } else {
+            ctx.font = `800 ${fs}px ui-sans-serif, system-ui, sans-serif`
+            ctx.fillStyle = hexA(col, 0.95)
+            ctx.textAlign = 'center'
+            ctx.fillText(name(s.program), W / 2, H / 2 + fs / 3)
+            if (big) {
+              ctx.font = `600 ${11 * dpr}px ui-sans-serif, system-ui, sans-serif`
+              ctx.fillStyle = 'rgba(255,255,255,0.45)'
+              ctx.fillText('direct feed', W / 2, H / 2 + fs / 3 + 16 * dpr)
+            }
           }
           ctx.textAlign = 'left'
         }

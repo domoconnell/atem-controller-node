@@ -140,6 +140,26 @@ export class LookStore extends EventEmitter {
     return look
   }
 
+  /** Copy an existing look under a new name (same captured ATEM state), so a
+   *  look can be created without a live switcher. Returns the new look. */
+  duplicate(fromName, toName, opts = {}) {
+    const src = this.mustGet(fromName)
+    const name = slug(toName)
+    if (!name) throw new Error('target name required')
+    const copy = JSON.parse(JSON.stringify(src))
+    copy.name = name
+    copy.capturedAt = new Date().toISOString()
+    // Optionally switch a box on (e.g. enable the ProMain display box so the
+    // ProPresenter background shows) in the copy.
+    if (opts.enableBox != null && copy.boxes?.[opts.enableBox]) copy.boxes[opts.enableBox].enabled = true
+    this.looks.set(name, copy)
+    if (this.store) this.store.putLook(name, name, copy)
+    try { writeFileSync(path.join(looksDir, `${name}.json`), JSON.stringify(copy, null, 2)) } catch { /* backup only */ }
+    console.log(`[looks] duplicated '${fromName}' -> '${name}'`)
+    this.emit('changed')
+    return copy
+  }
+
   _ssPropertiesWithNames() {
     const props = this.atem.getSsProperties()
     if (!props) return null
