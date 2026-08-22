@@ -102,33 +102,48 @@ export default function RunsheetPage() {
         <AppHeader app="runsheet" state={state} wsConnected={connected} tick={tick}>
           <ServicePicker services={services} current={svc} onPick={setSelId}
             onNew={async () => { const list = await save({ name: 'New service', segments: [] }); const created = list[list.length - 1]; if (created) setSelId(created.id) }} />
-          {svc && <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-40')} />}
-          {svc && <input value={svc.startTime ?? ''} onChange={(e) => update({ startTime: e.target.value })} placeholder="Start 10:30"
-            title="Service start time (wall clock) — the estimated finish is measured against this"
-            className={cn(sc, 'w-24 tabular-nums', !isValidClock(svc.startTime) && 'border-destructive text-destructive')} />}
-          {svc && <select value={svc.startSegmentId ?? ''} onChange={(e) => update({ startSegmentId: e.target.value || undefined })}
-            title="Which item the start time applies to — items before it (pre-roll, countdown) are pre-service"
-            className={cn(sc, 'max-w-[150px]')}>
-            <option value="">Starts at first item</option>
-            {segments.filter((s) => s.kind !== 'header').map((s) => <option key={s.id} value={s.id}>↳ {s.titleOverride || s.title}</option>)}
-          </select>}
-          {svc && <ProLinkControl link={svc.proLink}
-            onLink={async (pl) => { await save({ id: svc.id, proLink: { playlistId: pl.id, playlistName: pl.path || pl.name } }); await syncNow(svc.id) }}
-            onUnlink={() => save({ id: svc.id, proLink: null as unknown as undefined })}
-            onResync={() => syncNow(svc.id)} />}
-          <label className="cursor-pointer inline-flex items-center gap-1.5 text-[12px] rounded-md px-2.5 py-1.5 border border-border hover:bg-accent" title="Import a CSV: columns Segment, Time, Person, Mic">
-            <Upload className="size-3.5" /> CSV
-            <input type="file" accept=".csv,text/csv" className="hidden" onChange={onImport} />
-          </label>
-          <div className="ml-auto flex items-center gap-1.5">
-            <button onClick={() => goto(firstItem < 0 ? null : firstItem)} disabled={firstItem < 0} className="inline-flex items-center gap-1 text-[12px] rounded-md px-2.5 py-1.5 bg-live/15 text-live hover:bg-live/25 disabled:opacity-40"><Play className="size-3.5" /> Start</button>
-            <button onClick={() => goto(active == null ? firstItem : nextItem(active, -1))} disabled={active == null || active <= firstItem} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipBack className="size-4" /></button>
-            <button onClick={() => goto(active == null ? firstItem : nextItem(active, 1))} disabled={active == null || active >= lastItem} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30"><SkipForward className="size-4" /></button>
-            <button onClick={() => goto(null)} disabled={active == null} className="p-1.5 rounded-md hover:bg-accent disabled:opacity-30" title="Stop / clear cues"><Square className="size-4" /></button>
-          </div>
         </AppHeader>
 
-        <main className="flex-1 min-h-0 overflow-y-auto p-4">
+        <div className="flex-1 min-h-0 flex">
+          {svc && (
+            <aside className="w-60 shrink-0 border-r border-border/70 overflow-y-auto p-4 space-y-5 bg-background/40">
+              <Field label="Service name">
+                <input value={svc.name} onChange={(e) => update({ name: e.target.value })} className={cn(sc, 'w-full')} />
+              </Field>
+              <Field label="Start time">
+                <input value={svc.startTime ?? ''} onChange={(e) => update({ startTime: e.target.value })} placeholder="10:30"
+                  title="Service start time (wall clock) — the estimated finish is measured against this"
+                  className={cn(sc, 'w-full tabular-nums', !isValidClock(svc.startTime) && 'border-destructive text-destructive')} />
+                <select value={svc.startSegmentId ?? ''} onChange={(e) => update({ startSegmentId: e.target.value || undefined })}
+                  title="Which item the start time applies to — items before it (pre-roll, countdown) are pre-service"
+                  className={cn(sc, 'w-full mt-1.5')}>
+                  <option value="">Starts at first item</option>
+                  {segments.filter((s) => s.kind !== 'header').map((s) => <option key={s.id} value={s.id}>↳ {s.titleOverride || s.title}</option>)}
+                </select>
+              </Field>
+              <Field label="Transport">
+                <button onClick={() => goto(firstItem < 0 ? null : firstItem)} disabled={firstItem < 0} className="w-full inline-flex items-center justify-center gap-1.5 text-[12px] rounded-md py-2 bg-live/15 text-live hover:bg-live/25 disabled:opacity-40"><Play className="size-3.5" /> Start</button>
+                <div className="grid grid-cols-3 gap-1.5 mt-1.5">
+                  <button onClick={() => goto(active == null ? firstItem : nextItem(active, -1))} disabled={active == null || active <= firstItem} className="inline-flex items-center justify-center py-2 rounded-md bg-muted/40 hover:bg-accent disabled:opacity-30" title="Previous"><SkipBack className="size-4" /></button>
+                  <button onClick={() => goto(active == null ? firstItem : nextItem(active, 1))} disabled={active == null || active >= lastItem} className="inline-flex items-center justify-center py-2 rounded-md bg-muted/40 hover:bg-accent disabled:opacity-30" title="Next"><SkipForward className="size-4" /></button>
+                  <button onClick={() => goto(null)} disabled={active == null} className="inline-flex items-center justify-center py-2 rounded-md bg-muted/40 hover:bg-accent disabled:opacity-30" title="Stop / clear cues"><Square className="size-4" /></button>
+                </div>
+              </Field>
+              <Field label="ProPresenter">
+                <ProLinkControl link={svc.proLink}
+                  onLink={async (pl) => { await save({ id: svc.id, proLink: { playlistId: pl.id, playlistName: pl.path || pl.name } }); await syncNow(svc.id) }}
+                  onUnlink={() => save({ id: svc.id, proLink: null as unknown as undefined })}
+                  onResync={() => syncNow(svc.id)} />
+              </Field>
+              <Field label="Import">
+                <label className="cursor-pointer w-full inline-flex items-center justify-center gap-1.5 text-[12px] rounded-md py-2 border border-border hover:bg-accent" title="Import a CSV: columns Segment, Time, Person, Mic">
+                  <Upload className="size-3.5" /> CSV
+                  <input type="file" accept=".csv,text/csv" className="hidden" onChange={onImport} />
+                </label>
+              </Field>
+            </aside>
+          )}
+          <main className="flex-1 min-h-0 overflow-y-auto p-4">
           {!svc ? (
             <div className="h-full grid place-items-center text-muted-foreground text-sm">No service — create one from the picker.</div>
           ) : (
@@ -157,9 +172,20 @@ export default function RunsheetPage() {
               </div>
             </div>
           )}
-        </main>
+          </main>
+        </div>
       </div>
     </TooltipProvider>
+  )
+}
+
+/** A labelled block in the runsheet sidebar. */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{label}</div>
+      {children}
+    </div>
   )
 }
 
