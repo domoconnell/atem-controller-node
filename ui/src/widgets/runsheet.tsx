@@ -216,12 +216,9 @@ function RunsheetList({ config, title }: WidgetProps) {
             const others = seg.people.filter((p) => !p.lead)
             return (
               <div key={seg.id} ref={isNow ? nowRef : isNext ? nextRef : undefined}
-                className={cn('rounded-md px-2 py-1', isNow ? 'bg-live/15' : isNext ? 'bg-busy/10' : '')}>
+                className={cn('rounded-md pr-2 pl-2 py-1 border-l-2', isNow ? 'bg-live/15 border-live' : isNext ? 'bg-busy/10 border-busy' : 'border-transparent')}>
                 <div className="flex items-center gap-2">
-                  <span className={cn('shrink-0 w-9 text-center text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5',
-                    isNow ? 'bg-live text-black' : isNext ? 'bg-busy text-black' : 'bg-muted/50 text-muted-foreground')}>
-                    {isNow ? 'NOW' : isNext ? 'NEXT' : ''}</span>
-                  <span className="text-[12.5px] font-semibold truncate shrink min-w-0">{segTitle(seg)}</span>
+                  <span className={cn('text-[12.5px] font-semibold truncate shrink min-w-0', isNow ? 'text-live' : isNext ? 'text-busy' : '')}>{segTitle(seg)}</span>
                   {/* lead mics on the same line */}
                   {leads.length > 0 && <span className="flex items-center gap-1.5 overflow-hidden text-muted-foreground">{leads.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}</span>}
                   {(() => {
@@ -257,7 +254,7 @@ function RunsheetList({ config, title }: WidgetProps) {
                   })()}
                 </div>
                 {others.length > 0 && (
-                  <div className="pl-11 pt-0.5 flex flex-wrap gap-1.5 gap-y-1 text-muted-foreground">
+                  <div className="pl-1 pt-0.5 flex flex-wrap gap-1.5 gap-y-1 text-muted-foreground">
                     {others.map((p, k) => <PersonMini key={k} person={p} mics={mics} />)}
                   </div>
                 )}
