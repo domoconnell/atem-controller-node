@@ -17,7 +17,7 @@ SSH_OPTS=(-o ControlMaster=auto -o "ControlPath=$CTRL" -o ControlPersist=600 -o 
 echo "== 0/5 Pre-flight =="
 # The Pi never builds the UI (npm install --ignore-scripts); we ship the
 # built public/. Refuse to deploy a missing or stale build.
-if [ ! -f "$PROJECT_DIR/public/index.html" ] || [ ! -f "$PROJECT_DIR/public/designer.html" ] || [ ! -f "$PROJECT_DIR/public/acceptance.html" ]; then
+if [ ! -f "$PROJECT_DIR/public/index.html" ] || [ ! -f "$PROJECT_DIR/public/designer.html" ] || [ ! -f "$PROJECT_DIR/public/atem/acceptance.html" ]; then
   echo "ERROR: public/ is missing built pages. Run 'npm run build' first (or use 'npm run deploy' which builds)." >&2
   exit 1
 fi
