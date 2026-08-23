@@ -125,24 +125,38 @@ fi
 # ---- 6/6 Companion Satellite -----------------------------------------------
 if [ "$INSTALL_SATELLITE" = 1 ]; then
   echo "== 6/6 Companion Satellite =="
-  # NOTE: Companion Satellite is an external Bitfocus project and its installer
-  # moves. On-site (online), install it with the CURRENT official method from
-  #   https://github.com/bitfocus/companion-satellite  (headless Linux install)
-  # It sets up a systemd service (companion-satellite) and the Stream Deck udev
-  # rules. After installing, point it at the main Companion — recent versions
-  # ship a `satellite-installer` you can drive non-interactively, e.g.:
-  #
-  #   satellite-installer --host "$COMPANION_HOST" --port "$COMPANION_PORT"
-  #
-  # (or set it once in the Satellite web config on http://<this-pi>:9999).
-  if command -v satellite-installer >/dev/null 2>&1; then
-    echo "  configuring existing Satellite -> $COMPANION_HOST:$COMPANION_PORT"
-    satellite-installer --host "$COMPANION_HOST" --port "$COMPANION_PORT" || \
-      echo "  (couldn't auto-configure; set the host in the Satellite web UI :9999)"
+  # Official Bitfocus headless install: creates the 'satellite' user + systemd
+  # service, the Stream Deck udev rules, and a REST config server on :9999.
+  # https://github.com/bitfocus/companion-satellite
+  if ! systemctl list-unit-files 2>/dev/null | grep -q '^satellite\.service'; then
+    echo "  installing Companion Satellite (this pulls Node + builds; give it a few min)…"
+    curl -fsSL https://raw.githubusercontent.com/bitfocus/companion-satellite/main/pi-image/install.sh | bash
   else
-    echo "  Satellite not installed yet — install it on-site (see the note above),"
-    echo "  then run:  satellite-installer --host $COMPANION_HOST --port $COMPANION_PORT"
+    echo "  Satellite already installed."
   fi
+
+  # Point it at the main Companion. The config file (COMPANION_IP/PORT) is the
+  # source of truth read on boot; we also poke the REST API so it applies now.
+  for cfg in /boot/firmware/satellite-config /boot/satellite-config; do
+    if [ -f "$cfg" ]; then
+      echo "  setting $cfg -> $COMPANION_HOST:$COMPANION_PORT"
+      sed -i "s/^COMPANION_IP=.*/COMPANION_IP=$COMPANION_HOST/"   "$cfg"
+      sed -i "s/^COMPANION_PORT=.*/COMPANION_PORT=$COMPANION_PORT/" "$cfg"
+    fi
+  done
+  # REST API (documented): apply without waiting for a reboot. Retry while the
+  # service comes up.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if curl -fsS -m 2 -X POST http://127.0.0.1:9999/api/config \
+        -H 'Content-Type: application/json' \
+        -d "{\"host\":\"$COMPANION_HOST\",\"port\":$COMPANION_PORT}" >/dev/null 2>&1; then
+      echo "  Satellite pointed at $COMPANION_HOST:$COMPANION_PORT"; break
+    fi
+    sleep 3
+  done
+  systemctl restart satellite 2>/dev/null || true
+  echo "  Stream Deck plugged into THIS Pi now shows on Companion at $COMPANION_HOST."
+  echo "  Tip: name that Satellite connection in Companion '$KIOSK_ID' so it matches this display."
 else
   echo "== 6/6 Companion Satellite: skipped (INSTALL_SATELLITE=0) =="
 fi

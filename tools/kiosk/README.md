@@ -36,19 +36,32 @@ set at flash). Everything else is identical.
 
 ## Companion Satellite
 
-Satellite is an external Bitfocus project whose installer changes, so the script
-does **not** hard-code its download. On-site (online):
+The script installs it for you with the official Bitfocus method:
+`curl …/companion-satellite/main/pi-image/install.sh | bash`. That creates the
+`satellite` systemd service, the Stream Deck udev rules, and a REST config
+server on `:9999`. The script then points it at the main Companion by writing
+`COMPANION_IP`/`COMPANION_PORT` into `/boot/firmware/satellite-config` **and**
+POSTing the same to `http://127.0.0.1:9999/api/config` so it applies immediately.
 
-1. Install it with the current official headless-Linux method from
-   <https://github.com/bitfocus/companion-satellite>. It creates a
-   `companion-satellite` systemd service and the Stream Deck udev rules.
-2. Point it at the main Companion (default port **16622**, not the OSC 12321):
-   ```sh
-   satellite-installer --host 10.10.10.20 --port 16622
-   ```
-   or set the host once in the Satellite web UI on `http://<this-pi>:9999`.
+- Satellite port is **16622** (not the OSC API 12321).
+- Change it later in the Satellite web UI on `http://<this-pi>:9999`.
+- `sudo satellite-update` to update the Satellite version.
 
-Re-running `setup.sh` after Satellite is installed will auto-configure the host.
+## Display ↔ Stream Deck — how a position maps
+
+A **position** (e.g. *Dave FOH*) is one Displays row in Settings and pairs a
+**screen** with a **Stream Deck**. Two kinds:
+
+- **Kiosk Pi** (this script): the screen is `/surface?id=kiosk-1` and the deck is
+  the one **plugged into that same Pi** via Satellite. The link is the shared
+  name — so name the Satellite connection **`kiosk-1`** in Companion to match.
+- **Network Stream Deck**: the deck connects straight to Companion over the
+  network dock (no Pi), identified by its serial. The screen can be any display.
+  Record which deck belongs to the position in the **Displays** panel's *Stream
+  Deck* field (serial/name), so the pairing is written down, not in someone's head.
+
+Keeping the display id, the Satellite name, and the Displays-panel name all the
+same (`kiosk-1`, *Dave FOH*, etc.) is what makes it obvious on the night.
 
 ## Notes
 

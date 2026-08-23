@@ -234,13 +234,24 @@ export class WebServer {
           surfaceId: current ?? last,
           surfaceName: surfaceName(current ?? last),
           live: !!current,
+          // Which Stream Deck this position uses (free text: Satellite on its Pi,
+          // or a network deck's serial/name) - so the pairing is written down.
+          deck: settings[`display-deck:${browserId}`] ?? null,
         }
       }).sort((a, b) => (a.name || a.browserId).localeCompare(b.name || b.browserId))
       res.json({ ok: true, displays })
     })
-    // Forget a display: drop its remembered surface (prunes stale/offline ones).
+    // Record which Stream Deck a display/position uses.
+    app.put('/api/displays/:browserId/deck', (req, res) => {
+      const deck = (req.body?.deck ?? '').toString().trim()
+      if (deck) this.store?.setSetting(`display-deck:${req.params.browserId}`, deck)
+      else this.store?.deleteSetting(`display-deck:${req.params.browserId}`)
+      res.json({ ok: true })
+    })
+    // Forget a display: drop its remembered surface + deck (prunes stale ones).
     app.delete('/api/displays/:browserId', (req, res) => {
       this.store?.deleteSetting(`surface-last:${req.params.browserId}`)
+      this.store?.deleteSetting(`display-deck:${req.params.browserId}`)
       res.json({ ok: true })
     })
     // ---- Backstage call system (from/to are browserIds = positions) ----
