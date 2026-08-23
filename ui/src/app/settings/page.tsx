@@ -255,6 +255,7 @@ export default function SettingsPage() {
                       <span className="text-sm text-muted-foreground tabular-nums">{list.filter((i) => stateOf(i) === 'online').length}/{list.length} online</span>
                     </div>
                     {meta?.description && <p className="text-sm text-muted-foreground mb-5 max-w-xl">{meta.description}</p>}
+                    {typeId === 'hyperdeck' && <TransitionDeckPicker decks={list} />}
                     <div className="space-y-3">
                       {list.map((i) => <InstanceCard key={i.id} inst={i} schema={schemaOf(typeId)} liveState={stateOf(i)} onSaved={noop} onDelete={() => del(i.id)} />)}
                       <button onClick={() => addInstance(typeId)} className="w-full flex items-center justify-center gap-1.5 text-[13px] text-muted-foreground rounded-xl border border-dashed border-border/60 py-3 hover:border-border hover:text-foreground">
@@ -347,6 +348,37 @@ function PositionsSettings() {
 
 const RECORDER_TYPES = ['hyperdeck', 'atem', 'reaper']
 const recSc = 'bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]'
+
+/** Picks which HyperDeck the look/transition engine drives. The others still
+ *  connect, record, and are controllable independently. */
+function TransitionDeckPicker({ decks }: { decks: Instance[] }) {
+  const [sel, setSel] = useState<string>('')
+  useEffect(() => {
+    fetch('/api/settings').then((r) => r.json()).then((d) => {
+      const stored = d?.settings?.transitionHyperdeckId as string | undefined
+      const fallback = decks.find((x) => x.id === 'hyperdeck-1')?.id ?? decks[0]?.id ?? ''
+      setSel(stored && decks.some((x) => x.id === stored) ? stored : fallback)
+    }).catch(() => {})
+  }, [decks])
+  const save = async (id: string) => {
+    setSel(id)
+    await fetch('/api/settings/transition-hyperdeck', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
+    }).catch(() => {})
+  }
+  if (decks.length === 0) return null
+  return (
+    <div className="mb-5 rounded-xl border border-border/60 bg-card/40 p-3">
+      <div className="text-[13px] font-semibold">ATEM transitions deck</div>
+      <p className="text-[11px] text-muted-foreground mt-0.5 mb-2 max-w-xl">
+        Which HyperDeck the look and transition engine drives (clip cues on recall). The other decks still record and can be controlled on their own.
+      </p>
+      <select value={sel} onChange={(e) => save(e.target.value)} className={cn(recSc, 'w-full max-w-xs')}>
+        {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+      </select>
+    </div>
+  )
+}
 
 /** Tag connector instances (HyperDeck / ATEM ISO / REAPER) as record or
  *  playback devices for the Record status widget. Config lives in the DB and

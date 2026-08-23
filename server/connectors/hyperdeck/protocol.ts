@@ -124,6 +124,8 @@ export interface HyperDeckTransport {
   clipId: number | null
   timecode: string | null
   displayTimecode: string | null
+  loop: boolean | null
+  singleClip: boolean | null
 }
 
 export interface HyperDeckSlot {
@@ -148,6 +150,8 @@ export function parseTransport(fields: Record<string, string>): HyperDeckTranspo
     clipId: asInteger(fields['clip id']),
     timecode: fields.timecode ?? null,
     displayTimecode: fields['display timecode'] ?? null,
+    loop: fields.loop == null ? null : fields.loop === 'true',
+    singleClip: fields['single clip'] == null ? null : fields['single clip'] === 'true',
   }
 }
 

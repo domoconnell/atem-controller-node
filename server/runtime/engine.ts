@@ -7,8 +7,10 @@ import type { Store, InstanceRow } from '../db/store.js'
 import { Hub } from './hub.js'
 
 /** Connector types still owned by the legacy JS stack (ported later). The
- *  engine lists them but does not run a second connection to them. */
-const LEGACY = new Set(['atem', 'hyperdeck', 'propresenter', 'sennheiser'])
+ *  engine lists them but does not run a second connection to them.
+ *  HyperDeck has moved onto the engine (multi-instance); the legacy transition
+ *  path now reads a selected deck through a bridge instead of owning a socket. */
+const LEGACY = new Set(['atem', 'propresenter', 'sennheiser'])
 /** Types that never appear as user connections: the demo device, and
  *  Companion (it's the core control bridge, configured under Global, not a
  *  monitored device). */
@@ -135,14 +137,9 @@ export class Engine {
       }
       propresenter.on('update', publish); publish()
     }
-    if (hyperdeck) {
-      const publish = () => {
-        const snap = hyperdeck.snapshot()
-        this.hub.publish(buildTopic('hyperdeck-1', 'transport'), { ...(snap.transport ?? {}) })
-        st('hyperdeck-1', snap.connected)
-      }
-      hyperdeck.on('transport', publish); hyperdeck.on('connected', publish); hyperdeck.on('disconnected', publish); publish()
-    }
+    // HyperDeck is no longer bridged from the legacy stack — the engine runs
+    // every deck as a first-class instance and publishes its status/transport.
+    void hyperdeck
   }
 
   async start(): Promise<void> {

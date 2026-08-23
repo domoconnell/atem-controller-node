@@ -3,7 +3,7 @@ import { config, projectRoot, applyConfigUpdate } from './config.js'
 import { AtemController } from './atem.js'
 import { Animator } from './animator.js'
 import { LookStore } from './looks.js'
-import { HyperDeck } from './hyperdeck.js'
+import { HyperDeckBridge } from './hyperdeck-bridge.js'
 import { Sequencer } from './sequencer.js'
 import { TransitionEngine } from './engine.js'
 import { OscServer } from './osc.js'
@@ -18,7 +18,6 @@ console.log(`  HyperDeck ${config.hyperdeck.ip}:${config.hyperdeck.port}`)
 
 const atem = new AtemController()
 const animator = new Animator(atem)
-const hyperdeck = new HyperDeck()
 // Connector engine (the new unified backend): SQLite store + the vendored
 // connector library. Created BEFORE the LookStore so looks (and other state)
 // load from the DB, which is now the source of truth.
@@ -47,6 +46,11 @@ try {
   console.error('[engine] failed to initialise connector engine:', e.message)
 }
 
+// HyperDeck runs on the engine now (multi-instance). This bridge points the
+// transition/look/OSC stack at the ONE deck chosen for ATEM transitions,
+// reading its transport off the hub and routing commands through the engine.
+const hyperdeck = new HyperDeckBridge({ engine: connectorEngine, store })
+
 // ProPresenter is built first so looks can record/recall the audience look and
 // the transition engine can diff against the live PP look.
 const propresenter = new ProPresenter()
@@ -68,7 +72,7 @@ connectorEngine?.start().catch((e) => console.error('[engine] start failed:', e.
 // Wire the self-managing legacy stacks into the engine (single owner of all
 // connector data + status). The engine keeps letting them manage their own
 // reconnection; this replaces the ad-hoc bridge that used to live here.
-connectorEngine?.attachLegacy({ atem, hyperdeck, propresenter, sennheiser })
+connectorEngine?.attachLegacy({ atem, propresenter, sennheiser })
 
 // Seed the legacy stacks from their SQLite instances so Settings edits (IP,
 // port, pollMs) persist across restarts - the store is the source of truth, not
@@ -76,12 +80,10 @@ connectorEngine?.attachLegacy({ atem, hyperdeck, propresenter, sennheiser })
 if (store) {
   const cfgOf = (t) => store.listInstances().find((i) => i.typeId === t)?.config
   const at = cfgOf('atem'); if (at) atem.cfg = { ...atem.cfg, ...at }
-  const hd = cfgOf('hyperdeck'); if (hd) hyperdeck.cfg = { ...hyperdeck.cfg, ...hd }
   const pp = cfgOf('propresenter'); if (pp) propresenter.cfg = { ...propresenter.cfg, ...pp }
 }
 propresenter.start()
 sennheiser.start().catch((e) => console.error('[senn] start failed:', e.message))
-hyperdeck.connect()
 atem.connect().catch((e) => console.error('[atem] connect failed:', e.message))
 
 process.on('SIGINT', () => {

@@ -14,7 +14,10 @@ import {
 import { HyperDeckSimulator } from './simulator.js'
 
 export const hyperdeckConfigSchema = z.object({
-  host: z.string().min(1).default('127.0.0.1'),
+  // The app stores HyperDeck addresses as `ip` everywhere (UI form, migration,
+  // the other connectors' convention); `host` is accepted as a legacy fallback.
+  ip: z.string().min(1).default('127.0.0.1'),
+  host: z.string().min(1).optional(),
   port: z.number().int().min(1).max(65535).default(9993),
   /** Only a safety net: the deck pushes changes once `notify` is enabled. */
   pollIntervalMs: z.number().int().min(500).max(60_000).default(2_000),
@@ -39,10 +42,16 @@ const recordInput = z.object({
 })
 const stopInput = z.object({})
 /** HyperDeck speed is a percentage: -1600 (fast reverse) to 1600. */
-const playInput = z.object({ speed: z.number().int().min(-1600).max(1600).optional() })
+const playInput = z.object({
+  speed: z.number().int().min(-1600).max(1600).optional(),
+  loop: z.boolean().optional(),
+  singleClip: z.boolean().optional(),
+})
 const gotoInput = z.object({
   timecode: z.string().regex(/^\d{2}:\d{2}:\d{2}:\d{2}$/, 'timecode must look like 01:23:45:00'),
 })
+/** Jump the playhead to a clip by its 1-based index on the current timeline. */
+const gotoClipInput = z.object({ clip: z.number().int().min(1) })
 
 const CONNECT_TIMEOUT_MS = 5_000
 const REQUEST_TIMEOUT_MS = 5_000
@@ -148,15 +157,26 @@ class HyperDeckConnector implements Connector<HyperDeckConfig> {
       case 'play': {
         const parsed = playInput.safeParse(input ?? {})
         if (!parsed.success) return invalid(parsed.error.issues[0]?.message ?? 'bad input')
-        return {
-          value: parsed.data.speed === undefined ? 'play' : `play: speed: ${parsed.data.speed}`,
-        }
+        const opts: string[] = []
+        if (parsed.data.loop !== undefined) opts.push(`loop: ${parsed.data.loop}`)
+        if (parsed.data.singleClip !== undefined) opts.push(`single clip: ${parsed.data.singleClip}`)
+        if (parsed.data.speed !== undefined) opts.push(`speed: ${parsed.data.speed}`)
+        return { value: opts.length ? `play: ${opts.join(' ')}` : 'play' }
       }
       case 'goto': {
         const parsed = gotoInput.safeParse(input ?? {})
         if (!parsed.success) return invalid(parsed.error.issues[0]?.message ?? 'bad input')
         return { value: `goto: timecode: ${parsed.data.timecode}` }
       }
+      case 'gotoClip': {
+        const parsed = gotoClipInput.safeParse(input ?? {})
+        if (!parsed.success) return invalid(parsed.error.issues[0]?.message ?? 'bad input')
+        return { value: `goto: clip id: ${parsed.data.clip}` }
+      }
+      case 'nextClip':
+        return { value: 'goto: clip id: +1' }
+      case 'prevClip':
+        return { value: 'goto: clip id: -1' }
       default:
         return { error: commandFail('NOT_FOUND', `Unknown command ${commandId}`) }
     }
@@ -165,7 +185,8 @@ class HyperDeckConnector implements Connector<HyperDeckConfig> {
   // ------------------------------------------------------------------ connection
 
   private openSocket(ctx: ConnectorContext<HyperDeckConfig>): Promise<void> {
-    const { host, port } = ctx.config
+    const { ip, host, port } = ctx.config
+    const target = ip ?? host ?? '127.0.0.1'
 
     return new Promise<void>((resolve) => {
       const socket = new Socket()
@@ -203,7 +224,7 @@ class HyperDeckConnector implements Connector<HyperDeckConfig> {
 
       ctx.signal.addEventListener('abort', () => socket.destroy(), { once: true })
 
-      socket.connect(port, host)
+      socket.connect(port, target)
     })
   }
 
@@ -340,6 +361,7 @@ export const hyperdeckModule: ConnectorModule<HyperDeckConfig> = {
           { id: 'status', kind: 'string', label: 'Transport' },
           { id: 'timecode', kind: 'string', label: 'Timecode' },
           { id: 'displayTimecode', kind: 'string', label: 'Display timecode' },
+          { id: 'loop', kind: 'boolean', label: 'Loop' },
         ],
       },
       {
@@ -398,6 +420,24 @@ export const hyperdeckModule: ConnectorModule<HyperDeckConfig> = {
         description: 'Jumps the transport to a timecode.',
         inputSchema: gotoInput,
       },
+      {
+        id: 'gotoClip',
+        label: 'Go to clip',
+        description: 'Jumps the playhead to a clip by its index on the timeline.',
+        inputSchema: gotoClipInput,
+      },
+      {
+        id: 'nextClip',
+        label: 'Next clip',
+        description: 'Jumps the playhead to the next clip.',
+        inputSchema: stopInput,
+      },
+      {
+        id: 'prevClip',
+        label: 'Previous clip',
+        description: 'Jumps the playhead to the previous clip.',
+        inputSchema: stopInput,
+      },
     ],
     conditions: hyperdeckConditions,
     capabilities: { control: true },
@@ -410,5 +450,5 @@ export const hyperdeckModule: ConnectorModule<HyperDeckConfig> = {
   },
   create: () => new HyperDeckConnector(),
   createSimulator: () => new HyperDeckSimulator(),
-  simulatedConfig: (address, base) => ({ ...base, host: address.host, port: address.port }),
+  simulatedConfig: (address, base) => ({ ...base, ip: address.host, port: address.port }),
 }

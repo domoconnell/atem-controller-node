@@ -71,6 +71,14 @@ export class WebServer {
     // ---- Connector engine (unified backend): instances + catalogue + commands ----
     app.get('/api/connector-types', (_req, res) => res.json({ ok: true, types: this.connectorEngine?.catalogue() ?? [] }))
     app.get('/api/settings', (_req, res) => res.json({ ok: true, settings: this.store?.allSettings() ?? {} }))
+    // Which HyperDeck instance drives ATEM transitions (looks/sequencer). The
+    // bridge persists the choice and repoints its transport/command routing.
+    app.put('/api/settings/transition-hyperdeck', (req, res) => {
+      const id = req.body?.id || null
+      this.hyperdeck?.setTransitionDeck?.(id)
+      this.publishInstances?.()
+      res.json({ ok: true, id: this.hyperdeck?.selectedId ?? id })
+    })
     app.get('/api/surfaces', (_req, res) => res.json({ ok: true, surfaces: this.store?.listSurfaces() ?? [] }))
     app.get('/api/surfaces/:id', (req, res) => {
       const one = (this.store?.listSurfaces() ?? []).find((x) => x.id === req.params.id)
@@ -372,12 +380,12 @@ export class WebServer {
       this.store.updateInstance(req.params.id, req.body ?? {})
       await this.connectorEngine?.reconcile(req.params.id)
       const inst = this.store.getInstance(req.params.id)
-      // Legacy stacks (ATEM/HyperDeck/ProPresenter) aren't engine-run, so
-      // reconcile() doesn't touch them - push the new config through and
-      // reconnect, otherwise a Settings IP change would be silently ignored.
+      // Legacy stacks (ATEM/ProPresenter) aren't engine-run, so reconcile()
+      // doesn't touch them - push the new config through and reconnect,
+      // otherwise a Settings IP change would be silently ignored. (HyperDeck is
+      // engine-run now: reconcile() above already restarted it with the new IP.)
       const cfg = inst?.config ?? {}
-      if (inst?.typeId === 'hyperdeck') this.hyperdeck?.reconfigure?.(cfg)
-      else if (inst?.typeId === 'propresenter') this.propresenter?.reconfigure?.(cfg)
+      if (inst?.typeId === 'propresenter') this.propresenter?.reconfigure?.(cfg)
       else if (inst?.typeId === 'atem') this.atem?.reconfigure?.(cfg)
       this.publishInstances()
       res.json({ ok: true, instance: inst })

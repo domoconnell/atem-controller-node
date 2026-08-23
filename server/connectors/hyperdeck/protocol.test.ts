@@ -143,6 +143,8 @@ describe('field parsing', () => {
         'clip id': '7',
         timecode: '10:11:12:13',
         'display timecode': '10:11:12:13',
+        loop: 'true',
+        'single clip': 'false',
       }),
     ).toEqual({
       status: 'record',
@@ -151,6 +153,8 @@ describe('field parsing', () => {
       clipId: 7,
       timecode: '10:11:12:13',
       displayTimecode: '10:11:12:13',
+      loop: true,
+      singleClip: false,
     })
   })
 
@@ -164,6 +168,8 @@ describe('field parsing', () => {
       clipId: null,
       timecode: null,
       displayTimecode: null,
+      loop: null,
+      singleClip: null,
     })
   })
 
