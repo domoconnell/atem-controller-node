@@ -277,7 +277,7 @@ registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', suppor
 
 /* ================================================================== DIGICO */
 type DgCh = { channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
-type DgMeter = { index: number; a: number; b: number }
+type DgMeter = { channel: number; l: number; r: number }
 /** Channels actually in use: patched (input_type ≠ 0) or renamed off default. */
 function dgInUse(channels?: DgCh[]): DgCh[] {
   return (channels ?? []).filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
@@ -319,13 +319,12 @@ function DgBar({ db }: { db: number }) {
  *  channel scan (name, mono/stereo). */
 function DigicoMeters({ instanceId, title, config }: WidgetProps) {
   // Structure (name, mono/stereo) comes from the channel scan; levels come from
-  // the meter stream. Working hypothesis: meter index is 0-based, so channel N's
-  // meter is at index N-1. Silent channels don't stream (on-change) → floor.
+  // the meter stream, keyed by channel (L/R legs). Only channels currently metered
+  // by a connected iPad/controller carry a level; the rest sit at the floor.
   const cfg = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
   const met = useStream(instanceId, 'meters') as { meters?: DgMeter[] } | null
   const channels = dgSelected(config, cfg?.channels)
-  const byIdx = new Map((met?.meters ?? []).map((m) => [m.index, m]))
-  const lvl = (channel: number) => byIdx.get(channel - 1)
+  const byCh = new Map((met?.meters ?? []).map((m) => [m.channel, m]))
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
@@ -335,9 +334,9 @@ function DigicoMeters({ instanceId, title, config }: WidgetProps) {
           {[0, -12, -24, -36, -48, -60].map((v) => <span key={v}>{v}</span>)}
         </div>
         {channels.map((c) => {
-          const m = lvl(c.channel)
-          const a = m?.a ?? -Infinity
-          const b = m?.b ?? -Infinity
+          const m = byCh.get(c.channel)
+          const a = m?.l ?? -Infinity
+          const b = m?.r ?? -Infinity
           return (
             <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
               <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>

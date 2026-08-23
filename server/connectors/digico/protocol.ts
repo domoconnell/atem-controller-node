@@ -234,12 +234,13 @@ export interface AuxSendState {
   pan?: number
 }
 
-/** A `/Meters/values` reading: a channel/meter index and both legs in dB. */
-export interface MeterUpdate {
-  index: number
-  a: number // dB, high 16 bits (leg 1 / peak); -Infinity = off
-  b: number // dB, low 16 bits  (leg 2)
-  raw: number
+/** One slot's reading from `/Meters/values`. The console packs the level in the
+ *  high 16 bits (a) and a second reading (peak/RMS) in the low 16 (b). The slot
+ *  number is bound to a channel+leg by a prior `/Meters/request/<slot>`. */
+export interface MeterSlot {
+  slot: number
+  a: number // dB, high 16 bits (level); -Infinity = off / below floor
+  b: number // dB, low 16 bits  (peak/RMS of the same tap)
 }
 
 export interface DigicoUpdate {
@@ -247,7 +248,25 @@ export interface DigicoUpdate {
   auxSend?: AuxSendState
   macro?: MacroState
   snapshotNumber?: number
-  meter?: MeterUpdate
+  meters?: MeterSlot[]
+}
+
+/** A downstream client's meter subscription. `/Meters/request/<slot>` binds a
+ *  meter slot to a channel leg (its arg is a tap path like
+ *  `/Input_Channels/13/Channel_Input/post_meter/left`); `/Meters/clear` resets
+ *  every slot. We learn the slot→channel map by watching these on the relay. */
+export function parseMeterRequest(
+  message: OscMessage,
+): { slot: number; channel: number; leg: 'l' | 'r' } | 'clear' | null {
+  const address = normaliseAddress(message.address)
+  if (address === '/Meters/clear') return 'clear'
+  const m = /^\/Meters\/request\/(\d+)$/.exec(address)
+  if (!m) return null
+  const path = message.args[0]
+  if (typeof path !== 'string') return null
+  const pm = /\/Input_Channels\/(\d+)\/Channel_Input\/post_meter\/(left|right)/i.exec(path)
+  if (!pm) return null
+  return { slot: Number(m[1]), channel: Number(pm[1]), leg: pm[2].toLowerCase() === 'right' ? 'r' : 'l' }
 }
 
 /** Parse an aux-send address ".../Input_Channels/{ch}/Aux_Send/{aux}/{leaf}". */
@@ -266,12 +285,17 @@ export function parseAuxSend(address: string): { ch: number; aux: number; leaf: 
 export function interpret(message: OscMessage, directDb = false): DigicoUpdate | null {
   const address = normaliseAddress(message.address)
 
-  // High-rate meter stream: [channelIndex, packed(A<<16 | B)].
+  // High-rate meter stream: a variable-length list of (slot, packed) int pairs,
+  // packed = level(high16) << 16 | peak(low16). Only slots with signal appear.
   if (address === '/Meters/values') {
-    const idx = message.args[0], packed = message.args[1]
-    if (typeof idx !== 'number' || typeof packed !== 'number') return null
-    const v = packed >>> 0
-    return { meter: { index: idx, a: meterToDb((v >>> 16) & 0xffff), b: meterToDb(v & 0xffff), raw: v } }
+    const out: MeterSlot[] = []
+    for (let i = 0; i + 1 < message.args.length; i += 2) {
+      const slot = message.args[i], packed = message.args[i + 1]
+      if (typeof slot !== 'number' || typeof packed !== 'number') continue
+      const v = packed >>> 0
+      out.push({ slot, a: meterToDb((v >>> 16) & 0xffff), b: meterToDb(v & 0xffff) })
+    }
+    return out.length ? { meters: out } : null
   }
 
   const macro = /^\/Macros\/Buttons\/state$/.exec(address)

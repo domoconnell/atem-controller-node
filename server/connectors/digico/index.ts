@@ -15,7 +15,7 @@ import {
   fireMacroMessage,
   interpret,
   type MacroState,
-  type MeterUpdate,
+  parseMeterRequest,
   muteChannelMessage,
   queryMessages,
   snapshotFireMessage,
@@ -87,7 +87,10 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private lastMessageAt = 0
   private channels = new Map<number, ChannelState>()
   private auxSends = new Map<string, AuxSendState>() // key `${ch}:${aux}`
-  private meters = new Map<number, MeterUpdate>()
+  // Meter slot → channel+leg, learned by watching downstream clients' relayed
+  // `/Meters/request` messages; and the resulting per-channel L/R levels in dB.
+  private meterSlots = new Map<number, { channel: number; leg: 'l' | 'r' }>()
+  private meterLevels = new Map<number, { l: number; r: number; at: number }>()
   private metersDirty = false
   private cancelMeterPublish: (() => void) | null = null
   private macros = new Map<number, MacroState>()
@@ -119,9 +122,20 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.cancelRefresh = ctx.setInterval(() => this.query(), ctx.config.pollIntervalSeconds * 1_000)
     this.cancelWatchdog = ctx.setInterval(() => this.checkAlive(), 5_000)
 
-    // Meters arrive ~25/s; coalesce to ~12/s for the UI.
+    // Meters arrive ~25/s; coalesce to ~12/s for the UI. Age out levels that
+    // stopped updating (channel went silent, or its slot was reassigned on a
+    // bank change) so bars fall to the floor instead of freezing.
     this.cancelMeterPublish = ctx.setInterval(() => {
-      if (this.metersDirty) { this.metersDirty = false; ctx.publish('meters', { meters: [...this.meters.values()], at: Date.now() }) }
+      const now = Date.now()
+      for (const [ch, m] of this.meterLevels) {
+        if (now - m.at > 600 && (m.l !== -Infinity || m.r !== -Infinity)) { m.l = -Infinity; m.r = -Infinity; this.metersDirty = true }
+        void ch
+      }
+      if (this.metersDirty) {
+        this.metersDirty = false
+        const meters = [...this.meterLevels.entries()].map(([channel, m]) => ({ channel, l: m.l, r: m.r }))
+        ctx.publish('meters', { meters, at: now })
+      }
     }, 80)
 
     if (ctx.config.relayEnabled) await this.startRelay(ctx)
@@ -151,7 +165,8 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.cancelWatchdog?.()
     this.cancelMeterPublish?.()
     this.cancelMeterPublish = null
-    this.meters.clear()
+    this.meterSlots.clear()
+    this.meterLevels.clear()
     this.cancelRelayHousekeeping?.()
     this.cancelRefresh = null
     this.cancelWatchdog = null
@@ -182,6 +197,16 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.relayClients.set(key, client)
     this.relayToConsole += 1
     this.relayDirty = true
+    // Learn this client's meter subscription: `/Meters/request/<slot>` binds a
+    // slot to a channel leg, `/Meters/clear` resets. We don't request meters
+    // ourselves — we ride the client's subscription and map its slots. (Cheap
+    // prefix check first; most relayed traffic isn't meter setup.)
+    if (buffer.length > 8 && buffer[0] === 0x2f && buffer.toString('latin1', 1, 8) === 'Meters/') {
+      const msg = decodeOsc(buffer)
+      const req = msg && parseMeterRequest(msg)
+      if (req === 'clear') { this.meterSlots.clear(); this.meterLevels.clear(); this.metersDirty = true }
+      else if (req) this.meterSlots.set(req.slot, { channel: req.channel, leg: req.leg })
+    }
     // Forward verbatim to the console (its single OSC connection is ours).
     this.socket.send(buffer, ctx.config.sendPort, ctx.config.host, (error) => {
       if (error) ctx.logger.debug({ err: error }, 'relay → console send failed')
@@ -342,8 +367,17 @@ class DigicoConnector implements Connector<DigicoConfig> {
       ctx.publish('auxSends', { sends: [...this.auxSends.values()] })
     }
 
-    if (update.meter) {
-      this.meters.set(update.meter.index, update.meter)
+    if (update.meters) {
+      // Map each slot's level onto its channel leg (learned from the relay).
+      const now = Date.now()
+      for (const s of update.meters) {
+        const bind = this.meterSlots.get(s.slot)
+        if (!bind) continue
+        const cur = this.meterLevels.get(bind.channel) ?? { l: -Infinity, r: -Infinity, at: 0 }
+        if (bind.leg === 'l') cur.l = s.a; else cur.r = s.a
+        cur.at = now
+        this.meterLevels.set(bind.channel, cur)
+      }
       this.metersDirty = true
     }
 
