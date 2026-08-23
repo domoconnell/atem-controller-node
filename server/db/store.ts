@@ -39,6 +39,9 @@ export class Store {
     this.db.prepare('INSERT INTO settings(key,value_json) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json')
       .run(key, JSON.stringify(value))
   }
+  deleteSetting(key: string): void {
+    this.db.prepare('DELETE FROM settings WHERE key=?').run(key)
+  }
   allSettings(): Json {
     const out: Json = {}
     for (const r of this.db.prepare('SELECT key,value_json FROM settings').all() as { key: string; value_json: string }[]) {

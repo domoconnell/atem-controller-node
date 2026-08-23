@@ -230,7 +230,7 @@ export default function SettingsPage() {
             <NavHeader>Features</NavHeader>
             <NavItem id="f:mics" icon={Mic} label="Wireless Mics" active={sel === 'f:mics'} onSelect={setSel} />
             <NavItem id="f:recorders" icon={Disc} label="Recorders" active={sel === 'f:recorders'} onSelect={setSel} />
-            <NavItem id="f:positions" icon={MonitorSmartphone} label="Positions" active={sel === 'f:positions'} onSelect={setSel} />
+            <NavItem id="f:positions" icon={MonitorSmartphone} label="Displays" active={sel === 'f:positions'} onSelect={setSel} />
           </nav>
 
           {/* detail pane */}
@@ -307,37 +307,46 @@ function MicsSettings() {
   )
 }
 
-/** Positions — name the connected browser sessions (Dave FOH, Joe Mons, …) so
- *  the call system and Companion dropdowns show human names instead of the raw
- *  browser id. Same data (/api/surface-clients, PUT /api/session-name) as the
- *  Displays header control, so a name set here shows there too. */
-type PosClient = { browserId: string; name?: string | null; surfaceId?: string | null; surfaceName?: string | null }
+/** Displays — every screen running /surface (kiosks included). Name each one
+ *  (drives the call system + Companion dropdowns) and set which surface it
+ *  shows. Offline displays keep their assignment and open to it on next boot.
+ *  Data: /api/displays, PUT /api/session-name, POST /api/companion/surface-show. */
+type DisplayRow = { browserId: string; name?: string | null; online: boolean; onStart?: boolean; surfaceId?: string | null; surfaceName?: string | null; live?: boolean }
 function PositionsSettings() {
-  const [clients, setClients] = useState<PosClient[]>([])
-  useEffect(() => {
-    const load = () => fetch('/api/surface-clients').then((r) => r.json()).then((b) => setClients(b.clients ?? [])).catch(() => {})
-    load(); const t = setInterval(load, 2000); return () => clearInterval(t)
-  }, [])
+  const [displays, setDisplays] = useState<DisplayRow[]>([])
+  const [surfaces, setSurfaces] = useState<{ id: string; name: string }[]>([])
+  const load = useCallback(() => fetch('/api/displays').then((r) => r.json()).then((b) => setDisplays(b.displays ?? [])).catch(() => {}), [])
+  useEffect(() => { fetch('/api/surfaces').then((r) => r.json()).then((b) => setSurfaces(b.surfaces ?? [])).catch(() => {}) }, [])
+  useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t) }, [load])
   const rename = (browserId: string, name: string) => {
-    setClients((cs) => cs.map((c) => (c.browserId === browserId ? { ...c, name } : c)))
+    setDisplays((ds) => ds.map((d) => (d.browserId === browserId ? { ...d, name } : d)))
     fetch('/api/session-name', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ browserId, name }) }).catch(() => {})
+  }
+  const forget = (browserId: string) => { fetch(`/api/displays/${browserId}`, { method: 'DELETE' }).then(load).catch(() => {}) }
+  const setSurface = (browserId: string, surfaceId: string) => {
+    if (!surfaceId) return forget(browserId)
+    setDisplays((ds) => ds.map((d) => (d.browserId === browserId ? { ...d, surfaceId } : d)))
+    fetch('/api/companion/surface-show', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ browserId, surfaceId }) }).then(load).catch(() => {})
   }
   return (
     <>
-      <h1 className="text-xl font-bold mb-1">Positions</h1>
-      <p className="text-sm text-muted-foreground mb-5 max-w-xl">Name each connected display so it reads as a person/role (e.g. <b className="text-foreground">Dave FOH</b>). Names drive the backstage call system and the Companion call dropdowns, and persist across reconnects.</p>
-      {clients.length === 0 ? (
-        <div className="text-sm text-muted-foreground rounded-xl border border-dashed border-border/60 py-8 text-center">No displays connected.<br />Open <b className="text-foreground">/surface?s=…</b> on a screen.</div>
+      <h1 className="text-xl font-bold mb-1">Displays</h1>
+      <p className="text-sm text-muted-foreground mb-5 max-w-xl">Every screen running <b className="text-foreground">/surface</b> (kiosks included). Name each one so it reads as a person/role for the call system, and set which surface it shows. Offline displays keep their assignment and open straight to it on next boot.</p>
+      {displays.length === 0 ? (
+        <div className="text-sm text-muted-foreground rounded-xl border border-dashed border-border/60 py-8 text-center">No displays yet.<br />Open <b className="text-foreground">/surface?s=start&amp;id=kiosk-1</b> on a screen.</div>
       ) : (
         <div className="space-y-2">
-          {clients.map((c) => (
-            <div key={c.browserId} className="surface rounded-xl border border-border/60 p-3 flex items-center gap-3">
-              <MonitorSmartphone className="size-4 text-muted-foreground shrink-0" />
-              <input value={c.name ?? ''} onChange={(e) => rename(c.browserId, e.target.value)} placeholder="Name (e.g. Dave FOH)"
-                className="flex-1 min-w-0 h-9 rounded-md bg-input/40 border border-border px-2.5 text-[13px] font-semibold outline-none focus:border-border" />
-              <span className="text-[11px] text-muted-foreground/70 truncate shrink-0" title={`${c.surfaceName ?? '—'} · ${c.browserId}`}>
-                {c.surfaceName ?? '—'} <span className="font-mono text-muted-foreground/40">· {c.browserId}</span>
-              </span>
+          {displays.map((d) => (
+            <div key={d.browserId} className="surface rounded-xl border border-border/60 p-3 flex items-center gap-3">
+              <span className={cn('size-2 rounded-full shrink-0', d.online ? (d.onStart ? 'bg-busy' : 'bg-live') : 'bg-muted-foreground/30')} title={d.online ? (d.onStart ? 'On start screen' : 'Online') : 'Offline'} />
+              <input value={d.name ?? ''} onChange={(e) => rename(d.browserId, e.target.value)} placeholder="Name (e.g. Dave FOH)"
+                className="w-40 shrink-0 h-9 rounded-md bg-input/40 border border-border px-2.5 text-[13px] font-semibold outline-none focus:border-border" />
+              <select value={d.surfaceId ?? ''} onChange={(e) => setSurface(d.browserId, e.target.value)} className={cn(recSc, 'flex-1 min-w-0')}>
+                <option value="">— unassigned —</option>
+                {surfaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <span className="font-mono text-[10px] text-muted-foreground/40 shrink-0" title={d.browserId}>{d.browserId}</span>
+              {!d.online && <button onClick={() => forget(d.browserId)} title="Forget this display" className="shrink-0 text-muted-foreground/50 hover:text-destructive"><Trash2 className="size-4" /></button>}
             </div>
           ))}
         </div>

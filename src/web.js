@@ -207,6 +207,40 @@ export class WebServer {
       const { browserId, surfaceId } = req.body ?? {}
       if (!browserId || !surfaceId) return res.status(400).json({ ok: false, error: 'browserId and surfaceId required' })
       this.connectorEngine?.hub?.publish(`usr:surface:${browserId}`, { showSurface: surfaceId, at: Date.now() })
+      // Persist it too, so assigning an OFFLINE display pre-sets it: the display
+      // picks it up from its start page the next time it boots. (A connected
+      // display also re-registers under the new surface, which stores the same.)
+      if (surfaceId !== 'start') this.store?.setSetting(`surface-last:${browserId}`, surfaceId)
+      res.json({ ok: true })
+    })
+    // Every display we know about - connected now, or remembered from before -
+    // with its name, online state and assigned surface, for the Displays panel.
+    app.get('/api/displays', (_req, res) => {
+      const clients = this.surfaceClients ?? new Map()
+      const surfaces = this.store?.listSurfaces() ?? []
+      const surfaceName = (id) => surfaces.find((s) => s.id === id)?.name ?? null
+      const settings = this.store?.allSettings() ?? {}
+      const ids = new Set(clients.keys())
+      for (const k of Object.keys(settings)) if (k.startsWith('surface-last:')) ids.add(k.slice(13))
+      const displays = [...ids].map((browserId) => {
+        const live = clients.get(browserId)
+        const current = live && live.surfaceId && live.surfaceId !== 'start' ? live.surfaceId : null
+        const last = settings[`surface-last:${browserId}`] ?? null
+        return {
+          browserId,
+          name: this.sessionNames[browserId] ?? live?.name ?? null,
+          online: !!live,
+          onStart: live?.surfaceId === 'start',
+          surfaceId: current ?? last,
+          surfaceName: surfaceName(current ?? last),
+          live: !!current,
+        }
+      }).sort((a, b) => (a.name || a.browserId).localeCompare(b.name || b.browserId))
+      res.json({ ok: true, displays })
+    })
+    // Forget a display: drop its remembered surface (prunes stale/offline ones).
+    app.delete('/api/displays/:browserId', (req, res) => {
+      this.store?.deleteSetting(`surface-last:${req.params.browserId}`)
       res.json({ ok: true })
     })
     // ---- Backstage call system (from/to are browserIds = positions) ----
