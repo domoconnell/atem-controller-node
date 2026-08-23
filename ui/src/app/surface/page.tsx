@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import '@/widgets/builtin'
 import '@/widgets/connectors'
@@ -17,10 +17,14 @@ import { useTopic } from '@/hooks/use-topic'
 import { realtime } from '@/lib/realtime'
 import { cn } from '@/lib/utils'
 
-/** A stable per-browser id (localStorage) so OSC can target this exact display. */
+/** A stable per-browser id (localStorage) so OSC can target this exact display.
+ *  `?id=<name>` pins it — kiosks pass a fixed, human name (e.g. kiosk-1) so the
+ *  identity survives a re-flash and reads nicely in Companion/Settings. */
 function useBrowserId(): string | null {
   const [id, setId] = useState<string | null>(null)
   useEffect(() => {
+    const override = new URLSearchParams(window.location.search).get('id')
+    if (override) { localStorage.setItem('sil-browser-id', override); setId(override); return }
     let v = localStorage.getItem('sil-browser-id')
     if (!v) { v = Math.random().toString(36).slice(2, 10); localStorage.setItem('sil-browser-id', v) }
     setId(v)
@@ -56,12 +60,45 @@ function MainGrid({ surface, instances }: { surface: Surface; instances: IRef[] 
   )
 }
 
+/** The kiosk landing / identify screen: shown when a display has never been
+ *  assigned a surface. Big, readable-across-the-room identity (its name, or the
+ *  raw browser id) so an operator can pick it out and point it at a surface from
+ *  Companion. Once assigned, that choice is remembered and the start page
+ *  redirects straight to it on the next boot. */
+function StartScreen({ name, browserId }: { name: string | null; browserId: string | null }) {
+  return (
+    <div className="h-screen w-screen surface-bg flex flex-col items-center justify-center relative overflow-hidden text-center px-8">
+      <div className="surface-aurora" />
+      <div className="relative z-10 flex flex-col items-center gap-5">
+        <div className="text-[11px] uppercase tracking-[0.3em] text-muted-foreground">Stage It Live · Display</div>
+        <div className="text-5xl md:text-7xl font-black text-foreground leading-none break-words max-w-[90vw]">{name || browserId || '…'}</div>
+        {name && browserId ? <div className="font-mono text-sm text-muted-foreground/70">{browserId}</div> : null}
+        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="inline-block size-2 rounded-full bg-live animate-pulse" />
+          Waiting to be assigned a surface
+        </div>
+        <div className="text-[11px] text-muted-foreground/60 max-w-md">Point this display at a surface from Companion or the dashboard — its choice is remembered, and it opens straight to it next time.</div>
+      </div>
+    </div>
+  )
+}
+
 export default function SurfaceViewer() {
   const [surface, setSurface] = useState<Surface | null>(null)
   const [missing, setMissing] = useState(false)
+  const [start, setStart] = useState(false) // kiosk identify/landing screen
   const [instances, setInstances] = useState<IRef[]>([])
   const [openEdge, setOpenEdge] = useState<Edge | null>(null)
   const browserId = useBrowserId()
+
+  const loadSurface = useCallback((id: string, updateUrl = false) => {
+    fetch(`/api/surfaces/${id}`).then((r) => r.json()).then((b) => {
+      if (!b?.surface) { setMissing(true); return }
+      setStart(false); setMissing(false)
+      setSurface(normaliseSurface({ ...b.surface, id }))
+      if (updateUrl) { const u = new URL(window.location.href); u.searchParams.set('s', id); window.history.replaceState(null, '', u.toString()) }
+    }).catch(() => setMissing(true))
+  }, [])
   // Animated accent style: 'orbit' (glow circles each widget) or 'sweep' (glow
   // travels back and forth along the top). Switch live with ?fx=sweep.
   const [fx, setFx] = useState<'orbit' | 'sweep'>('orbit')
@@ -70,8 +107,10 @@ export default function SurfaceViewer() {
   // Announce this display so OSC/Companion can target it (usr:surface:<browserId>).
   // openEdge is included so Companion drawer feedbacks can light when open.
   useEffect(() => {
-    if (browserId && surface) realtime.register({ browserId, surfaceId: surface.id, surfaceName: surface.name, openEdge })
-  }, [browserId, surface, openEdge])
+    if (!browserId) return
+    if (surface) realtime.register({ browserId, surfaceId: surface.id, surfaceName: surface.name, openEdge })
+    else if (start) realtime.register({ browserId, surfaceId: 'start', surfaceName: null, openEdge: null })
+  }, [browserId, surface, start, openEdge])
 
   // Control messages from OSC/Companion, targeted at this browser session:
   //  - drawer:  { surfaceId, target: 'left_drawer', action }
@@ -108,10 +147,22 @@ export default function SurfaceViewer() {
 
   useEffect(() => {
     fetch('/api/instances').then((r) => r.json()).then((b) => setInstances((b.instances ?? []).map((i: IRef) => ({ id: i.id, typeId: i.typeId, name: i.name })))).catch(() => {})
-    const id = new URLSearchParams(window.location.search).get('s')
-    if (!id) { setMissing(true); return }
-    fetch(`/api/surfaces/${id}`).then((r) => r.json()).then((b) => b.surface ? setSurface(normaliseSurface({ ...b.surface, id })) : setMissing(true)).catch(() => setMissing(true))
   }, [])
+
+  // Resolve which surface to show. `?s=<id>` loads it directly. `?s=start` (or no
+  // s) is the kiosk landing: redirect to this display's remembered surface, or —
+  // if it's never been assigned — show the identify screen so an operator can
+  // point it at a surface from Companion/the app.
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get('s')
+    if (s && s !== 'start') { loadSurface(s); return }
+    if (!browserId) return // need the id before the server can tell us its last surface
+    fetch(`/api/surface-last/${browserId}`).then((r) => r.json()).then((b) => {
+      if (b?.surfaceId) loadSurface(b.surfaceId, true)
+      else setStart(true)
+    }).catch(() => setStart(true))
+  }, [browserId, loadSurface])
+  if (start && !surface) return <StartScreen name={callState?.name ?? null} browserId={browserId} />
   if (missing) return <div className="h-screen grid place-items-center bg-background text-muted-foreground text-sm">Surface not found.</div>
   if (!surface) return <div className="h-screen grid place-items-center bg-background text-muted-foreground text-sm">Loading…</div>
   const P = surface.pullouts

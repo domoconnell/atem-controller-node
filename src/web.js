@@ -146,6 +146,14 @@ export class WebServer {
     // Surface displays that have announced themselves (for OSC targeting + the
     // Companion reference in Settings).
     app.get('/api/surface-clients', (_req, res) => res.json({ ok: true, clients: [...(this.surfaceClients ?? new Map()).values()].map(({ _ws, ...c }) => c) }))
+    // The last real surface a display (browserId) showed - the kiosk start page
+    // reads this on boot and redirects to it. null = never assigned yet.
+    app.get('/api/surface-last/:browserId', (req, res) => {
+      const surfaceId = this.store?.getSetting(`surface-last:${req.params.browserId}`, null) ?? null
+      // Only offer it if that surface still exists (it may have been deleted).
+      const exists = surfaceId && (this.store?.listSurfaces() ?? []).some((s) => s.id === surfaceId)
+      res.json({ ok: true, surfaceId: exists ? surfaceId : null })
+    })
 
     // The packaged Companion module, for the "Import module package" screen.
     app.get('/companion/stageit.tgz', (_req, res) => {
@@ -573,6 +581,11 @@ export class WebServer {
             // A surface display announcing itself, so OSC can target it and
             // Settings can list which browser is showing which surface.
             ;(this.surfaceClients ??= new Map()).set(msg.data.browserId, { browserId: msg.data.browserId, surfaceId: msg.data.surfaceId ?? null, surfaceName: msg.data.surfaceName ?? null, openEdge: msg.data.openEdge ?? null, name: this.sessionNames[msg.data.browserId] ?? null, since: Date.now(), _ws: ws })
+            // Remember the last REAL surface this display showed, so a kiosk that
+            // boots to the start page can redirect straight back to it. 'start'
+            // is the identify page, not a surface, so it never overwrites this.
+            const sid = msg.data.surfaceId
+            if (sid && sid !== 'start') this.store?.setSetting(`surface-last:${msg.data.browserId}`, sid)
             this.publishCalls(msg.data.browserId) // send this session its name + any pending calls
           }
         })
