@@ -318,11 +318,14 @@ function DgBar({ db }: { db: number }) {
  *  ("Channels" — a range like 1-16, blank = first 32); each is drawn from the
  *  channel scan (name, mono/stereo). */
 function DigicoMeters({ instanceId, title, config }: WidgetProps) {
-  // Structure comes from the channel scan (names, mono/stereo). Meter LEVELS are
-  // not mapped onto channels yet — bars sit at floor until the index→channel
-  // mapping is worked out. (`meters` stream is available for that next step.)
+  // Structure (name, mono/stereo) comes from the channel scan; levels come from
+  // the meter stream. Working hypothesis: meter index is 0-based, so channel N's
+  // meter is at index N-1. Silent channels don't stream (on-change) → floor.
   const cfg = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
+  const met = useStream(instanceId, 'meters') as { meters?: DgMeter[] } | null
   const channels = dgSelected(config, cfg?.channels)
+  const byIdx = new Map((met?.meters ?? []).map((m) => [m.index, m]))
+  const lvl = (channel: number) => byIdx.get(channel - 1)
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
@@ -331,15 +334,20 @@ function DigicoMeters({ instanceId, title, config }: WidgetProps) {
         <div className="shrink-0 flex flex-col justify-between py-1 text-[8px] text-muted-foreground/50 tabular-nums text-right">
           {[0, -12, -24, -36, -48, -60].map((v) => <span key={v}>{v}</span>)}
         </div>
-        {channels.map((c) => (
-          <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
-            <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
-            <div className="flex-1 min-h-0 flex gap-0.5">
-              {c.stereo ? <><DgBar db={-Infinity} /><DgBar db={-Infinity} /></> : <DgBar db={-Infinity} />}
+        {channels.map((c) => {
+          const m = lvl(c.channel)
+          const a = m?.a ?? -Infinity
+          const b = m?.b ?? -Infinity
+          return (
+            <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
+              <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
+              <div className="flex-1 min-h-0 flex gap-0.5">
+                {c.stereo ? <><DgBar db={a} /><DgBar db={b} /></> : <DgBar db={a} />}
+              </div>
+              <span className="text-[9px] text-muted-foreground truncate max-w-[3.5rem]" title={c.name ?? `Ch ${c.channel}`}>{c.name || `Ch ${c.channel}`}</span>
             </div>
-            <span className="text-[9px] text-muted-foreground truncate max-w-[3.5rem]" title={c.name ?? `Ch ${c.channel}`}>{c.name || `Ch ${c.channel}`}</span>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
