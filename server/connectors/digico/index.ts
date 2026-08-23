@@ -183,8 +183,13 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private relayToClients(buffer: Buffer): void {
     if (!this.relaySocket || this.relayClients.size === 0) return
     const fixed = this.ctx?.config.relaySendPort ?? 0
+    // With a fixed receive port, every client at one IP receives on the SAME
+    // address:port, so a client that has reconnected from new source ports would
+    // otherwise get N duplicate copies. Dedupe the fan-out by destination.
+    const sentTo = fixed > 0 ? new Set<string>() : null
     for (const client of this.relayClients.values()) {
       const port = fixed > 0 ? fixed : client.port
+      if (sentTo) { if (sentTo.has(client.address)) continue; sentTo.add(client.address) }
       this.relaySocket.send(buffer, port, client.address, (error) => {
         if (error) this.ctx?.logger.debug({ err: error }, 'relay → client send failed')
       })
