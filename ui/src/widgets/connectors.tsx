@@ -276,7 +276,12 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
 registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', supportedTypeIds: ['smaart'], defaultSize: { w: 6, h: 4 }, Component: SmaartSpectrum })
 
 /* ================================================================== DIGICO */
+type DgCh = { channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
 type DgMeter = { index: number; a: number; b: number }
+/** Channels actually in use: patched (input_type ≠ 0) or renamed off default. */
+function dgInUse(channels?: DgCh[]): DgCh[] {
+  return (channels ?? []).filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
+}
 /** dB (−60..0) → fill height %. −Infinity / off → 0. */
 function dgPct(db: number): number { if (db == null || db === -Infinity) return 0; return Math.max(0, Math.min(100, ((db + 60) / 60) * 100)) }
 /** One vertical meter bar: a green→amber→red scale revealed up to the level. */
@@ -293,9 +298,11 @@ function DgBar({ db }: { db: number }) {
  *  a connected controller (iPad/Companion) is displaying, so which channels show
  *  follows what's on screen there. */
 function DigicoMeters({ instanceId, title }: WidgetProps) {
-  const d = useStream(instanceId, 'meters') as { meters?: DgMeter[] } | null
-  const meters = (d?.meters ?? []).slice().sort((a, b) => a.index - b.index)
-  const fmt = (db: number) => (db === -Infinity ? '−∞' : Math.round(db).toString())
+  // Structure comes from the channel scan (names, mono/stereo). Meter LEVELS are
+  // not mapped onto channels yet — bars sit at floor until the index→channel
+  // mapping is worked out. (`meters` stream is available for that next step.)
+  const cfg = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
+  const channels = dgInUse(cfg?.channels)
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
@@ -304,32 +311,28 @@ function DigicoMeters({ instanceId, title }: WidgetProps) {
         <div className="shrink-0 flex flex-col justify-between py-1 text-[8px] text-muted-foreground/50 tabular-nums text-right">
           {[0, -12, -24, -36, -48, -60].map((v) => <span key={v}>{v}</span>)}
         </div>
-        {meters.length === 0 ? (
-          <div className="flex-1 grid place-items-center text-[11px] text-muted-foreground/50 text-center">No meters.<br />The console streams the channels shown on a connected iPad/controller.</div>
-        ) : meters.map((m) => {
-          const peak = Math.max(m.a, m.b)
-          return (
-            <div key={m.index} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
-              <span className={cn('text-[9px] tabular-nums font-bold', peak > -6 ? 'text-destructive' : peak > -18 ? 'text-busy' : 'text-live')}>{fmt(peak)}</span>
-              <div className="flex-1 min-h-0 flex gap-0.5"><DgBar db={m.a} /><DgBar db={m.b} /></div>
-              <span className="text-[9px] text-muted-foreground tabular-nums">{m.index}</span>
+        {channels.length === 0 ? (
+          <div className="flex-1 grid place-items-center text-[11px] text-muted-foreground/50 text-center">No channels scanned yet.<br />Connect the console.</div>
+        ) : channels.map((c) => (
+          <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
+            <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
+            <div className="flex-1 min-h-0 flex gap-0.5">
+              {c.stereo ? <><DgBar db={-Infinity} /><DgBar db={-Infinity} /></> : <DgBar db={-Infinity} />}
             </div>
-          )
-        })}
+            <span className="text-[9px] text-muted-foreground truncate max-w-[3.5rem]" title={c.name ?? `Ch ${c.channel}`}>{c.name || `Ch ${c.channel}`}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, Component: DigicoMeters })
 
-type DgCh = { channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
 /** The console's input-channel list: name, mono/stereo, patched, mute + fader.
  *  This is the channel map the meters get mapped onto. */
 function DigicoChannels({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
-  const all = d?.channels ?? []
-  // Show channels that are in use: patched (input_type ≠ 0) or renamed off default.
-  const rows = all.filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
+  const rows = dgInUse(d?.channels)
   const fmtFader = (db: number | null) => (db == null ? '' : db <= -150 || db === -Infinity ? '−∞' : `${db > 0 ? '+' : ''}${db.toFixed(1)}`)
   return (
     <div className="h-full flex flex-col">
