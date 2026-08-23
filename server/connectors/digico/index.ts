@@ -370,7 +370,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private query(): void {
     const ctx = this.ctx
     if (!ctx) return
-    for (const message of queryMessages(this.profile().prefix, ctx.config.channelCount)) {
+    for (const message of queryMessages(this.profile().prefix, ctx.config.channelCount || 32)) {
       this.send(message)
     }
   }
