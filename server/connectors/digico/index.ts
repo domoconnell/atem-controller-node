@@ -15,6 +15,7 @@ import {
   fireMacroMessage,
   interpret,
   type MacroState,
+  type MeterUpdate,
   muteChannelMessage,
   queryMessages,
   snapshotFireMessage,
@@ -86,6 +87,9 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private lastMessageAt = 0
   private channels = new Map<number, ChannelState>()
   private auxSends = new Map<string, AuxSendState>() // key `${ch}:${aux}`
+  private meters = new Map<number, MeterUpdate>()
+  private metersDirty = false
+  private cancelMeterPublish: (() => void) | null = null
   private macros = new Map<number, MacroState>()
   private messages: { id: string; text: string; at: number }[] = []
   private messageSeq = 0
@@ -115,6 +119,11 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.cancelRefresh = ctx.setInterval(() => this.query(), ctx.config.pollIntervalSeconds * 1_000)
     this.cancelWatchdog = ctx.setInterval(() => this.checkAlive(), 5_000)
 
+    // Meters arrive ~25/s; coalesce to ~12/s for the UI.
+    this.cancelMeterPublish = ctx.setInterval(() => {
+      if (this.metersDirty) { this.metersDirty = false; ctx.publish('meters', { meters: [...this.meters.values()], at: Date.now() }) }
+    }, 80)
+
     if (ctx.config.relayEnabled) await this.startRelay(ctx)
     // Publish relay status ~2x/sec when it changed, and prune idle clients.
     this.cancelRelayHousekeeping = ctx.setInterval(() => {
@@ -140,6 +149,9 @@ class DigicoConnector implements Connector<DigicoConfig> {
   stop(): void {
     this.cancelRefresh?.()
     this.cancelWatchdog?.()
+    this.cancelMeterPublish?.()
+    this.cancelMeterPublish = null
+    this.meters.clear()
     this.cancelRelayHousekeeping?.()
     this.cancelRefresh = null
     this.cancelWatchdog = null
@@ -330,6 +342,11 @@ class DigicoConnector implements Connector<DigicoConfig> {
       ctx.publish('auxSends', { sends: [...this.auxSends.values()] })
     }
 
+    if (update.meter) {
+      this.meters.set(update.meter.index, update.meter)
+      this.metersDirty = true
+    }
+
     if (update.macro) {
       this.macros.set(update.macro.index, update.macro)
       ctx.publish('macros', { macros: [...this.macros.values()] })
@@ -394,6 +411,7 @@ export const digicoModule: ConnectorModule<DigicoConfig> = {
     streams: [
       { id: 'channels', label: 'Channels', rateClass: 'slow' },
       { id: 'auxSends', label: 'Aux sends', rateClass: 'change' },
+      { id: 'meters', label: 'Meters', rateClass: 'fast' },
       { id: 'macros', label: 'Macros', rateClass: 'change' },
       { id: 'messages', label: 'Messages', rateClass: 'change', history: 'events' },
       { id: 'snapshots', label: 'Snapshots', rateClass: 'change', history: 'events' },

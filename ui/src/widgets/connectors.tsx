@@ -275,6 +275,53 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
 }
 registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', supportedTypeIds: ['smaart'], defaultSize: { w: 6, h: 4 }, Component: SmaartSpectrum })
 
+/* ================================================================== DIGICO */
+type DgMeter = { index: number; a: number; b: number }
+/** dB (−60..0) → fill height %. −Infinity / off → 0. */
+function dgPct(db: number): number { if (db == null || db === -Infinity) return 0; return Math.max(0, Math.min(100, ((db + 60) / 60) * 100)) }
+/** One vertical meter bar: a green→amber→red scale revealed up to the level. */
+function DgBar({ db }: { db: number }) {
+  const pct = dgPct(db)
+  return (
+    <div className="relative w-2.5 flex-1 min-h-0 rounded-sm overflow-hidden bg-muted/30">
+      <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--live) 0%, var(--live) 62%, var(--busy) 80%, var(--destructive) 100%)' }} />
+      <div className="absolute inset-x-0 top-0 bg-card transition-[height] duration-75" style={{ height: `${100 - pct}%` }} />
+    </div>
+  )
+}
+/** Live input meters from a DiGiCo. The console streams meters for the channels
+ *  a connected controller (iPad/Companion) is displaying, so which channels show
+ *  follows what's on screen there. */
+function DigicoMeters({ instanceId, title }: WidgetProps) {
+  const d = useStream(instanceId, 'meters') as { meters?: DgMeter[] } | null
+  const meters = (d?.meters ?? []).slice().sort((a, b) => a.index - b.index)
+  const fmt = (db: number) => (db === -Infinity ? '−∞' : Math.round(db).toString())
+  return (
+    <div className="h-full flex flex-col">
+      {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
+      <div className="flex-1 min-h-0 flex items-stretch gap-3 px-3 py-2 overflow-x-auto">
+        {/* dB scale */}
+        <div className="shrink-0 flex flex-col justify-between py-1 text-[8px] text-muted-foreground/50 tabular-nums text-right">
+          {[0, -12, -24, -36, -48, -60].map((v) => <span key={v}>{v}</span>)}
+        </div>
+        {meters.length === 0 ? (
+          <div className="flex-1 grid place-items-center text-[11px] text-muted-foreground/50 text-center">No meters.<br />The console streams the channels shown on a connected iPad/controller.</div>
+        ) : meters.map((m) => {
+          const peak = Math.max(m.a, m.b)
+          return (
+            <div key={m.index} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
+              <span className={cn('text-[9px] tabular-nums font-bold', peak > -6 ? 'text-destructive' : peak > -18 ? 'text-busy' : 'text-live')}>{fmt(peak)}</span>
+              <div className="flex-1 min-h-0 flex gap-0.5"><DgBar db={m.a} /><DgBar db={m.b} /></div>
+              <span className="text-[9px] text-muted-foreground tabular-nums">{m.index}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, Component: DigicoMeters })
+
 /* ==================================================================== QLAB */
 
 interface RunCue { id: string; name: string; elapsed: number; remaining: number; percent: number }

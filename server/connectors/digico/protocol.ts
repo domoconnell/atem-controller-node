@@ -152,6 +152,33 @@ export function dbToFader(db: number): number {
   return 1
 }
 
+// ------------------------------------------------------------------ metering
+
+/**
+ * DiGiCo meter values, calibrated live against a real SD console (channel 2
+ * mic, tone at known console-meter dB). Each `/Meters/values` message carries
+ * [channelIndex, packed] where `packed` holds two 16-bit meter values (the two
+ * legs of a stereo channel, or peak/level): A = high 16 bits, B = low 16 bits.
+ * The value is ~ the number of dB below 0 — near 1:1 at the top, expanding
+ * toward the floor. Calibration points (A → dB): 0→0, 6→−6, 12→−12, 21→−20,
+ * 48→−40; a value near 126 means no signal (off). B decodes the same way.
+ */
+const METER_CAL: Array<[a: number, db: number]> = [
+  [0, 0], [6, -6], [12, -12], [21, -20], [48, -40],
+]
+/** One 0..~126 DiGiCo meter reading → dB (−Infinity when off / below floor). */
+export function meterToDb(a: number): number {
+  if (a <= 0) return 0
+  for (let i = 1; i < METER_CAL.length; i++) {
+    const [a0, d0] = METER_CAL[i - 1], [a1, d1] = METER_CAL[i]
+    if (a <= a1) return Math.round((d0 + ((a - a0) / (a1 - a0)) * (d1 - d0)) * 10) / 10
+  }
+  // Below the lowest calibrated point: extrapolate the last segment, floor to off.
+  const [a0, d0] = METER_CAL[METER_CAL.length - 2], [a1, d1] = METER_CAL[METER_CAL.length - 1]
+  const db = d1 + ((a - a1) / (a1 - a0)) * (d1 - d0)
+  return db <= -90 ? -Infinity : Math.round(db * 10) / 10
+}
+
 // ------------------------------------------------------------------ command sets
 
 /**
@@ -205,11 +232,20 @@ export interface AuxSendState {
   pan?: number
 }
 
+/** A `/Meters/values` reading: a channel/meter index and both legs in dB. */
+export interface MeterUpdate {
+  index: number
+  a: number // dB, high 16 bits (leg 1 / peak); -Infinity = off
+  b: number // dB, low 16 bits  (leg 2)
+  raw: number
+}
+
 export interface DigicoUpdate {
   channel?: ChannelState
   auxSend?: AuxSendState
   macro?: MacroState
   snapshotNumber?: number
+  meter?: MeterUpdate
 }
 
 /** Parse an aux-send address ".../Input_Channels/{ch}/Aux_Send/{aux}/{leaf}". */
@@ -227,6 +263,14 @@ export function parseAuxSend(address: string): { ch: number; aux: number; leaf: 
  */
 export function interpret(message: OscMessage, directDb = false): DigicoUpdate | null {
   const address = normaliseAddress(message.address)
+
+  // High-rate meter stream: [channelIndex, packed(A<<16 | B)].
+  if (address === '/Meters/values') {
+    const idx = message.args[0], packed = message.args[1]
+    if (typeof idx !== 'number' || typeof packed !== 'number') return null
+    const v = packed >>> 0
+    return { meter: { index: idx, a: meterToDb((v >>> 16) & 0xffff), b: meterToDb(v & 0xffff), raw: v } }
+  }
 
   const macro = /^\/Macros\/Buttons\/state$/.exec(address)
   if (macro) {
