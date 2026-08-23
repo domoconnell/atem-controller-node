@@ -234,13 +234,32 @@ export interface AuxSendState {
   pan?: number
 }
 
-/** One slot's reading from `/Meters/values`. The console packs the level in the
- *  high 16 bits (a) and a second reading (peak/RMS) in the low 16 (b). The slot
- *  number is bound to a channel+leg by a prior `/Meters/request/<slot>`. */
+/** One slot's raw reading from `/Meters/values`. The console packs the meter
+ *  level in the high 16 bits and a second reading (peak/RMS) in the low 16 —
+ *  both raw 0..~127 ("dB below 0"; convert with meterToDb). The slot number is
+ *  bound to a channel+leg by a prior `/Meters/request/<slot>`. Kept raw so we
+ *  can both convert for our UI and re-pack when serving a client. */
 export interface MeterSlot {
   slot: number
-  a: number // dB, high 16 bits (level); -Infinity = off / below floor
-  b: number // dB, low 16 bits  (peak/RMS of the same tap)
+  level: number // raw high 16 bits
+  peak: number // raw low 16 bits
+}
+
+/** Tap path for one channel leg's post-fader meter (iPad command set). */
+export function meterTapPath(channel: number, leg: 'l' | 'r'): string {
+  return `/Input_Channels/${channel}/Channel_Input/post_meter/${leg === 'r' ? 'right' : 'left'}`
+}
+/** `/Meters/request/<slot> "<tap>"` — bind a console meter slot to a tap. */
+export function meterRequestMessage(slot: number, tap: string): OscMessage {
+  return { address: `/Meters/request/${slot}`, args: [tap] }
+}
+/** `/Meters/clear` — drop every meter slot on the console. */
+export const meterClearMessage: OscMessage = { address: '/Meters/clear', args: [] }
+/** `/Meters/values` from (slot, level, peak) triples — for serving a client. */
+export function meterValuesMessage(rows: Array<{ slot: number; level: number; peak: number }>): OscMessage {
+  const args: number[] = []
+  for (const r of rows) args.push(r.slot, (((r.level & 0xffff) << 16) | (r.peak & 0xffff)) | 0)
+  return { address: '/Meters/values', args }
 }
 
 export interface DigicoUpdate {
@@ -293,7 +312,7 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
       const slot = message.args[i], packed = message.args[i + 1]
       if (typeof slot !== 'number' || typeof packed !== 'number') continue
       const v = packed >>> 0
-      out.push({ slot, a: meterToDb((v >>> 16) & 0xffff), b: meterToDb(v & 0xffff) })
+      out.push({ slot, level: (v >>> 16) & 0xffff, peak: v & 0xffff })
     }
     return out.length ? { meters: out } : null
   }

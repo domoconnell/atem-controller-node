@@ -15,6 +15,11 @@ import {
   fireMacroMessage,
   interpret,
   type MacroState,
+  meterClearMessage,
+  meterRequestMessage,
+  meterTapPath,
+  meterToDb,
+  meterValuesMessage,
   parseMeterRequest,
   muteChannelMessage,
   queryMessages,
@@ -23,6 +28,9 @@ import {
   snapshotPrevMessage,
 } from './protocol.js'
 import { DigicoSimulator } from './simulator.js'
+
+/** Raw meter reading the console uses for "no signal"; meterToDb(126) = -∞. */
+const METER_FLOOR = 126
 
 export const digicoConfigSchema = z.object({
   host: z.string().min(1).default('192.168.1.10')
@@ -87,10 +95,16 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private lastMessageAt = 0
   private channels = new Map<number, ChannelState>()
   private auxSends = new Map<string, AuxSendState>() // key `${ch}:${aux}`
-  // Meter slot → channel+leg, learned by watching downstream clients' relayed
-  // `/Meters/request` messages; and the resulting per-channel L/R levels in dB.
-  private meterSlots = new Map<number, { channel: number; leg: 'l' | 'r' }>()
-  private meterLevels = new Map<number, { l: number; r: number; at: number }>()
+  // We are the console's sole meter client: WE subscribe every in-use channel to
+  // a console meter slot (appSlots: our slot → channel+leg), receive its values,
+  // and hold each channel's raw L/R level+peak (meterLevels). Downstream clients'
+  // own /Meters/request are intercepted (not forwarded) — we answer them from
+  // our data in their slot numbering (ipadSlots: per client, their slot → ch+leg).
+  private appSlots = new Map<number, { channel: number; leg: 'l' | 'r' }>()
+  private meterLevels = new Map<number, { lLevel: number; lPeak: number; rLevel: number; rPeak: number; at: number }>()
+  private ipadSlots = new Map<string, Map<number, { channel: number; leg: 'l' | 'r' }>>()
+  private meterSubReady = false
+  private cancelMeterSub: (() => void) | null = null
   private metersDirty = false
   private cancelMeterPublish: (() => void) | null = null
   private macros = new Map<number, MacroState>()
@@ -122,20 +136,31 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.cancelRefresh = ctx.setInterval(() => this.query(), ctx.config.pollIntervalSeconds * 1_000)
     this.cancelWatchdog = ctx.setInterval(() => this.checkAlive(), 5_000)
 
-    // Meters arrive ~25/s; coalesce to ~12/s for the UI. Age out levels that
-    // stopped updating (channel went silent, or its slot was reassigned on a
-    // bank change) so bars fall to the floor instead of freezing.
+    // We drive the console's metering ourselves: (re)assert our full-channel
+    // meter subscription every few seconds (idempotent; also covers channels the
+    // scan only just learned, and re-establishes it after a console restart).
+    this.subscribeConsoleMeters()
+    this.cancelMeterSub = ctx.setInterval(() => this.subscribeConsoleMeters(), 5_000)
+
+    // Meters arrive ~25/s; coalesce to ~12/s. Each tick: age silent channels to
+    // the floor, publish dB to our UI, and serve each relay client the meters it
+    // asked for (in ITS slot numbering) from our own data.
     this.cancelMeterPublish = ctx.setInterval(() => {
       const now = Date.now()
-      for (const [ch, m] of this.meterLevels) {
-        if (now - m.at > 600 && (m.l !== -Infinity || m.r !== -Infinity)) { m.l = -Infinity; m.r = -Infinity; this.metersDirty = true }
-        void ch
+      for (const m of this.meterLevels.values()) {
+        if (now - m.at > 600 && (m.lLevel !== METER_FLOOR || m.rLevel !== METER_FLOOR)) {
+          m.lLevel = METER_FLOOR; m.lPeak = METER_FLOOR; m.rLevel = METER_FLOOR; m.rPeak = METER_FLOOR
+          this.metersDirty = true
+        }
       }
       if (this.metersDirty) {
         this.metersDirty = false
-        const meters = [...this.meterLevels.entries()].map(([channel, m]) => ({ channel, l: m.l, r: m.r }))
+        const meters = [...this.meterLevels.entries()].map(([channel, m]) => ({
+          channel, l: meterToDb(m.lLevel), r: meterToDb(m.rLevel),
+        }))
         ctx.publish('meters', { meters, at: now })
       }
+      this.serveClientMeters()
     }, 80)
 
     if (ctx.config.relayEnabled) await this.startRelay(ctx)
@@ -165,8 +190,12 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.cancelWatchdog?.()
     this.cancelMeterPublish?.()
     this.cancelMeterPublish = null
-    this.meterSlots.clear()
+    this.cancelMeterSub?.()
+    this.cancelMeterSub = null
+    this.meterSubReady = false
+    this.appSlots.clear()
     this.meterLevels.clear()
+    this.ipadSlots.clear()
     this.cancelRelayHousekeeping?.()
     this.cancelRefresh = null
     this.cancelWatchdog = null
@@ -197,20 +226,78 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.relayClients.set(key, client)
     this.relayToConsole += 1
     this.relayDirty = true
-    // Learn this client's meter subscription: `/Meters/request/<slot>` binds a
-    // slot to a channel leg, `/Meters/clear` resets. We don't request meters
-    // ourselves — we ride the client's subscription and map its slots. (Cheap
-    // prefix check first; most relayed traffic isn't meter setup.)
+    // Intercept this client's meter subscription — do NOT forward it to the
+    // console (we own the console's single meter slot table; a client's requests
+    // would clobber it). `/Meters/request/<slot> "<tap>"` records what THIS
+    // client wants in ITS slot numbering; `/Meters/clear` drops its map. We serve
+    // it from our own data (serveClientMeters). Cheap prefix check first.
     if (buffer.length > 8 && buffer[0] === 0x2f && buffer.toString('latin1', 1, 8) === 'Meters/') {
+      // Swallow ALL client /Meters/ traffic — none of it may reach the console,
+      // or it would clobber our slot table. We answer from our own data instead.
       const msg = decodeOsc(buffer)
       const req = msg && parseMeterRequest(msg)
-      if (req === 'clear') { this.meterSlots.clear(); this.meterLevels.clear(); this.metersDirty = true }
-      else if (req) this.meterSlots.set(req.slot, { channel: req.channel, leg: req.leg })
+      if (req === 'clear') { this.ipadSlots.delete(key); return }
+      if (req) {
+        let map = this.ipadSlots.get(key)
+        if (!map) { map = new Map(); this.ipadSlots.set(key, map) }
+        map.set(req.slot, { channel: req.channel, leg: req.leg })
+      }
+      // Requests for taps we don't meter (e.g. aux outputs) are dropped for now.
+      return
     }
     // Forward verbatim to the console (its single OSC connection is ours).
     this.socket.send(buffer, ctx.config.sendPort, ctx.config.host, (error) => {
       if (error) ctx.logger.debug({ err: error }, 'relay → console send failed')
     })
+  }
+
+  /** (Re)assert OUR meter subscription on the console: one slot per in-use
+   *  channel leg (mono → left only; stereo → left+right). Idempotent — the
+   *  console just re-binds each slot — so we can call it periodically to cover
+   *  channels the scan only just learned and to survive a console restart. */
+  private subscribeConsoleMeters(): void {
+    const inUse = [...this.channels.values()]
+      .filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name != null && !/^Ch \d+$/.test(c.name)))
+      .sort((a, b) => a.channel - b.channel)
+    if (inUse.length === 0) return
+    const next = new Map<number, { channel: number; leg: 'l' | 'r' }>()
+    let slot = 0
+    for (const c of inUse) {
+      next.set(slot++, { channel: c.channel, leg: 'l' })
+      if (c.stereo) next.set(slot++, { channel: c.channel, leg: 'r' })
+    }
+    this.appSlots = next
+    // Clear once, the first time, so stale slots from before don't linger.
+    if (!this.meterSubReady) { this.send(meterClearMessage); this.meterSubReady = true }
+    for (const [s, bind] of next) this.send(meterRequestMessage(s, meterTapPath(bind.channel, bind.leg)))
+  }
+
+  /** Serve every relay client the meters it asked for, in ITS slot numbering,
+   *  from our own per-channel data. Called each meter tick. */
+  private serveClientMeters(): void {
+    if (this.ipadSlots.size === 0 || !this.relaySocket) return
+    const ctx = this.ctx
+    if (!ctx) return
+    const fixed = ctx.config.relaySendPort ?? 0
+    const sentTo = fixed > 0 ? new Set<string>() : null
+    for (const [key, map] of this.ipadSlots) {
+      const client = this.relayClients.get(key)
+      if (!client || map.size === 0) continue
+      const port = fixed > 0 ? fixed : client.port
+      if (sentTo) { if (sentTo.has(client.address)) continue; sentTo.add(client.address) }
+      const rows: Array<{ slot: number; level: number; peak: number }> = []
+      for (const [s, bind] of map) {
+        const m = this.meterLevels.get(bind.channel)
+        if (!m) continue
+        rows.push(bind.leg === 'l'
+          ? { slot: s, level: m.lLevel, peak: m.lPeak }
+          : { slot: s, level: m.rLevel, peak: m.rPeak })
+      }
+      if (rows.length === 0) continue
+      this.relaySocket.send(encodeOsc(meterValuesMessage(rows)), port, client.address, (error) => {
+        if (error) ctx.logger.debug({ err: error }, 'meter serve → client failed')
+      })
+    }
   }
 
   /** Fan a console packet out to every relay client (called from onDatagram).
@@ -241,7 +328,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (!ctx || this.relayClients.size === 0) return
     const cutoff = Date.now() - ctx.config.relayClientTimeoutSeconds * 1_000
     for (const [key, client] of this.relayClients) {
-      if (client.lastSeen < cutoff) { this.relayClients.delete(key); this.relayDirty = true }
+      if (client.lastSeen < cutoff) { this.relayClients.delete(key); this.ipadSlots.delete(key); this.relayDirty = true }
     }
   }
 
@@ -326,8 +413,11 @@ class DigicoConnector implements Connector<DigicoConfig> {
 
     this.lastMessageAt = Date.now()
     // Relay the raw console packet to every downstream client first — even things
-    // we do not parse (aux sends, EQ, …) must reach Companion untouched.
-    this.relayToClients(buffer)
+    // we do not parse (aux sends, EQ, …) must reach clients untouched. The one
+    // exception is /Meters/values: those carry OUR slot numbering, meaningless to
+    // a client, so we suppress them here and serve each client its own instead.
+    const isMeterValues = buffer.length > 14 && buffer[0] === 0x2f && buffer[14] === 0 && buffer.toString('latin1', 1, 14) === 'Meters/values'
+    if (!isMeterValues) this.relayToClients(buffer)
 
     const message = decodeOsc(buffer)
     if (!message) return // not OSC, or truncated; the console will send more
@@ -368,13 +458,15 @@ class DigicoConnector implements Connector<DigicoConfig> {
     }
 
     if (update.meters) {
-      // Map each slot's level onto its channel leg (learned from the relay).
+      // Map each console slot's raw reading onto its channel leg (our appSlots).
       const now = Date.now()
       for (const s of update.meters) {
-        const bind = this.meterSlots.get(s.slot)
+        const bind = this.appSlots.get(s.slot)
         if (!bind) continue
-        const cur = this.meterLevels.get(bind.channel) ?? { l: -Infinity, r: -Infinity, at: 0 }
-        if (bind.leg === 'l') cur.l = s.a; else cur.r = s.a
+        const cur = this.meterLevels.get(bind.channel)
+          ?? { lLevel: METER_FLOOR, lPeak: METER_FLOOR, rLevel: METER_FLOOR, rPeak: METER_FLOOR, at: 0 }
+        if (bind.leg === 'l') { cur.lLevel = s.level; cur.lPeak = s.peak }
+        else { cur.rLevel = s.level; cur.rPeak = s.peak }
         cur.at = now
         this.meterLevels.set(bind.channel, cur)
       }
