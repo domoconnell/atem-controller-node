@@ -142,17 +142,14 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.subscribeConsoleMeters()
     this.cancelMeterSub = ctx.setInterval(() => this.subscribeConsoleMeters(), 5_000)
 
-    // Meters arrive ~25/s; publish at ~25/s (40ms) for snappy bars. Each tick:
-    // age silent channels to the floor, publish dB to our UI, and serve each
-    // relay client the meters it asked for (in ITS slot numbering) from our data.
+    // The console sends meter values ON CHANGE — a steady level is sent once,
+    // then not again — so we HOLD each channel's last value (like the iPad does)
+    // rather than ageing it out, or a constant tone would fall back to the floor.
+    // A signal that stops is reported by the console as its decay down to 126
+    // (off); the 5s re-subscribe also re-dumps current values as a safety net.
+    // Publish at ~25/s (40ms) when anything changed; serve clients every tick.
     this.cancelMeterPublish = ctx.setInterval(() => {
       const now = Date.now()
-      for (const m of this.meterLevels.values()) {
-        if (now - m.at > 600 && (m.lLevel !== METER_FLOOR || m.rLevel !== METER_FLOOR)) {
-          m.lLevel = METER_FLOOR; m.lPeak = METER_FLOOR; m.rLevel = METER_FLOOR; m.rPeak = METER_FLOOR
-          this.metersDirty = true
-        }
-      }
       if (this.metersDirty) {
         this.metersDirty = false
         const meters = [...this.meterLevels.entries()].map(([channel, m]) => ({
