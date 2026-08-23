@@ -282,6 +282,26 @@ type DgMeter = { index: number; a: number; b: number }
 function dgInUse(channels?: DgCh[]): DgCh[] {
   return (channels ?? []).filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
 }
+/** Parse a channel-range string ("1-16", "1,2,5-8") to channel numbers; blank
+ *  defaults to 1..fallback (the first N channels). */
+function dgParseChannels(str: string | undefined, fallback = 32): number[] {
+  if (!str || !str.trim()) return Array.from({ length: fallback }, (_, i) => i + 1)
+  const out = new Set<number>()
+  for (const part of str.split(',')) {
+    const m = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(part)
+    if (m) { const a = +m[1], b = +m[2]; for (let i = Math.min(a, b); i <= Math.max(a, b); i++) out.add(i) }
+    else { const n = Number(part.trim()); if (n > 0) out.add(n) }
+  }
+  return [...out].sort((a, b) => a - b)
+}
+/** Resolve the selected channel numbers against the live scan (unscanned ones
+ *  become mono placeholders so the layout is stable while the scan fills in). */
+function dgSelected(config: Record<string, unknown>, channels?: DgCh[]): DgCh[] {
+  const byNum = new Map((channels ?? []).map((c) => [c.channel, c]))
+  return dgParseChannels(config.channels as string | undefined).map(
+    (n) => byNum.get(n) ?? { channel: n, name: null, muted: null, faderDb: null, stereo: false, inputType: null },
+  )
+}
 /** dB (−60..0) → fill height %. −Infinity / off → 0. */
 function dgPct(db: number): number { if (db == null || db === -Infinity) return 0; return Math.max(0, Math.min(100, ((db + 60) / 60) * 100)) }
 /** One vertical meter bar: a green→amber→red scale revealed up to the level. */
@@ -294,15 +314,15 @@ function DgBar({ db }: { db: number }) {
     </div>
   )
 }
-/** Live input meters from a DiGiCo. The console streams meters for the channels
- *  a connected controller (iPad/Companion) is displaying, so which channels show
- *  follows what's on screen there. */
-function DigicoMeters({ instanceId, title }: WidgetProps) {
+/** Live input meters from a DiGiCo. Which channels show is a widget setting
+ *  ("Channels" — a range like 1-16, blank = first 32); each is drawn from the
+ *  channel scan (name, mono/stereo). */
+function DigicoMeters({ instanceId, title, config }: WidgetProps) {
   // Structure comes from the channel scan (names, mono/stereo). Meter LEVELS are
   // not mapped onto channels yet — bars sit at floor until the index→channel
   // mapping is worked out. (`meters` stream is available for that next step.)
   const cfg = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
-  const channels = dgInUse(cfg?.channels)
+  const channels = dgSelected(config, cfg?.channels)
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
@@ -311,9 +331,7 @@ function DigicoMeters({ instanceId, title }: WidgetProps) {
         <div className="shrink-0 flex flex-col justify-between py-1 text-[8px] text-muted-foreground/50 tabular-nums text-right">
           {[0, -12, -24, -36, -48, -60].map((v) => <span key={v}>{v}</span>)}
         </div>
-        {channels.length === 0 ? (
-          <div className="flex-1 grid place-items-center text-[11px] text-muted-foreground/50 text-center">No channels scanned yet.<br />Connect the console.</div>
-        ) : channels.map((c) => (
+        {channels.map((c) => (
           <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
             <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
             <div className="flex-1 min-h-0 flex gap-0.5">
@@ -326,7 +344,7 @@ function DigicoMeters({ instanceId, title }: WidgetProps) {
     </div>
   )
 }
-registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, Component: DigicoMeters })
+registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, configFields: [{ key: 'channels', label: 'Channels (e.g. 1-16; blank = first 32)', kind: 'text' }], Component: DigicoMeters })
 
 /** The console's input-channel list: name, mono/stereo, patched, mute + fader.
  *  This is the channel map the meters get mapped onto. */
