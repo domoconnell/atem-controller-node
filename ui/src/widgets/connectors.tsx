@@ -322,6 +322,34 @@ function DigicoMeters({ instanceId, title }: WidgetProps) {
 }
 registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, Component: DigicoMeters })
 
+type DgCh = { channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
+/** The console's input-channel list: name, mono/stereo, patched, mute + fader.
+ *  This is the channel map the meters get mapped onto. */
+function DigicoChannels({ instanceId, title }: WidgetProps) {
+  const d = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
+  const all = d?.channels ?? []
+  // Show channels that are in use: patched (input_type ≠ 0) or renamed off default.
+  const rows = all.filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
+  const fmtFader = (db: number | null) => (db == null ? '' : db <= -150 || db === -Infinity ? '−∞' : `${db > 0 ? '+' : ''}${db.toFixed(1)}`)
+  return (
+    <div className="h-full flex flex-col">
+      {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
+      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1 space-y-0.5">
+        {rows.length === 0 ? <div className="text-[11px] text-muted-foreground/50 px-2 py-3 text-center">No channels scanned yet.<br />Connect the console.</div> : rows.map((c) => (
+          <div key={c.channel} className="flex items-center gap-2 rounded-md px-2 py-1 bg-card border border-border/40">
+            <span className="shrink-0 w-6 text-[10px] font-mono text-muted-foreground/60 text-right tabular-nums">{c.channel}</span>
+            <span className={cn('shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
+            <span className="flex-1 min-w-0 truncate text-[12px] font-medium">{c.name || `Ch ${c.channel}`}</span>
+            {c.muted ? <span className="shrink-0 text-[8px] font-bold uppercase text-destructive">mute</span> : null}
+            <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70 w-12 text-right">{fmtFader(c.faderDb)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+registerWidget({ type: 'digico-channels', label: 'DiGiCo · channels', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 5 }, Component: DigicoChannels })
+
 /* ==================================================================== QLAB */
 
 interface RunCue { id: string; name: string; elapsed: number; remaining: number; percent: number }

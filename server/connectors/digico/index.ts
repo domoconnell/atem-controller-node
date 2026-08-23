@@ -315,9 +315,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
     if (update.channel) {
       const existing = this.channels.get(update.channel.channel) ?? {
         channel: update.channel.channel,
-        name: null,
-        muted: null,
-        faderDb: null,
+        name: null, muted: null, faderDb: null, stereo: null, inputType: null,
       }
       // Partial merge: the console sends one leaf at a time.
       this.channels.set(update.channel.channel, {
@@ -325,6 +323,8 @@ class DigicoConnector implements Connector<DigicoConfig> {
         name: update.channel.name ?? existing.name,
         muted: update.channel.muted ?? existing.muted,
         faderDb: update.channel.faderDb ?? existing.faderDb,
+        stereo: update.channel.stereo ?? existing.stereo,
+        inputType: update.channel.inputType ?? existing.inputType,
       })
       ctx.publish('channels', { channels: [...this.channels.values()] })
     }

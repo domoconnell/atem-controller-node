@@ -214,6 +214,8 @@ export interface ChannelState {
   name: string | null
   muted: boolean | null
   faderDb: number | null
+  stereo: boolean | null // Channel_Input/stereo_mode: 1 = mono, 2 = stereo
+  inputType: number | null // Channel_Input/input_type: 0 = unpatched, 2 = mic/analogue
 }
 
 export interface MacroState {
@@ -292,16 +294,25 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
     const leaf = channel[2] ?? ''
     const value = message.args[0]
 
+    const blank = { name: null, muted: null, faderDb: null, stereo: null, inputType: null }
     if (leaf === 'Channel_Input/name') {
-      return { channel: { channel: number, name: String(value ?? ''), muted: null, faderDb: null } }
+      return { channel: { channel: number, ...blank, name: String(value ?? '') } }
     }
     if (leaf === 'mute') {
-      return { channel: { channel: number, name: null, muted: Number(value) > 0, faderDb: null } }
+      return { channel: { channel: number, ...blank, muted: Number(value) > 0 } }
     }
     if (leaf === 'fader') {
       // iPad set reports dB directly; OSC set reports the 0..1 taper float.
       const db = typeof value === 'number' ? decodeLevel(value, directDb) : null
-      return { channel: { channel: number, name: null, muted: null, faderDb: db == null || db === -Infinity ? db : Math.round(db * 10) / 10 } }
+      return { channel: { channel: number, ...blank, faderDb: db == null || db === -Infinity ? db : Math.round(db * 10) / 10 } }
+    }
+    // Channel format — 1 = mono, 2 = stereo. Names/format are how we build the
+    // channel list the meters map onto.
+    if (leaf === 'Channel_Input/stereo_mode') {
+      return { channel: { channel: number, ...blank, stereo: Number(value) >= 2 } }
+    }
+    if (leaf === 'Channel_Input/input_type') {
+      return { channel: { channel: number, ...blank, inputType: typeof value === 'number' ? Math.round(value) : null } }
     }
     // Aux sends (ch → aux): level / on / pan — the IEM-mixing surface.
     const aux = parseAuxSend(address)
@@ -335,6 +346,8 @@ export function queryMessages(prefix: string, channelCount: number): OscMessage[
     messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/name/?`, args: [] })
     messages.push({ address: `${prefix}/Input_Channels/${channel}/mute/?`, args: [] })
     messages.push({ address: `${prefix}/Input_Channels/${channel}/fader/?`, args: [] })
+    messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/stereo_mode/?`, args: [] })
+    messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/input_type/?`, args: [] })
   }
   return messages
 }
