@@ -277,7 +277,7 @@ registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', suppor
 
 /* ================================================================== DIGICO */
 type DgCh = { channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
-type DgMeter = { channel: number; l: number; r: number }
+type DgMeter = { channel: number; l: number; r: number; lp: number; rp: number }
 /** Channels actually in use: patched (input_type ≠ 0) or renamed off default. */
 function dgInUse(channels?: DgCh[]): DgCh[] {
   return (channels ?? []).filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
@@ -304,14 +304,17 @@ function dgSelected(config: Record<string, unknown>, channels?: DgCh[]): DgCh[] 
 }
 /** dB (−60..0) → fill height %. −Infinity / off → 0. */
 function dgPct(db: number): number { if (db == null || db === -Infinity) return 0; return Math.max(0, Math.min(100, ((db + 60) / 60) * 100)) }
-/** One vertical meter bar: a green→amber→red scale revealed up to the level. */
-function DgBar({ db }: { db: number }) {
+/** One vertical meter bar: a green→amber→red scale revealed up to the level,
+ *  with a thin peak-hold line (the console's fast level + slow peak). */
+function DgBar({ db, peak }: { db: number; peak?: number }) {
   const pct = dgPct(db)
+  const pk = peak != null ? dgPct(peak) : null
   return (
     <div className="relative w-2.5 flex-1 min-h-0 rounded-sm overflow-hidden bg-muted/30">
       <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--live) 0%, var(--live) 62%, var(--busy) 80%, var(--destructive) 100%)' }} />
       {/* Linear, ~one-frame transition: smooths between updates without lagging. */}
       <div className="absolute inset-x-0 top-0 bg-card transition-[height] duration-40 ease-linear" style={{ height: `${100 - pct}%` }} />
+      {pk != null && pk > 0 ? <div className="absolute inset-x-0 h-px bg-foreground/80" style={{ bottom: `${pk}%` }} /> : null}
     </div>
   )
 }
@@ -338,11 +341,13 @@ function DigicoMeters({ instanceId, title, config }: WidgetProps) {
           const m = byCh.get(c.channel)
           const a = m?.l ?? -Infinity
           const b = m?.r ?? -Infinity
+          const ap = m?.lp ?? -Infinity
+          const bp = m?.rp ?? -Infinity
           return (
             <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
               <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
               <div className="flex-1 min-h-0 flex gap-0.5">
-                {c.stereo ? <><DgBar db={a} /><DgBar db={b} /></> : <DgBar db={a} />}
+                {c.stereo ? <><DgBar db={a} peak={ap} /><DgBar db={b} peak={bp} /></> : <DgBar db={a} peak={ap} />}
               </div>
               <span className="text-[9px] text-muted-foreground truncate max-w-[3.5rem]" title={c.name ?? `Ch ${c.channel}`}>{c.name || `Ch ${c.channel}`}</span>
             </div>

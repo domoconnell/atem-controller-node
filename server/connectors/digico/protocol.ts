@@ -234,15 +234,16 @@ export interface AuxSendState {
   pan?: number
 }
 
-/** One slot's raw reading from `/Meters/values`. The console packs the meter
- *  level in the high 16 bits and a second reading (peak/RMS) in the low 16 —
- *  both raw 0..~127 ("dB below 0"; convert with meterToDb). The slot number is
- *  bound to a channel+leg by a prior `/Meters/request/<slot>`. Kept raw so we
- *  can both convert for our UI and re-pack when serving a client. */
+/** One slot's raw reading from `/Meters/values`. The console packs a slow
+ *  peak-hold in the HIGH 16 bits and the fast-moving level in the LOW 16 —
+ *  both raw 0..~127 ("dB below 0"; convert with meterToDb). Confirmed on the
+ *  wire: the high half holds steady while the low half dances. The slot number
+ *  is bound to a channel+leg by a prior `/Meters/request/<slot>`. Kept raw so we
+ *  can both convert for our UI and re-pack (peak<<16 | level) when serving. */
 export interface MeterSlot {
   slot: number
-  level: number // raw high 16 bits
-  peak: number // raw low 16 bits
+  level: number // raw low 16 bits — the fast level (what a meter bar shows)
+  peak: number // raw high 16 bits — the slow peak-hold
 }
 
 /** Tap path for one channel leg's post-fader meter (iPad command set). */
@@ -255,10 +256,11 @@ export function meterRequestMessage(slot: number, tap: string): OscMessage {
 }
 /** `/Meters/clear` — drop every meter slot on the console. */
 export const meterClearMessage: OscMessage = { address: '/Meters/clear', args: [] }
-/** `/Meters/values` from (slot, level, peak) triples — for serving a client. */
+/** `/Meters/values` from (slot, level, peak) triples — for serving a client.
+ *  Packed exactly as the console does it: peak in the high 16, level in the low. */
 export function meterValuesMessage(rows: Array<{ slot: number; level: number; peak: number }>): OscMessage {
   const args: number[] = []
-  for (const r of rows) args.push(r.slot, (((r.level & 0xffff) << 16) | (r.peak & 0xffff)) | 0)
+  for (const r of rows) args.push(r.slot, (((r.peak & 0xffff) << 16) | (r.level & 0xffff)) | 0)
   return { address: '/Meters/values', args }
 }
 
@@ -312,7 +314,7 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
       const slot = message.args[i], packed = message.args[i + 1]
       if (typeof slot !== 'number' || typeof packed !== 'number') continue
       const v = packed >>> 0
-      out.push({ slot, level: (v >>> 16) & 0xffff, peak: v & 0xffff })
+      out.push({ slot, level: v & 0xffff, peak: (v >>> 16) & 0xffff })
     }
     return out.length ? { meters: out } : null
   }

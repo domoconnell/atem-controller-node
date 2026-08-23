@@ -153,7 +153,9 @@ class DigicoConnector implements Connector<DigicoConfig> {
       if (this.metersDirty) {
         this.metersDirty = false
         const meters = [...this.meterLevels.entries()].map(([channel, m]) => ({
-          channel, l: meterToDb(m.lLevel), r: meterToDb(m.rLevel),
+          channel,
+          l: meterToDb(m.lLevel), r: meterToDb(m.rLevel),
+          lp: meterToDb(m.lPeak), rp: meterToDb(m.rPeak),
         }))
         ctx.publish('meters', { meters, at: now })
       }
