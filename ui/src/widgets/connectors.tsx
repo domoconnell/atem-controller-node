@@ -310,7 +310,8 @@ function DgBar({ db }: { db: number }) {
   return (
     <div className="relative w-2.5 flex-1 min-h-0 rounded-sm overflow-hidden bg-muted/30">
       <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, var(--live) 0%, var(--live) 62%, var(--busy) 80%, var(--destructive) 100%)' }} />
-      <div className="absolute inset-x-0 top-0 bg-card transition-[height] duration-75" style={{ height: `${100 - pct}%` }} />
+      {/* Linear, ~one-frame transition: smooths between updates without lagging. */}
+      <div className="absolute inset-x-0 top-0 bg-card transition-[height] duration-40 ease-linear" style={{ height: `${100 - pct}%` }} />
     </div>
   )
 }

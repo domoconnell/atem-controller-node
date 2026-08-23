@@ -142,9 +142,9 @@ class DigicoConnector implements Connector<DigicoConfig> {
     this.subscribeConsoleMeters()
     this.cancelMeterSub = ctx.setInterval(() => this.subscribeConsoleMeters(), 5_000)
 
-    // Meters arrive ~25/s; coalesce to ~12/s. Each tick: age silent channels to
-    // the floor, publish dB to our UI, and serve each relay client the meters it
-    // asked for (in ITS slot numbering) from our own data.
+    // Meters arrive ~25/s; publish at ~25/s (40ms) for snappy bars. Each tick:
+    // age silent channels to the floor, publish dB to our UI, and serve each
+    // relay client the meters it asked for (in ITS slot numbering) from our data.
     this.cancelMeterPublish = ctx.setInterval(() => {
       const now = Date.now()
       for (const m of this.meterLevels.values()) {
@@ -161,7 +161,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
         ctx.publish('meters', { meters, at: now })
       }
       this.serveClientMeters()
-    }, 80)
+    }, 40)
 
     if (ctx.config.relayEnabled) await this.startRelay(ctx)
     // Publish relay status ~2x/sec when it changed, and prune idle clients.
