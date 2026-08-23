@@ -37,17 +37,18 @@ echo "pre-flight OK (UI built, server parses, engine audit clean)"
 echo "== 1/5 Connecting to $PI (password asked once) =="
 ssh "${SSH_OPTS[@]}" "$PI" true
 
-echo "== 2/5 Ensuring Node.js >= 18 on the Pi =="
+echo "== 2/5 Ensuring Node.js >= 22 on the Pi =="
+# better-sqlite3 (the DB) requires Node >= 22; older Node segfaults on DB open.
 ssh "${SSH_OPTS[@]}" "$PI" 'bash -s' <<'REMOTE'
 set -e
 need=1
 if command -v node >/dev/null 2>&1; then
   major=$(node -v | sed 's/^v\([0-9]*\).*/\1/')
-  if [ "$major" -ge 18 ]; then need=0; fi
+  if [ "$major" -ge 22 ]; then need=0; fi
 fi
 if [ "$need" = 1 ]; then
-  echo "Installing Node.js 20 via NodeSource..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  echo "Installing Node.js 22 via NodeSource..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
 echo "Node on Pi: $(node -v)"

@@ -6,7 +6,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/atem-controller
-ExecStart=/usr/bin/node src/index.js
+# The connector engine + DB store are TypeScript (server/*.ts), loaded via
+# dynamic import at runtime, so the app must run under tsx (plain node can't
+# import .ts). tsx is a regular dependency so `npm install --omit=dev` keeps it.
+ExecStart=/home/pi/atem-controller/node_modules/.bin/tsx src/index.js
 Restart=always
 RestartSec=3
 User=pi
