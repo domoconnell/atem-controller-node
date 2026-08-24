@@ -38,6 +38,15 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
   const [config, setConfig] = useState<Record<string, unknown>>(inst.config ?? {})
   const [saving, setSaving] = useState(false)
   const hasSchema = !!(schema as { properties?: object } | null)?.properties
+  // Smaart's device/channel are chosen from live dropdowns (SmaartInputPicker),
+  // so drop them from the generic text-field form to avoid two ways to set them.
+  const formSchema = useMemo(() => {
+    const s = schema as { properties?: Record<string, unknown> } | null
+    if (inst.typeId !== 'smaart' || !s?.properties) return schema
+    const props = { ...s.properties }
+    delete props.deviceName; delete props.channelName
+    return { ...s, properties: props }
+  }, [schema, inst.typeId])
   const save = async () => {
     setSaving(true)
     await fetch(`/api/instances/${inst.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -55,9 +64,10 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
         <button onClick={onDelete} className="p-1 rounded text-muted-foreground/40 hover:text-destructive hover:bg-accent"><Trash2 className="size-4" /></button>
       </div>
       {hasSchema
-        ? <SchemaForm schema={schema as never} value={config} onChange={setConfig} />
+        ? <SchemaForm schema={formSchema as never} value={config} onChange={setConfig} />
         : <textarea value={JSON.stringify(config, null, 2)} onChange={(e) => { try { setConfig(JSON.parse(e.target.value)) } catch { /* keep typing */ } }}
             className="w-full h-28 bg-input/40 border border-border rounded-md px-2 py-1.5 text-[12px] font-mono outline-none" />}
+      {inst.typeId === 'smaart' && <SmaartInputPicker instanceId={inst.id} config={config} onChange={setConfig} />}
       {inst.typeId === 'digico' && <DigicoRelayPanel instanceId={inst.id} />}
       <div className="flex items-center gap-4 pt-1 border-t border-border/40">
         <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground"><input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} className="size-3.5 accent-[var(--busy)]" /><FlaskConical className="size-3" /> Simulator</label>
@@ -66,6 +76,49 @@ function InstanceCard({ inst, schema, liveState, onSaved, onDelete }: {
           <Save className="size-3.5" /> {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
+    </div>
+  )
+}
+
+/** Device + channel dropdowns for a Smaart instance, fed from what Smaart is
+ *  actually reporting (its `channels` stream). The channel list follows the
+ *  chosen device. Selections update the card's config; Save persists them. */
+function SmaartInputPicker({ instanceId, config, onChange }: {
+  instanceId: string; config: Record<string, unknown>; onChange: (c: Record<string, unknown>) => void
+}) {
+  const data = useTopic(`mi:${instanceId}:channels`) as { channels?: { deviceName: string; channelName: string }[] } | null
+  const channels = data?.channels ?? []
+  const device = String(config.deviceName ?? '')
+  const channel = String(config.channelName ?? '')
+  // Available devices/channels, keeping any currently-configured value even if
+  // Smaart isn't reporting it right now (so a saved choice isn't silently lost).
+  const devices = [...new Set([...channels.map((c) => c.deviceName), ...(device ? [device] : [])])]
+  const chOptions = [...new Set([
+    ...channels.filter((c) => !device || c.deviceName === device).map((c) => c.channelName),
+    ...(channel ? [channel] : []),
+  ])]
+  const sc = 'bg-input/40 border border-border rounded-md px-2 py-1.5 text-[13px]'
+  return (
+    <div className="rounded-md bg-card border border-border/50 p-2.5 space-y-2">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Smaart input</div>
+      {channels.length === 0 && (
+        <p className="text-[11px] text-muted-foreground/70">No inputs reported yet — connect Smaart and start a measurement to populate these.</p>
+      )}
+      <label className="flex items-center gap-2 text-[12px]">
+        <span className="w-16 shrink-0 text-muted-foreground">Device</span>
+        <select value={device} onChange={(e) => onChange({ ...config, deviceName: e.target.value, channelName: '' })} className={cn(sc, 'flex-1 min-w-0')}>
+          <option value="">First available</option>
+          {devices.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-[12px]">
+        <span className="w-16 shrink-0 text-muted-foreground">Channel</span>
+        <select value={channel} onChange={(e) => onChange({ ...config, channelName: e.target.value })} className={cn(sc, 'flex-1 min-w-0')}>
+          <option value="">First on device</option>
+          {chOptions.map((ch) => <option key={ch} value={ch}>{ch}</option>)}
+        </select>
+      </label>
+      <p className="text-[10px] text-muted-foreground/60">Changing the device resets the channel. Blank = let Smaart pick the first. Hit Save to apply.</p>
     </div>
   )
 }
