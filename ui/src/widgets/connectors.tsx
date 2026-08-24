@@ -276,11 +276,19 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
 registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', supportedTypeIds: ['smaart'], defaultSize: { w: 6, h: 4 }, Component: SmaartSpectrum })
 
 /* ================================================================== DIGICO */
-type DgCh = { channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
+type DgType = 'input' | 'aux' | 'matrix' | 'group'
+type DgCh = { type?: DgType; channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
 type DgMeter = { channel: number; l: number; r: number; lp: number; rp: number }
-/** Channels actually in use: patched (input_type ≠ 0) or renamed off default. */
+const DG_TYPE_ORDER: Record<DgType, number> = { input: 0, aux: 1, matrix: 2, group: 3 }
+const DG_TYPE_LABEL: Record<DgType, string> = { input: 'IN', aux: 'AUX', matrix: 'MTX', group: 'GRP' }
+/** Channels actually in use: inputs that are patched/renamed; output busses that
+ *  reported a name (auxes, matrices, groups). Sorted by family then number. */
 function dgInUse(channels?: DgCh[]): DgCh[] {
-  return (channels ?? []).filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))).sort((a, b) => a.channel - b.channel)
+  return (channels ?? []).filter((c) => {
+    const t = c.type ?? 'input'
+    if (t === 'input') return (c.inputType != null && c.inputType !== 0) || (c.name && !/^Ch \d+$/.test(c.name))
+    return !!c.name // output bus that the scan found
+  }).sort((a, b) => (DG_TYPE_ORDER[a.type ?? 'input'] - DG_TYPE_ORDER[b.type ?? 'input']) || a.channel - b.channel)
 }
 /** Parse a channel-range string ("1-16", "1,2,5-8") to channel numbers; blank
  *  defaults to 1..fallback (the first N channels). */
@@ -297,9 +305,11 @@ function dgParseChannels(str: string | undefined, fallback = 32): number[] {
 /** Resolve the selected channel numbers against the live scan (unscanned ones
  *  become mono placeholders so the layout is stable while the scan fills in). */
 function dgSelected(config: Record<string, unknown>, channels?: DgCh[]): DgCh[] {
-  const byNum = new Map((channels ?? []).map((c) => [c.channel, c]))
+  // Meters are input-only for now, so resolve the range against input channels.
+  const inputs = (channels ?? []).filter((c) => (c.type ?? 'input') === 'input')
+  const byNum = new Map(inputs.map((c) => [c.channel, c]))
   return dgParseChannels(config.channels as string | undefined).map(
-    (n) => byNum.get(n) ?? { channel: n, name: null, muted: null, faderDb: null, stereo: false, inputType: null },
+    (n) => byNum.get(n) ?? { type: 'input' as const, channel: n, name: null, muted: null, faderDb: null, stereo: false, inputType: null },
   )
 }
 /** dB (−60..0) → fill height %. −Infinity / off → 0. */
@@ -369,15 +379,19 @@ function DigicoChannels({ instanceId, title }: WidgetProps) {
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
       <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1 space-y-0.5">
-        {rows.length === 0 ? <div className="text-[11px] text-muted-foreground/50 px-2 py-3 text-center">No channels scanned yet.<br />Connect the console.</div> : rows.map((c) => (
-          <div key={c.channel} className="flex items-center gap-2 rounded-md px-2 py-1 bg-card border border-border/40">
-            <span className="shrink-0 w-6 text-[10px] font-mono text-muted-foreground/60 text-right tabular-nums">{c.channel}</span>
-            <span className={cn('shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
+        {rows.length === 0 ? <div className="text-[11px] text-muted-foreground/50 px-2 py-3 text-center">No channels scanned yet.<br />Connect the console.</div> : rows.map((c) => {
+          const t = c.type ?? 'input'
+          return (
+          <div key={`${t}:${c.channel}`} className="flex items-center gap-2 rounded-md px-2 py-1 bg-card border border-border/40">
+            <span className="shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5 bg-muted/60 text-muted-foreground w-7 text-center" title={t}>{DG_TYPE_LABEL[t]}</span>
+            <span className="shrink-0 w-5 text-[10px] font-mono text-muted-foreground/60 text-right tabular-nums">{c.channel}</span>
+            {t === 'input' ? <span className={cn('shrink-0 text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span> : null}
             <span className="flex-1 min-w-0 truncate text-[12px] font-medium">{c.name || `Ch ${c.channel}`}</span>
             {c.muted ? <span className="shrink-0 text-[8px] font-bold uppercase text-destructive">mute</span> : null}
             <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70 w-12 text-right">{fmtFader(c.faderDb)}</span>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

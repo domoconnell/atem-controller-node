@@ -43,6 +43,12 @@ export const digicoConfigSchema = z.object({
     .describe('Must MATCH the console’s enabled External Control device, or commands are ignored. “iPad” = the DiGiCo Pad device (no address prefix, fader/send levels in dB) — the set consoles run with iPads connected, and Companion’s default. “OSC” = the “Other OSC” device (/sd addresses, 0..1 taper faders). (S-series is a separate scheme, not yet supported.)'),
   channelCount: z.number().int().min(0).max(128).default(32)
     .describe('How many input channels WE query at startup to pre-load names/mutes/faders. Not a console setting — just how much state we hydrate up front (the desk auto-sends changes after that).'),
+  auxCount: z.number().int().min(0).max(64).default(16)
+    .describe('How many aux OUTPUTS to scan for names/faders. Over-scanning is harmless — the desk just ignores ones it doesn’t have.'),
+  matrixCount: z.number().int().min(0).max(64).default(16)
+    .describe('How many matrix OUTPUTS to scan.'),
+  groupCount: z.number().int().min(0).max(64).default(24)
+    .describe('How many control GROUPS to scan.'),
   pollIntervalSeconds: z.number().int().min(5).max(600).default(30)
     .describe('Keep-alive: how often we re-query a value to keep the link warm and resync after a console reboot. Our setting, not the desk’s.'),
   timeoutSeconds: z.number().int().min(10).max(300).default(45)
@@ -93,7 +99,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private cancelRefresh: (() => void) | null = null
   private cancelWatchdog: (() => void) | null = null
   private lastMessageAt = 0
-  private channels = new Map<number, ChannelState>()
+  private channels = new Map<string, ChannelState>() // key `${type}:${number}`
   private auxSends = new Map<string, AuxSendState>() // key `${ch}:${aux}`
   // We are the console's sole meter client: WE subscribe every in-use channel to
   // a console meter slot (appSlots: our slot → channel+leg), receive its values,
@@ -255,8 +261,11 @@ class DigicoConnector implements Connector<DigicoConfig> {
    *  console just re-binds each slot — so we can call it periodically to cover
    *  channels the scan only just learned and to survive a console restart. */
   private subscribeConsoleMeters(): void {
+    // Input channels only for now — output busses (aux/matrix/group) are scanned
+    // and shown, but their post-fader meter tap isn't confirmed yet, so they're
+    // not requested. (DG_TYPES.meterTap is null for them.)
     const inUse = [...this.channels.values()]
-      .filter((c) => (c.inputType != null && c.inputType !== 0) || (c.name != null && !/^Ch \d+$/.test(c.name)))
+      .filter((c) => c.type === 'input' && ((c.inputType != null && c.inputType !== 0) || (c.name != null && !/^Ch \d+$/.test(c.name))))
       .sort((a, b) => a.channel - b.channel)
     if (inUse.length === 0) return
     const next = new Map<number, { channel: number; leg: 'l' | 'r' }>()
@@ -427,12 +436,15 @@ class DigicoConnector implements Connector<DigicoConfig> {
     ctx.setStatus('online')
 
     if (update.channel) {
-      const existing = this.channels.get(update.channel.channel) ?? {
-        channel: update.channel.channel,
+      // Keyed by (type, number): each family numbers from 1 independently.
+      const key = `${update.channel.type}:${update.channel.channel}`
+      const existing = this.channels.get(key) ?? {
+        type: update.channel.type, channel: update.channel.channel,
         name: null, muted: null, faderDb: null, stereo: null, inputType: null,
       }
       // Partial merge: the console sends one leaf at a time.
-      this.channels.set(update.channel.channel, {
+      this.channels.set(key, {
+        type: update.channel.type,
         channel: update.channel.channel,
         name: update.channel.name ?? existing.name,
         muted: update.channel.muted ?? existing.muted,
@@ -495,7 +507,13 @@ class DigicoConnector implements Connector<DigicoConfig> {
   private query(): void {
     const ctx = this.ctx
     if (!ctx) return
-    for (const message of queryMessages(this.profile().prefix, ctx.config.channelCount || 32)) {
+    const counts = {
+      input: ctx.config.channelCount || 32,
+      aux: ctx.config.auxCount ?? 16,
+      matrix: ctx.config.matrixCount ?? 16,
+      group: ctx.config.groupCount ?? 24,
+    }
+    for (const message of queryMessages(this.profile().prefix, counts)) {
       this.send(message)
     }
   }

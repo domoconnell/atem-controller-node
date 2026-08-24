@@ -209,7 +209,35 @@ export function normaliseAddress(address: string): string {
   return address.startsWith('/sd/') ? address.slice(3) : address
 }
 
+/** The console's channel families. Each has its own address root and its own
+ *  numbering that restarts at 1, so a channel is identified by (type, number).
+ *  Inputs meter their SOURCE (post-input); output busses meter their OUTPUT
+ *  (post-fader) — a different tap the iPad protocol doesn't document, so
+ *  `meterTap` is null for those until a live capture confirms it. */
+export type DgChannelType = 'input' | 'aux' | 'matrix' | 'group'
+export interface DgTypeSpec {
+  type: DgChannelType
+  root: string // OSC root under the command-set prefix, e.g. 'Input_Channels'
+  label: string
+  nameLeaf: string // leaf under /root/N/ carrying the channel name
+  hasFormat: boolean // only input channels expose stereo_mode / input_type
+  scanLeaves: string[] // leaves to query to hydrate this type
+  meterTap: ((n: number, leg: 'l' | 'r') => string) | null
+}
+export const DG_TYPES: DgTypeSpec[] = [
+  {
+    type: 'input', root: 'Input_Channels', label: 'Input', nameLeaf: 'Channel_Input/name', hasFormat: true,
+    scanLeaves: ['Channel_Input/name', 'mute', 'fader', 'Channel_Input/stereo_mode', 'Channel_Input/input_type'],
+    meterTap: (n, leg) => `/Input_Channels/${n}/Channel_Input/post_meter/${leg === 'r' ? 'right' : 'left'}`,
+  },
+  { type: 'aux', root: 'Aux_Outputs', label: 'Aux', nameLeaf: 'Buss_Trim/name', hasFormat: false, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: null },
+  { type: 'matrix', root: 'Matrix_Outputs', label: 'Matrix', nameLeaf: 'Buss_Trim/name', hasFormat: false, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: null },
+  { type: 'group', root: 'Control_Groups', label: 'Group', nameLeaf: 'name', hasFormat: false, scanLeaves: ['name', 'mute', 'fader'], meterTap: null },
+]
+export const DG_TYPE_BY_ROOT: Record<string, DgTypeSpec> = Object.fromEntries(DG_TYPES.map((s) => [s.root, s]))
+
 export interface ChannelState {
+  type: DgChannelType
   channel: number
   name: string | null
   muted: boolean | null
@@ -333,14 +361,17 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
     }
   }
 
-  const channel = /^\/Input_Channels\/(\d+)\/(.+)$/.exec(address)
-  if (channel) {
-    const number = Number(channel[1])
-    const leaf = channel[2] ?? ''
+  // Channel state for any family (inputs, auxes, matrices, control groups). The
+  // root selects the type; each has its own numbering that restarts at 1.
+  const chMatch = /^\/([A-Za-z_]+)\/(\d+)\/(.+)$/.exec(address)
+  const spec = chMatch ? DG_TYPE_BY_ROOT[chMatch[1]] : undefined
+  if (chMatch && spec) {
+    const number = Number(chMatch[2])
+    const leaf = chMatch[3] ?? ''
     const value = message.args[0]
+    const blank = { type: spec.type, name: null, muted: null, faderDb: null, stereo: null, inputType: null }
 
-    const blank = { name: null, muted: null, faderDb: null, stereo: null, inputType: null }
-    if (leaf === 'Channel_Input/name') {
+    if (leaf === spec.nameLeaf) {
       return { channel: { channel: number, ...blank, name: String(value ?? '') } }
     }
     if (leaf === 'mute') {
@@ -351,25 +382,25 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
       const db = typeof value === 'number' ? decodeLevel(value, directDb) : null
       return { channel: { channel: number, ...blank, faderDb: db == null || db === -Infinity ? db : Math.round(db * 10) / 10 } }
     }
-    // Channel format — 1 = mono, 2 = stereo. Names/format are how we build the
-    // channel list the meters map onto.
-    if (leaf === 'Channel_Input/stereo_mode') {
+    if (spec.hasFormat && leaf === 'Channel_Input/stereo_mode') {
       return { channel: { channel: number, ...blank, stereo: Number(value) >= 2 } }
     }
-    if (leaf === 'Channel_Input/input_type') {
+    if (spec.hasFormat && leaf === 'Channel_Input/input_type') {
       return { channel: { channel: number, ...blank, inputType: typeof value === 'number' ? Math.round(value) : null } }
     }
-    // Aux sends (ch → aux): level / on / pan — the IEM-mixing surface.
-    const aux = parseAuxSend(address)
-    if (aux) {
-      const v = value
-      return {
-        auxSend: {
-          ch: aux.ch, aux: aux.aux,
-          level: aux.leaf === 'send_level' && typeof v === 'number' ? decodeLevel(v, directDb) : undefined,
-          on: aux.leaf === 'send_on' ? Number(v) > 0 : undefined,
-          pan: aux.leaf === 'send_pan' && typeof v === 'number' ? v : undefined,
-        },
+    // Aux sends (input ch → aux): level / on / pan — the IEM-mixing surface.
+    if (spec.type === 'input') {
+      const aux = parseAuxSend(address)
+      if (aux) {
+        const v = value
+        return {
+          auxSend: {
+            ch: aux.ch, aux: aux.aux,
+            level: aux.leaf === 'send_level' && typeof v === 'number' ? decodeLevel(v, directDb) : undefined,
+            on: aux.leaf === 'send_on' ? Number(v) > 0 : undefined,
+            pan: aux.leaf === 'send_pan' && typeof v === 'number' ? v : undefined,
+          },
+        }
       }
     }
     return null
@@ -384,15 +415,19 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
 }
 
 /** Query messages the console answers with current values. */
-export function queryMessages(prefix: string, channelCount: number): OscMessage[] {
-  const messages: OscMessage[] = [{ address: `${prefix}/Macros/Buttons/?`, args: [] }]
+/** How many of each channel family to scan. Over-scanning is harmless — the
+ *  desk simply doesn't answer for channels it doesn't have. */
+export interface DgCounts { input: number; aux: number; matrix: number; group: number }
 
-  for (let channel = 1; channel <= channelCount; channel++) {
-    messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/name/?`, args: [] })
-    messages.push({ address: `${prefix}/Input_Channels/${channel}/mute/?`, args: [] })
-    messages.push({ address: `${prefix}/Input_Channels/${channel}/fader/?`, args: [] })
-    messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/stereo_mode/?`, args: [] })
-    messages.push({ address: `${prefix}/Input_Channels/${channel}/Channel_Input/input_type/?`, args: [] })
+export function queryMessages(prefix: string, counts: DgCounts): OscMessage[] {
+  const messages: OscMessage[] = [{ address: `${prefix}/Macros/Buttons/?`, args: [] }]
+  for (const spec of DG_TYPES) {
+    const n = counts[spec.type] ?? 0
+    for (let channel = 1; channel <= n; channel++) {
+      for (const leaf of spec.scanLeaves) {
+        messages.push({ address: `${prefix}/${spec.root}/${channel}/${leaf}/?`, args: [] })
+      }
+    }
   }
   return messages
 }
