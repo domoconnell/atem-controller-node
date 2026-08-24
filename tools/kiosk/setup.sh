@@ -95,6 +95,17 @@ systemctl set-default multi-user.target   # boot to console, not a desktop
 
 # ---- 4/6 launch X + Chromium on login -------------------------------------
 echo "== 4/6 kiosk launcher =="
+# Force the KMS 'modesetting' driver. On a Pi 5, Xorg otherwise also probes the
+# legacy 'fbdev' driver and dies with "Cannot run in framebuffer mode", so the
+# screen never comes up even with a monitor attached.
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/99-kiosk-modeset.conf <<'EOF'
+Section "Device"
+    Identifier "GPU0"
+    Driver "modesetting"
+EndSection
+EOF
+
 # .xinitrc: what X runs. Blanking is disabled so the monitor never sleeps; a
 # persistent Chromium profile keeps our per-display browser id + cache.
 cat > "$KIOSK_HOME/.xinitrc" <<EOF
