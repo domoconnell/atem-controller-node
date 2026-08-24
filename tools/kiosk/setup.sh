@@ -152,8 +152,11 @@ if [ "$INSTALL_SATELLITE" = 1 ]; then
     echo "  Satellite already installed."
   fi
 
-  # Point it at the main Companion. The config file (COMPANION_IP/PORT) is the
-  # source of truth read on boot; we also poke the REST API so it applies now.
+  # Point it at the main Companion. NOTE: once Satellite has started it owns its
+  # config internally and RE-COMMENTS /boot/satellite-config (that file is only a
+  # first-boot seed), so the REST API below is the reliable lever — the file edit
+  # only helps if Satellite hasn't started yet. Satellite also auto-names its
+  # installation after the hostname, so the deck shows as "sil-kiosk-1" already.
   for cfg in /boot/firmware/satellite-config /boot/satellite-config; do
     if [ -f "$cfg" ]; then
       echo "  setting $cfg -> $COMPANION_HOST:$COMPANION_PORT"
