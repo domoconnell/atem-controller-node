@@ -69,27 +69,27 @@ const timeGauge = (sec?: number | null): Gauge | null => sec == null ? null
 function Shell({ rec, n }: { rec: Recorder; n: Norm }) {
   const Icon = n.icon
   return (
-    <div className={cn('relative overflow-hidden rounded-xl border pl-3.5 pr-3 py-2.5 flex flex-col gap-1.5', TONE_BG[n.tone], n.tone === 'off' && 'opacity-55')}>
-      <span className={cn('absolute left-0 top-0 bottom-0 w-1', n.tone === 'rec' && 'animate-pulse')} style={{ background: ACCENT[n.tone] }} />
-      <div className="flex items-center gap-2 min-w-0">
-        <span className={cn('inline-flex items-center gap-1 text-[9.5px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 shrink-0', STATUS_PILL[n.tone])}>
-          {n.tone === 'rec' && <span className="size-1.5 rounded-full bg-current animate-pulse" />}{n.statusLabel}
+    <div className={cn('relative overflow-hidden rounded-lg border pl-2.5 pr-2 py-1.5 flex flex-col gap-1', TONE_BG[n.tone], n.tone === 'off' && 'opacity-55')}>
+      <span className={cn('absolute left-0 top-0 bottom-0 w-0.5', n.tone === 'rec' && 'animate-pulse')} style={{ background: ACCENT[n.tone] }} />
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={cn('inline-flex items-center gap-1 text-[8.5px] font-black uppercase tracking-wider rounded px-1 py-0.5 shrink-0', STATUS_PILL[n.tone])}>
+          {n.tone === 'rec' && <span className="size-1 rounded-full bg-current animate-pulse" />}{n.statusLabel}
         </span>
-        <span className="text-[13px] font-bold truncate">{rec.label}</span>
-        <span className="ml-auto shrink-0 text-[8px] font-bold uppercase tracking-[0.14em] text-muted-foreground/60">{rec.role}</span>
+        <span className="text-[11px] font-bold truncate">{rec.label}</span>
+        <span className="ml-auto shrink-0 text-[7px] font-bold uppercase tracking-[0.14em] text-muted-foreground/60">{rec.role}</span>
       </div>
-      <div className={cn('text-[27px] font-black font-mono tabular-nums leading-none tracking-tight', n.tone === 'rec' ? 'text-destructive' : n.tone === 'play' ? 'text-live' : 'text-foreground/85')}>{n.big || '––:––:––'}</div>
-      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground min-w-0">
-        <Icon className="size-3 shrink-0" />
+      <div className={cn('text-[16px] font-black font-mono tabular-nums leading-none tracking-tight', n.tone === 'rec' ? 'text-destructive' : n.tone === 'play' ? 'text-live' : 'text-foreground/85')}>{n.big || '––:––:––'}</div>
+      <div className="flex items-center gap-1 text-[9px] text-muted-foreground min-w-0">
+        <Icon className="size-2.5 shrink-0" />
         <span className="truncate">{[n.format, n.sub].filter(Boolean).join(' · ') || (n.tone === 'off' ? 'offline' : '—')}</span>
       </div>
       {n.gauge && (
-        <div className="flex items-center gap-2">
-          <span className="text-[8px] font-bold uppercase text-muted-foreground/50 shrink-0 inline-flex items-center gap-0.5"><HardDrive className="size-2.5" /></span>
-          <div className="flex-1 h-1.5 rounded-full bg-muted/40 overflow-hidden">
+        <div className="flex items-center gap-1.5">
+          <HardDrive className="size-2.5 text-muted-foreground/50 shrink-0" />
+          <div className="flex-1 h-1 rounded-full bg-muted/40 overflow-hidden">
             <div className={cn('h-full rounded-full transition-[width] duration-500', n.gauge.warn ? 'bg-destructive' : n.gauge.frac < 0.25 ? 'bg-busy' : 'bg-live')} style={{ width: `${Math.max(3, n.gauge.frac * 100)}%` }} />
           </div>
-          <span className={cn('text-[9.5px] font-semibold tabular-nums shrink-0', n.gauge.warn && 'text-destructive')}>{n.gauge.label}</span>
+          <span className={cn('text-[8.5px] font-semibold tabular-nums shrink-0', n.gauge.warn && 'text-destructive')}>{n.gauge.label}</span>
         </div>
       )}
     </div>
@@ -182,7 +182,7 @@ function RecordStatus({ title }: WidgetProps) {
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(215px,1fr))] content-start">
+      <div className="flex-1 min-h-0 overflow-y-auto p-1.5 grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(140px,1fr))] content-start">
         {recorders.length === 0 && <div className="text-[11px] text-muted-foreground/50 p-1">No recorders configured. Add them in Settings → Recorders.</div>}
         {records.length > 0 && <SectionHead label="Recorders" n={records.length} />}
         {records.map((r) => <RecorderCard key={r.id} rec={r} />)}
