@@ -53,6 +53,16 @@ import { ProdComSimulator } from './simulator.js'
  * already crossed the bus and been written to the event database.
  */
 
+/** A list of strings that also tolerates what a Settings text field / an older
+ *  saved config yields — a comma/newline-separated string, or an empty string —
+ *  by splitting it. Without this, watchWords stored as "" errors the whole
+ *  connector on config validation ("expected array, received string"). */
+const stringList = (description: string) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' ? v.split(/[\n,]/).map((s) => s.trim()).filter(Boolean) : v ?? []),
+    z.array(z.string()),
+  ).describe(description)
+
 const configSchema = z.object({
   host: z
     .string()
@@ -70,17 +80,11 @@ const configSchema = z.object({
     .string()
     .optional()
     .describe('Only if ProdCom has a pre-shared key set. Leave blank if it does not'),
-  channels: z
-    .array(z.string())
-    .default([])
-    .describe('Channel names or IDs to follow. Leave empty for all of them'),
-  watchWords: z
-    .array(z.string())
-    .default([])
-    .describe(
-      'Words that raise an alert and go in the show record — names, roles, "medical". ' +
-        "ProdCom's own keywords are picked up automatically and do not need repeating here",
-    ),
+  channels: stringList('Channel names or IDs to follow. Leave empty for all of them'),
+  watchWords: stringList(
+    'Words that raise an alert and go in the show record — names, roles, "medical". ' +
+      "ProdCom's own keywords are picked up automatically and do not need repeating here",
+  ),
   watchWholeWord: z
     .boolean()
     .default(true)
