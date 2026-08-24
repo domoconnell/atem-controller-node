@@ -198,7 +198,7 @@ function SmaartPanel({ instanceId, title }: WidgetProps) {
           return (
             <div key={f} className="space-y-0.5">
               <div className="flex justify-between text-[10px] text-muted-foreground"><span>{label}</span><span className="tabular-nums font-semibold text-foreground">{v != null ? v.toFixed(1) : '—'}</span></div>
-              <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden"><div className={cn('h-full rounded-full', splTone(v) === 'alarm' ? 'bg-destructive' : splTone(v) === 'busy' ? 'bg-busy' : 'bg-live')} style={{ width: `${pct(v, 60, 110) * 100}%` }} /></div>
+              <div className="h-1.5 rounded-full bg-muted/40 overflow-hidden"><div className={cn('h-full rounded-full transition-[width] duration-200 ease-out', splTone(v) === 'alarm' ? 'bg-destructive' : splTone(v) === 'busy' ? 'bg-busy' : 'bg-live')} style={{ width: `${pct(v, 60, 110) * 100}%` }} /></div>
             </div>
           )
         })}
@@ -228,6 +228,23 @@ function specBarColor(db: number): string {
   return `hsl(${Math.round(140 - t * 140)} 80% 55%)`
 }
 const fLabel = (hz: number) => (hz >= 1000 ? `${hz / 1000}k` : `${hz}`)
+/** Per-bin exponential smoothing with a fast attack and slow release, so RTA
+ *  bars track transients but settle smoothly instead of flickering frame to
+ *  frame. Runs on each new spectrum frame; combine with a CSS height transition
+ *  for the between-frame interpolation. */
+function useSmoothedMags(raw: number[] | undefined, rise = 0.5, fall = 0.16): number[] {
+  const prev = useRef<number[]>([])
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!raw || raw.length === 0) { if (prev.current.length) { prev.current = []; tick((t) => t + 1) } return }
+    prev.current = raw.map((v, i) => {
+      const q = prev.current[i]
+      return q == null || !Number.isFinite(q) ? v : q + (v > q ? rise : fall) * (v - q)
+    })
+    tick((t) => t + 1)
+  }, [raw, rise, fall])
+  return prev.current.length ? prev.current : (raw ?? [])
+}
 function SmaartSpectrum({ instanceId, title }: WidgetProps) {
   const d = useStream(instanceId, 'spectrum') as { freqs?: number[]; inputs?: SpectrumInput[]; weighting?: string; octaveFraction?: number } | null
   const inputs = d?.inputs ?? []
@@ -235,7 +252,7 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
   const [sel, setSel] = useState<string>('')
   useEffect(() => { if ((!sel || !inputs.some((i) => i.id === sel)) && inputs[0]) setSel(inputs[0].id) }, [inputs, sel])
   const cur = inputs.find((i) => i.id === sel) ?? inputs[0]
-  const mags = cur?.magnitudes ?? []
+  const mags = useSmoothedMags(cur?.magnitudes)
   usePulseOn(inputs.map((i) => i.id).join())
   const norm = (db: number) => Math.max(0, Math.min(1, (db - SPEC_MIN) / (SPEC_MAX - SPEC_MIN)))
   const labelIdx = [7, 12, 17, 22, 27].filter((i) => i < freqs.length)  // 100 / 315 / 1k / 3.15k / 10k
@@ -258,7 +275,7 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
         ))}
         <div className="absolute inset-x-3 top-1 bottom-7 flex items-end gap-[2px]">
           {mags.length === 0 ? <div className="text-[11px] text-muted-foreground/50 m-auto">No spectrum.</div> : mags.map((db, i) => (
-            <div key={i} className="flex-1 min-w-0 rounded-t-[1px] transition-[height] duration-100"
+            <div key={i} className="flex-1 min-w-0 rounded-t-[1px] transition-[height] duration-150 ease-linear"
               style={{ height: `${norm(db) * 100}%`, background: specBarColor(db) }}
               title={`${fLabel(freqs[i])} Hz · ${db.toFixed(1)} dB`} />
           ))}
