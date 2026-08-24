@@ -67,8 +67,8 @@ same (`kiosk-1`, *Dave FOH*, etc.) is what makes it obvious on the night.
 
 - `apt-get update` + `apt-get full-upgrade -y` (brings a freshly-flashed card
   fully up to date — skip with `FULL_UPGRADE=0` on re-runs), then installs
-  prereqs (`curl`, `ca-certificates`) and the kiosk stack (Xorg, Openbox,
-  Chromium, unclutter). apt runs fully non-interactive (no config/needrestart
+  prereqs (`curl`, `ca-certificates`) and the kiosk stack (`cage`, the Wayland
+  kiosk compositor, and Chromium). apt runs fully non-interactive (no config/needrestart
   prompts to hang a headless run), and `autoremove` cleans up after.
 - Sets the hostname, tty1 autologin, the kiosk launcher, disables blanking, and
   installs + points Companion Satellite. It does **not** touch anything you set
@@ -78,6 +78,6 @@ same (`kiosk-1`, *Dave FOH*, etc.) is what makes it obvious on the night.
 
 - **Pi 5** recommended (the surface is a live web app). Pi 4 works; Pi 3 will be
   sluggish.
-- Chromium runs under a tiny Xorg + Openbox session with a persistent profile,
+- Chromium runs full-screen under `cage` (Wayland/KMS) with a persistent profile,
   console/DPMS blanking disabled, and auto-relaunch if it ever crashes.
 - The script is idempotent — safe to re-run to change the URL or update flags.

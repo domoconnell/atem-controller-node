@@ -71,15 +71,14 @@ fi
 # Prereqs for the Satellite install (curl over https) — present on most images,
 # but not guaranteed on a minimal one.
 apt-get install -y --no-install-recommends curl ca-certificates
-# Xorg + a tiny window manager gives Chromium a real fullscreen window and
-# keyboard focus; unclutter hides the mouse pointer. chromium-browser is the
-# Raspberry Pi OS package (falls back to chromium on plain Debian).
-apt-get install -y --no-install-recommends \
-  xserver-xorg xinit x11-xserver-utils openbox unclutter
-if ! apt-get install -y --no-install-recommends chromium-browser; then
-  apt-get install -y --no-install-recommends chromium
+# cage is a tiny Wayland kiosk compositor that shows ONE app full-screen and
+# talks to KMS directly. On a Pi 5 this is far more reliable than Xorg, whose
+# modesetting/fbdev probing fails ("no screens found") on the vc4 display.
+apt-get install -y --no-install-recommends cage
+if ! apt-get install -y --no-install-recommends chromium; then
+  apt-get install -y --no-install-recommends chromium-browser
 fi
-CHROMIUM_BIN="$(command -v chromium-browser || command -v chromium)"
+CHROMIUM_BIN="$(command -v chromium || command -v chromium-browser)"
 echo "  chromium: $CHROMIUM_BIN"
 apt-get autoremove -y --purge 2>/dev/null || true
 
@@ -93,60 +92,41 @@ ExecStart=-/sbin/agetty --autologin ${KIOSK_USER} --noclear %I \$TERM
 EOF
 systemctl set-default multi-user.target   # boot to console, not a desktop
 
-# ---- 4/6 launch X + Chromium on login -------------------------------------
+# ---- 4/6 launch cage + Chromium on login -----------------------------------
 echo "== 4/6 kiosk launcher =="
-# Force the KMS 'modesetting' driver. On a Pi 5, Xorg otherwise also probes the
-# legacy 'fbdev' driver and dies with "Cannot run in framebuffer mode", so the
-# screen never comes up even with a monitor attached.
-mkdir -p /etc/X11/xorg.conf.d
-cat > /etc/X11/xorg.conf.d/99-kiosk-modeset.conf <<'EOF'
-Section "Device"
-    Identifier "GPU0"
-    Driver "modesetting"
-EndSection
-EOF
-
-# .xinitrc: what X runs. Blanking is disabled so the monitor never sleeps; a
-# persistent Chromium profile keeps our per-display browser id + cache.
-cat > "$KIOSK_HOME/.xinitrc" <<EOF
+# The Chromium command cage runs full-screen (Wayland/Ozone). A persistent
+# profile keeps this display's browser id + cache across reboots.
+cat > "$KIOSK_HOME/.kiosk-chromium.sh" <<EOF
 #!/bin/sh
-xset -dpms; xset s off; xset s noblank
-unclutter -idle 0.5 -root &
-openbox-session &
-while true; do
-  "$CHROMIUM_BIN" \\
-    --kiosk --noerrdialogs --disable-infobars --disable-translate \\
-    --disable-session-crashed-bubble --disable-features=TranslateUI \\
-    --no-first-run --fast --fast-start --check-for-update-interval=31536000 \\
-    --user-data-dir="$KIOSK_HOME/.kiosk-chromium" \\
-    "$KIOSK_URL"
-  sleep 2   # if Chromium ever exits, relaunch it
-done
+exec "$CHROMIUM_BIN" --ozone-platform=wayland --kiosk --noerrdialogs \\
+  --disable-infobars --disable-session-crashed-bubble --disable-features=TranslateUI \\
+  --no-first-run --check-for-update-interval=31536000 \\
+  --user-data-dir="$KIOSK_HOME/.kiosk-chromium" \\
+  "$KIOSK_URL"
 EOF
+chmod +x "$KIOSK_HOME/.kiosk-chromium.sh"
 
-# .bash_profile: on the physical console (tty1), start X — which runs .xinitrc.
-# Idempotently rewrite our managed block. We LOOP startx rather than exec it
-# once: with no monitor attached startx fails immediately, and exec-once would
-# kill the login shell → getty respawns → hits its start-limit → 'failed'. The
-# loop just retries every few seconds, so the kiosk comes up the moment a
-# display is present and getty stays healthy.
+# .bash_profile: on the physical console (tty1), run cage — but only when a
+# monitor is actually connected, otherwise idle. cage exits if Chromium dies, so
+# the loop relaunches it; looping (not exec) keeps getty@tty1 healthy when
+# headless. Idempotently rewrite everything from the first kiosk marker on, so a
+# re-run replaces any older launcher block cleanly.
 touch "$KIOSK_HOME/.bash_profile"
-sed -i '/# kiosk-managed-start/,/# kiosk-managed-end/d' "$KIOSK_HOME/.bash_profile"
-cat >> "$KIOSK_HOME/.bash_profile" <<'EOF'
+sed -i '/# kiosk-managed/,$d' "$KIOSK_HOME/.bash_profile"
+cat >> "$KIOSK_HOME/.bash_profile" <<EOF
 # kiosk-managed-start
-if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  # Only start X when a display is actually connected — otherwise idle quietly.
-  # (Repeatedly launching Xorg on a headless Pi thrashes the KMS layer.)
+if [ "\$(tty)" = "/dev/tty1" ] && [ -z "\${WAYLAND_DISPLAY:-}" ] && [ -z "\${DISPLAY:-}" ]; then
+  export XDG_RUNTIME_DIR="/run/user/\$(id -u)"
   while true; do
     if grep -qx connected /sys/class/drm/*/status 2>/dev/null; then
-      startx -- -nocursor
+      cage -- "$KIOSK_HOME/.kiosk-chromium.sh"
     fi
     sleep 5
   done
 fi
 # kiosk-managed-end
 EOF
-chown "$KIOSK_USER:$KIOSK_USER" "$KIOSK_HOME/.xinitrc" "$KIOSK_HOME/.bash_profile"
+chown "$KIOSK_USER:$KIOSK_USER" "$KIOSK_HOME/.kiosk-chromium.sh" "$KIOSK_HOME/.bash_profile"
 
 # ---- 5/6 kill console blanking at the kernel level -------------------------
 echo "== 5/6 disable console blanking =="
