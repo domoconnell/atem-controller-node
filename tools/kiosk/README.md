@@ -63,6 +63,17 @@ A **position** (e.g. *Dave FOH*) is one Displays row in Settings and pairs a
 Keeping the display id, the Satellite name, and the Displays-panel name all the
 same (`kiosk-1`, *Dave FOH*, etc.) is what makes it obvious on the night.
 
+## What the script does to a fresh image
+
+- `apt-get update` + `apt-get full-upgrade -y` (brings a freshly-flashed card
+  fully up to date — skip with `FULL_UPGRADE=0` on re-runs), then installs
+  prereqs (`curl`, `ca-certificates`) and the kiosk stack (Xorg, Openbox,
+  Chromium, unclutter). apt runs fully non-interactive (no config/needrestart
+  prompts to hang a headless run), and `autoremove` cleans up after.
+- Sets the hostname, tty1 autologin, the kiosk launcher, disables blanking, and
+  installs + points Companion Satellite. It does **not** touch anything you set
+  at flash time (user, SSH, wifi, locale/timezone — do those in Imager).
+
 ## Notes
 
 - **Pi 5** recommended (the surface is a live web app). Pi 4 works; Pi 3 will be

@@ -29,6 +29,7 @@ COMPANION_HOST="${COMPANION_HOST:-10.10.10.20}"        # the main Companion
 COMPANION_PORT="${COMPANION_PORT:-16622}"              # Satellite port (NOT the OSC 12321)
 SET_HOSTNAME="${SET_HOSTNAME:-1}"                      # 0 to keep the hostname set at flash time
 INSTALL_SATELLITE="${INSTALL_SATELLITE:-1}"           # 0 to skip Companion Satellite
+FULL_UPGRADE="${FULL_UPGRADE:-1}"                     # 0 to skip apt full-upgrade (faster re-runs)
 
 if [ -z "$KIOSK_ID" ]; then echo "usage: sudo ./setup.sh <kiosk-id>   e.g. kiosk-1" >&2; exit 1; fi
 if [ "$(id -u)" != 0 ]; then echo "run with sudo" >&2; exit 1; fi
@@ -56,10 +57,20 @@ else
   echo "== 1/6 hostname: left as-is =="
 fi
 
-# ---- 2/6 packages -----------------------------------------------------------
-echo "== 2/6 installing kiosk packages =="
+# ---- 2/6 system update + packages ------------------------------------------
+echo "== 2/6 system update + kiosk packages =="
+# Non-interactive apt: never stop on a config prompt or a needrestart dialog,
+# which would otherwise hang a headless run.
 export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
 apt-get update -y
+if [ "$FULL_UPGRADE" = 1 ]; then
+  echo "  full-upgrade (bring a fresh image up to date; can take a while)…"
+  apt-get full-upgrade -y
+fi
+# Prereqs for the Satellite install (curl over https) — present on most images,
+# but not guaranteed on a minimal one.
+apt-get install -y --no-install-recommends curl ca-certificates
 # Xorg + a tiny window manager gives Chromium a real fullscreen window and
 # keyboard focus; unclutter hides the mouse pointer. chromium-browser is the
 # Raspberry Pi OS package (falls back to chromium on plain Debian).
@@ -70,6 +81,7 @@ if ! apt-get install -y --no-install-recommends chromium-browser; then
 fi
 CHROMIUM_BIN="$(command -v chromium-browser || command -v chromium)"
 echo "  chromium: $CHROMIUM_BIN"
+apt-get autoremove -y --purge 2>/dev/null || true
 
 # ---- 3/6 console autologin on tty1 -----------------------------------------
 echo "== 3/6 autologin $KIOSK_USER on tty1 =="
