@@ -8,6 +8,9 @@ import {
   auxSendLevelMessage,
   auxSendOnMessage,
   type ChannelState,
+  type DgChannelType,
+  DG_TYPES,
+  DG_TYPE_BY_TYPE,
   commandSetProfile,
   decodeOsc,
   encodeOsc,
@@ -17,7 +20,6 @@ import {
   type MacroState,
   meterClearMessage,
   meterRequestMessage,
-  meterTapPath,
   meterToDb,
   meterValuesMessage,
   parseMeterRequest,
@@ -106,9 +108,10 @@ class DigicoConnector implements Connector<DigicoConfig> {
   // and hold each channel's raw L/R level+peak (meterLevels). Downstream clients'
   // own /Meters/request are intercepted (not forwarded) — we answer them from
   // our data in their slot numbering (ipadSlots: per client, their slot → ch+leg).
-  private appSlots = new Map<number, { channel: number; leg: 'l' | 'r' }>()
-  private meterLevels = new Map<number, { lLevel: number; lPeak: number; rLevel: number; rPeak: number; at: number }>()
-  private ipadSlots = new Map<string, Map<number, { channel: number; leg: 'l' | 'r' }>>()
+  private appSlots = new Map<number, { type: DgChannelType; channel: number; leg: 'l' | 'r' }>()
+  // meterLevels keyed by `${type}:${channel}` (families number from 1 each).
+  private meterLevels = new Map<string, { lLevel: number; lPeak: number; rLevel: number; rPeak: number; at: number }>()
+  private ipadSlots = new Map<string, Map<number, { type: DgChannelType; channel: number; leg: 'l' | 'r' }>>()
   private meterSubReady = false
   private cancelMeterSub: (() => void) | null = null
   private metersDirty = false
@@ -158,11 +161,14 @@ class DigicoConnector implements Connector<DigicoConfig> {
       const now = Date.now()
       if (this.metersDirty) {
         this.metersDirty = false
-        const meters = [...this.meterLevels.entries()].map(([channel, m]) => ({
-          channel,
-          l: meterToDb(m.lLevel), r: meterToDb(m.rLevel),
-          lp: meterToDb(m.lPeak), rp: meterToDb(m.rPeak),
-        }))
+        const meters = [...this.meterLevels.entries()].map(([key, m]) => {
+          const [type, ch] = key.split(':')
+          return {
+            type, channel: Number(ch),
+            l: meterToDb(m.lLevel), r: meterToDb(m.rLevel),
+            lp: meterToDb(m.lPeak), rp: meterToDb(m.rPeak),
+          }
+        })
         ctx.publish('meters', { meters, at: now })
       }
       this.serveClientMeters()
@@ -245,9 +251,9 @@ class DigicoConnector implements Connector<DigicoConfig> {
       if (req) {
         let map = this.ipadSlots.get(key)
         if (!map) { map = new Map(); this.ipadSlots.set(key, map) }
-        map.set(req.slot, { channel: req.channel, leg: req.leg })
+        map.set(req.slot, { type: req.type, channel: req.channel, leg: req.leg })
       }
-      // Requests for taps we don't meter (e.g. aux outputs) are dropped for now.
+      // Taps we don't recognise are dropped (never forwarded to the console).
       return
     }
     // Forward verbatim to the console (its single OSC connection is ours).
@@ -260,24 +266,34 @@ class DigicoConnector implements Connector<DigicoConfig> {
    *  channel leg (mono → left only; stereo → left+right). Idempotent — the
    *  console just re-binds each slot — so we can call it periodically to cover
    *  channels the scan only just learned and to survive a console restart. */
+  /** Whether a scanned channel is worth metering: a patched/renamed input, or
+   *  an output bus that has a name. */
+  private channelInUse(c: ChannelState): boolean {
+    if (c.type === 'input') return (c.inputType != null && c.inputType !== 0) || (c.name != null && !/^Ch \d+$/.test(c.name))
+    return c.name != null && c.name.trim() !== ''
+  }
+
   private subscribeConsoleMeters(): void {
-    // Input channels only for now — output busses (aux/matrix/group) are scanned
-    // and shown, but their post-fader meter tap isn't confirmed yet, so they're
-    // not requested. (DG_TYPES.meterTap is null for them.)
+    // Every metered family in use: inputs (their source), plus aux/matrix/group
+    // output busses (their output). Inputs are mono unless stereo_mode says
+    // otherwise; output busses meter as stereo L/R, so request both legs.
+    const metered = new Set(DG_TYPES.filter((t) => t.meterTap).map((t) => t.type))
     const inUse = [...this.channels.values()]
-      .filter((c) => c.type === 'input' && ((c.inputType != null && c.inputType !== 0) || (c.name != null && !/^Ch \d+$/.test(c.name))))
-      .sort((a, b) => a.channel - b.channel)
+      .filter((c) => metered.has(c.type) && this.channelInUse(c))
+      .sort((a, b) => (a.type < b.type ? -1 : a.type > b.type ? 1 : a.channel - b.channel))
     if (inUse.length === 0) return
-    const next = new Map<number, { channel: number; leg: 'l' | 'r' }>()
+    const next = new Map<number, { type: DgChannelType; channel: number; leg: 'l' | 'r' }>()
     let slot = 0
     for (const c of inUse) {
-      next.set(slot++, { channel: c.channel, leg: 'l' })
-      if (c.stereo) next.set(slot++, { channel: c.channel, leg: 'r' })
+      const spec = DG_TYPE_BY_TYPE[c.type]
+      const stereo = c.type === 'input' ? c.stereo : spec.stereoOut
+      next.set(slot++, { type: c.type, channel: c.channel, leg: 'l' })
+      if (stereo) next.set(slot++, { type: c.type, channel: c.channel, leg: 'r' })
     }
     this.appSlots = next
     // Clear once, the first time, so stale slots from before don't linger.
     if (!this.meterSubReady) { this.send(meterClearMessage); this.meterSubReady = true }
-    for (const [s, bind] of next) this.send(meterRequestMessage(s, meterTapPath(bind.channel, bind.leg)))
+    for (const [s, bind] of next) this.send(meterRequestMessage(s, DG_TYPE_BY_TYPE[bind.type].meterTap!(bind.channel, bind.leg)))
   }
 
   /** Serve every relay client the meters it asked for, in ITS slot numbering,
@@ -295,7 +311,7 @@ class DigicoConnector implements Connector<DigicoConfig> {
       if (sentTo) { if (sentTo.has(client.address)) continue; sentTo.add(client.address) }
       const rows: Array<{ slot: number; level: number; peak: number }> = []
       for (const [s, bind] of map) {
-        const m = this.meterLevels.get(bind.channel)
+        const m = this.meterLevels.get(`${bind.type}:${bind.channel}`)
         if (!m) continue
         rows.push(bind.leg === 'l'
           ? { slot: s, level: m.lLevel, peak: m.lPeak }
@@ -474,12 +490,13 @@ class DigicoConnector implements Connector<DigicoConfig> {
       for (const s of update.meters) {
         const bind = this.appSlots.get(s.slot)
         if (!bind) continue
-        const cur = this.meterLevels.get(bind.channel)
+        const mkey = `${bind.type}:${bind.channel}`
+        const cur = this.meterLevels.get(mkey)
           ?? { lLevel: METER_FLOOR, lPeak: METER_FLOOR, rLevel: METER_FLOOR, rPeak: METER_FLOOR, at: 0 }
         if (bind.leg === 'l') { cur.lLevel = s.level; cur.lPeak = s.peak }
         else { cur.rLevel = s.level; cur.rPeak = s.peak }
         cur.at = now
-        this.meterLevels.set(bind.channel, cur)
+        this.meterLevels.set(mkey, cur)
       }
       this.metersDirty = true
     }
@@ -511,7 +528,8 @@ class DigicoConnector implements Connector<DigicoConfig> {
       input: ctx.config.channelCount || 32,
       aux: ctx.config.auxCount ?? 16,
       matrix: ctx.config.matrixCount ?? 16,
-      group: ctx.config.groupCount ?? 24,
+      group: ctx.config.groupCount ?? 24, // audio Groups (Group_Outputs)
+      vca: ctx.config.groupCount ?? 24, // Control Groups / VCAs (no meter)
     }
     for (const message of queryMessages(this.profile().prefix, counts)) {
       this.send(message)

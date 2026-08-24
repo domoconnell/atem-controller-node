@@ -211,29 +211,35 @@ export function normaliseAddress(address: string): string {
 
 /** The console's channel families. Each has its own address root and its own
  *  numbering that restarts at 1, so a channel is identified by (type, number).
- *  Inputs meter their SOURCE (post-input); output busses meter their OUTPUT
- *  (post-fader) — a different tap the iPad protocol doesn't document, so
- *  `meterTap` is null for those until a live capture confirms it. */
-export type DgChannelType = 'input' | 'aux' | 'matrix' | 'group'
+ *  Inputs meter their SOURCE (post-input, `Channel_Input/post_meter`); output
+ *  busses meter their OUTPUT (`Output/meter`, stereo L/R) — confirmed by
+ *  capturing what the iPad requests. VCAs (Control_Groups) have no meter. */
+export type DgChannelType = 'input' | 'aux' | 'matrix' | 'group' | 'vca'
 export interface DgTypeSpec {
   type: DgChannelType
   root: string // OSC root under the command-set prefix, e.g. 'Input_Channels'
   label: string
   nameLeaf: string // leaf under /root/N/ carrying the channel name
   hasFormat: boolean // only input channels expose stereo_mode / input_type
+  stereoOut: boolean // output busses meter as stereo L/R (request both legs)
   scanLeaves: string[] // leaves to query to hydrate this type
   meterTap: ((n: number, leg: 'l' | 'r') => string) | null
 }
+/** Output busses share one meter tap shape: /<Root>/N/Output/meter/<leg>. */
+const outTap = (root: string) => (n: number, leg: 'l' | 'r') => `/${root}/${n}/Output/meter/${leg === 'r' ? 'right' : 'left'}`
 export const DG_TYPES: DgTypeSpec[] = [
   {
-    type: 'input', root: 'Input_Channels', label: 'Input', nameLeaf: 'Channel_Input/name', hasFormat: true,
+    type: 'input', root: 'Input_Channels', label: 'Input', nameLeaf: 'Channel_Input/name', hasFormat: true, stereoOut: false,
     scanLeaves: ['Channel_Input/name', 'mute', 'fader', 'Channel_Input/stereo_mode', 'Channel_Input/input_type'],
     meterTap: (n, leg) => `/Input_Channels/${n}/Channel_Input/post_meter/${leg === 'r' ? 'right' : 'left'}`,
   },
-  { type: 'aux', root: 'Aux_Outputs', label: 'Aux', nameLeaf: 'Buss_Trim/name', hasFormat: false, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: null },
-  { type: 'matrix', root: 'Matrix_Outputs', label: 'Matrix', nameLeaf: 'Buss_Trim/name', hasFormat: false, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: null },
-  { type: 'group', root: 'Control_Groups', label: 'Group', nameLeaf: 'name', hasFormat: false, scanLeaves: ['name', 'mute', 'fader'], meterTap: null },
+  { type: 'aux', root: 'Aux_Outputs', label: 'Aux', nameLeaf: 'Buss_Trim/name', hasFormat: false, stereoOut: true, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: outTap('Aux_Outputs') },
+  { type: 'matrix', root: 'Matrix_Outputs', label: 'Matrix', nameLeaf: 'Buss_Trim/name', hasFormat: false, stereoOut: true, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: outTap('Matrix_Outputs') },
+  { type: 'group', root: 'Group_Outputs', label: 'Group', nameLeaf: 'Buss_Trim/name', hasFormat: false, stereoOut: true, scanLeaves: ['Buss_Trim/name', 'mute', 'fader'], meterTap: outTap('Group_Outputs') },
+  // VCAs — shown in the channel list, but they have no output meter.
+  { type: 'vca', root: 'Control_Groups', label: 'VCA', nameLeaf: 'name', hasFormat: false, stereoOut: false, scanLeaves: ['name', 'mute', 'fader'], meterTap: null },
 ]
+export const DG_TYPE_BY_TYPE: Record<string, DgTypeSpec> = Object.fromEntries(DG_TYPES.map((s) => [s.type, s]))
 export const DG_TYPE_BY_ROOT: Record<string, DgTypeSpec> = Object.fromEntries(DG_TYPES.map((s) => [s.root, s]))
 
 export interface ChannelState {
@@ -306,16 +312,25 @@ export interface DigicoUpdate {
  *  every slot. We learn the slot→channel map by watching these on the relay. */
 export function parseMeterRequest(
   message: OscMessage,
-): { slot: number; channel: number; leg: 'l' | 'r' } | 'clear' | null {
+): { slot: number; type: DgChannelType; channel: number; leg: 'l' | 'r' } | 'clear' | null {
   const address = normaliseAddress(message.address)
   if (address === '/Meters/clear') return 'clear'
   const m = /^\/Meters\/request\/(\d+)$/.exec(address)
   if (!m) return null
   const path = message.args[0]
   if (typeof path !== 'string') return null
-  const pm = /\/Input_Channels\/(\d+)\/Channel_Input\/post_meter\/(left|right)/i.exec(path)
-  if (!pm) return null
-  return { slot: Number(m[1]), channel: Number(pm[1]), leg: pm[2].toLowerCase() === 'right' ? 'r' : 'l' }
+  const slot = Number(m[1])
+  const leg = (s: string): 'l' | 'r' => (s.toLowerCase() === 'right' ? 'r' : 'l')
+  // Input source meter: /Input_Channels/N/Channel_Input/post_meter/<leg>
+  const inp = /\/Input_Channels\/(\d+)\/Channel_Input\/post_meter\/(left|right)/i.exec(path)
+  if (inp) return { slot, type: 'input', channel: Number(inp[1]), leg: leg(inp[2]) }
+  // Output bus meter: /<Root>/N/Output/meter/<leg>
+  const out = /\/(Aux_Outputs|Matrix_Outputs|Group_Outputs)\/(\d+)\/Output\/meter\/(left|right)/i.exec(path)
+  if (out) {
+    const type = out[1] === 'Aux_Outputs' ? 'aux' : out[1] === 'Matrix_Outputs' ? 'matrix' : 'group'
+    return { slot, type, channel: Number(out[2]), leg: leg(out[3]) }
+  }
+  return null
 }
 
 /** Parse an aux-send address ".../Input_Channels/{ch}/Aux_Send/{aux}/{leaf}". */
@@ -417,7 +432,7 @@ export function interpret(message: OscMessage, directDb = false): DigicoUpdate |
 /** Query messages the console answers with current values. */
 /** How many of each channel family to scan. Over-scanning is harmless — the
  *  desk simply doesn't answer for channels it doesn't have. */
-export interface DgCounts { input: number; aux: number; matrix: number; group: number }
+export type DgCounts = Record<DgChannelType, number>
 
 export function queryMessages(prefix: string, counts: DgCounts): OscMessage[] {
   const messages: OscMessage[] = [{ address: `${prefix}/Macros/Buttons/?`, args: [] }]

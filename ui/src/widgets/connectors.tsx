@@ -293,11 +293,15 @@ function SmaartSpectrum({ instanceId, title }: WidgetProps) {
 registerWidget({ type: 'smaart-spectrum', label: 'SPL · spectrum (RTA)', supportedTypeIds: ['smaart'], defaultSize: { w: 6, h: 4 }, Component: SmaartSpectrum })
 
 /* ================================================================== DIGICO */
-type DgType = 'input' | 'aux' | 'matrix' | 'group'
+type DgType = 'input' | 'aux' | 'matrix' | 'group' | 'vca'
 type DgCh = { type?: DgType; channel: number; name: string | null; muted: boolean | null; faderDb: number | null; stereo: boolean | null; inputType: number | null }
-type DgMeter = { channel: number; l: number; r: number; lp: number; rp: number }
-const DG_TYPE_ORDER: Record<DgType, number> = { input: 0, aux: 1, matrix: 2, group: 3 }
-const DG_TYPE_LABEL: Record<DgType, string> = { input: 'IN', aux: 'AUX', matrix: 'MTX', group: 'GRP' }
+type DgMeter = { type?: DgType; channel: number; l: number; r: number; lp: number; rp: number }
+const DG_TYPE_ORDER: Record<DgType, number> = { input: 0, aux: 1, matrix: 2, group: 3, vca: 4 }
+const DG_TYPE_LABEL: Record<DgType, string> = { input: 'IN', aux: 'AUX', matrix: 'MTX', group: 'GRP', vca: 'VCA' }
+/** Words that select a family in the meters "Channels" box. Output busses meter
+ *  as stereo (two bars); VCAs have no meter. */
+const DG_ALIAS: Record<string, DgType> = { in: 'input', input: 'input', ch: 'input', aux: 'aux', mtx: 'matrix', matrix: 'matrix', mat: 'matrix', grp: 'group', group: 'group', vca: 'vca' }
+const dgKey = (c: { type?: DgType; channel: number }) => `${c.type ?? 'input'}:${c.channel}`
 /** Channels actually in use: inputs that are patched/renamed; output busses that
  *  reported a name (auxes, matrices, groups). Sorted by family then number. */
 function dgInUse(channels?: DgCh[]): DgCh[] {
@@ -307,26 +311,33 @@ function dgInUse(channels?: DgCh[]): DgCh[] {
     return !!c.name // output bus that the scan found
   }).sort((a, b) => (DG_TYPE_ORDER[a.type ?? 'input'] - DG_TYPE_ORDER[b.type ?? 'input']) || a.channel - b.channel)
 }
-/** Parse a channel-range string ("1-16", "1,2,5-8") to channel numbers; blank
- *  defaults to 1..fallback (the first N channels). */
-function dgParseChannels(str: string | undefined, fallback = 32): number[] {
-  if (!str || !str.trim()) return Array.from({ length: fallback }, (_, i) => i + 1)
-  const out = new Set<number>()
-  for (const part of str.split(',')) {
-    const m = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(part)
-    if (m) { const a = +m[1], b = +m[2]; for (let i = Math.min(a, b); i <= Math.max(a, b); i++) out.add(i) }
-    else { const n = Number(part.trim()); if (n > 0) out.add(n) }
+/** Parse the meters "Channels" box into (type, number) selections. A family word
+ *  ("aux", "group", "mtx"…) sets the type for what follows and persists until the
+ *  next word; bare numbers start as inputs. E.g. "1-16, aux 1-8, group 1-4".
+ *  Blank = the first 32 inputs. */
+function dgParseSelection(str: string | undefined): { type: DgType; channel: number }[] {
+  if (!str || !str.trim()) return Array.from({ length: 32 }, (_, i) => ({ type: 'input' as DgType, channel: i + 1 }))
+  const out: { type: DgType; channel: number }[] = []
+  const seen = new Set<string>()
+  const add = (type: DgType, n: number) => { const k = `${type}:${n}`; if (n > 0 && !seen.has(k)) { seen.add(k); out.push({ type, channel: n }) } }
+  let type: DgType = 'input'
+  for (let part of str.split(',')) {
+    part = part.trim(); if (!part) continue
+    const tm = /^([a-z]+)\s*(.*)$/i.exec(part)
+    if (tm && DG_ALIAS[tm[1].toLowerCase()]) { type = DG_ALIAS[tm[1].toLowerCase()]; part = tm[2].trim() }
+    if (!part) continue
+    const rm = /^(\d+)\s*-\s*(\d+)$/.exec(part)
+    if (rm) { for (let i = Math.min(+rm[1], +rm[2]); i <= Math.max(+rm[1], +rm[2]); i++) add(type, i) }
+    else { const n = Number(part); if (n > 0) add(type, n) }
   }
-  return [...out].sort((a, b) => a - b)
+  return out
 }
-/** Resolve the selected channel numbers against the live scan (unscanned ones
- *  become mono placeholders so the layout is stable while the scan fills in). */
+/** Resolve the (type, number) selection against the live scan (unscanned ones
+ *  become placeholders so the layout is stable while the scan fills in). */
 function dgSelected(config: Record<string, unknown>, channels?: DgCh[]): DgCh[] {
-  // Meters are input-only for now, so resolve the range against input channels.
-  const inputs = (channels ?? []).filter((c) => (c.type ?? 'input') === 'input')
-  const byNum = new Map(inputs.map((c) => [c.channel, c]))
-  return dgParseChannels(config.channels as string | undefined).map(
-    (n) => byNum.get(n) ?? { type: 'input' as const, channel: n, name: null, muted: null, faderDb: null, stereo: false, inputType: null },
+  const byKey = new Map((channels ?? []).map((c) => [dgKey(c), c]))
+  return dgParseSelection(config.channels as string | undefined).map(({ type, channel }) =>
+    byKey.get(`${type}:${channel}`) ?? { type, channel, name: null, muted: null, faderDb: null, stereo: type !== 'input', inputType: null },
   )
 }
 /** dB (−60..0) → fill height %. −Infinity / off → 0. */
@@ -355,7 +366,7 @@ function DigicoMeters({ instanceId, title, config }: WidgetProps) {
   const cfg = useStream(instanceId, 'channels') as { channels?: DgCh[] } | null
   const met = useStream(instanceId, 'meters') as { meters?: DgMeter[] } | null
   const channels = dgSelected(config, cfg?.channels)
-  const byCh = new Map((met?.meters ?? []).map((m) => [m.channel, m]))
+  const byCh = new Map((met?.meters ?? []).map((m) => [dgKey(m), m]))
   return (
     <div className="h-full flex flex-col">
       {title ? <div className="shrink-0 text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 pt-2 pb-1 truncate">{title}</div> : null}
@@ -365,18 +376,18 @@ function DigicoMeters({ instanceId, title, config }: WidgetProps) {
           {[0, -12, -24, -36, -48, -60].map((v) => <span key={v}>{v}</span>)}
         </div>
         {channels.map((c) => {
-          const m = byCh.get(c.channel)
-          const a = m?.l ?? -Infinity
-          const b = m?.r ?? -Infinity
-          const ap = m?.lp ?? -Infinity
-          const bp = m?.rp ?? -Infinity
+          const t = c.type ?? 'input'
+          const m = byCh.get(dgKey(c))
+          const a = m?.l ?? -Infinity, b = m?.r ?? -Infinity, ap = m?.lp ?? -Infinity, bp = m?.rp ?? -Infinity
+          // Output busses meter stereo (L/R); inputs follow their stereo flag.
+          const stereo = t === 'input' ? !!c.stereo : t !== 'vca'
           return (
-            <div key={c.channel} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
-              <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', c.stereo ? 'bg-info/15 text-info' : 'bg-muted/60 text-muted-foreground')}>{c.stereo ? 'ST' : 'M'}</span>
+            <div key={dgKey(c)} className="shrink-0 flex flex-col items-center gap-1 min-w-0">
+              <span className={cn('text-[8px] font-black uppercase tracking-wider rounded px-1 py-0.5', t === 'input' ? 'bg-muted/60 text-muted-foreground' : 'bg-info/15 text-info')}>{DG_TYPE_LABEL[t]}</span>
               <div className="flex-1 min-h-0 flex gap-0.5">
-                {c.stereo ? <><DgBar db={a} peak={ap} /><DgBar db={b} peak={bp} /></> : <DgBar db={a} peak={ap} />}
+                {stereo ? <><DgBar db={a} peak={ap} /><DgBar db={b} peak={bp} /></> : <DgBar db={a} peak={ap} />}
               </div>
-              <span className="text-[9px] text-muted-foreground truncate max-w-[3.5rem]" title={c.name ?? `Ch ${c.channel}`}>{c.name || `Ch ${c.channel}`}</span>
+              <span className="text-[9px] text-muted-foreground truncate max-w-[3.5rem]" title={c.name ?? `${DG_TYPE_LABEL[t]} ${c.channel}`}>{c.name || `${DG_TYPE_LABEL[t]} ${c.channel}`}</span>
             </div>
           )
         })}
@@ -384,7 +395,7 @@ function DigicoMeters({ instanceId, title, config }: WidgetProps) {
     </div>
   )
 }
-registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, configFields: [{ key: 'channels', label: 'Channels (e.g. 1-16; blank = first 32)', kind: 'text' }], Component: DigicoMeters })
+registerWidget({ type: 'digico-meters', label: 'DiGiCo · meters', supportedTypeIds: ['digico'], defaultSize: { w: 4, h: 4 }, configFields: [{ key: 'channels', label: 'Channels — e.g. "1-16, aux 1-8, group 1-4" (blank = first 32 inputs)', kind: 'text' }], Component: DigicoMeters })
 
 /** The console's input-channel list: name, mono/stereo, patched, mute + fader.
  *  This is the channel map the meters get mapped onto. */
