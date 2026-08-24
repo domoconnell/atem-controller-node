@@ -1,4 +1,5 @@
 'use client'
+import { useState, useEffect, useRef } from 'react'
 import { registerWidget, type WidgetProps } from './registry'
 import { useStream, useTopic } from '@/hooks/use-topic'
 import { usePulseOn, useDanger, dangerHigh, dangerLow } from '@/components/surfaces/pulse'
@@ -19,6 +20,29 @@ function fmtHMS(sec?: number | null): string | null {
   const s = Math.max(0, Math.round(sec))
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+}
+
+/** A HyperDeck only reports timecode when polled (~2s), so the raw value steps
+ *  in 2s jumps while playing. Tick it forward locally between updates for a
+ *  smooth clock, snapping to each real value as it arrives (so a loop that wraps
+ *  the timecode just snaps back cleanly). Frames are dropped — HH:MM:SS. */
+function useTickingTimecode(raw: string | undefined, live: boolean): string | undefined {
+  const base = useRef<{ sec: number; at: number } | null>(null)
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const m = raw ? /(\d+):(\d+):(\d+)/.exec(raw) : null
+    base.current = m ? { sec: +m[1] * 3600 + +m[2] * 60 + +m[3], at: Date.now() } : null
+    tick((v) => v + 1)
+  }, [raw])
+  useEffect(() => {
+    if (!live) return
+    const id = setInterval(() => tick((v) => v + 1), 250)
+    return () => clearInterval(id)
+  }, [live])
+  if (!base.current) return raw
+  const total = base.current.sec + (live ? Math.max(0, Math.floor((Date.now() - base.current.at) / 1000)) : 0)
+  const h = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
 type ToneKey = 'rec' | 'play' | 'idle' | 'off'
@@ -82,10 +106,12 @@ function HyperdeckRec({ rec }: { rec: Recorder }) {
   const recording = s === 'record'
   const playing = /play|forward|jog|shuttle|var/.test(s)
   const tone: ToneKey = t == null ? 'off' : recording ? 'rec' : playing ? 'play' : 'idle'
+  // Tick the timecode locally while moving so it doesn't leap 2s at the poll rate.
+  const big = useTickingTimecode(t?.displayTimecode || t?.timecode, recording || playing)
   const n: Norm = {
     icon: Film, tone,
     statusLabel: t == null ? 'OFFLINE' : recording ? 'REC' : playing ? 'PLAY' : (s ? s.toUpperCase() : 'STOP'),
-    big: t?.displayTimecode || t?.timecode,
+    big,
     format: slot?.videoFormat || dev?.model,
     sub: slot?.volumeName,
     gauge: rec.role === 'record' ? timeGauge(slot?.recordingTimeSeconds) : null,
