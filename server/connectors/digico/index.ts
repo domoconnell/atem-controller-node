@@ -41,8 +41,8 @@ export const digicoConfigSchema = z.object({
     .describe('The port WE listen on for the console’s feedback — point the desk’s “Send to” at this machine on this port. 0 = OS-assigned.'),
   commandSet: z.enum(['ipad', 'osc']).default('ipad')
     .describe('Must MATCH the console’s enabled External Control device, or commands are ignored. “iPad” = the DiGiCo Pad device (no address prefix, fader/send levels in dB) — the set consoles run with iPads connected, and Companion’s default. “OSC” = the “Other OSC” device (/sd addresses, 0..1 taper faders). (S-series is a separate scheme, not yet supported.)'),
-  channelCount: z.number().int().min(0).max(128).default(32)
-    .describe('How many input channels WE query at startup to pre-load names/mutes/faders. Not a console setting — just how much state we hydrate up front (the desk auto-sends changes after that).'),
+  channelCount: z.number().int().min(0).max(256).default(64)
+    .describe('How many input channels WE query at startup to pre-load names/mutes/faders. Not a console setting — just how much state we hydrate up front (the desk auto-sends changes after that). Raise for large consoles (e.g. 128 or 256 on an SD7); over-scanning is harmless.'),
   auxCount: z.number().int().min(0).max(64).default(16)
     .describe('How many aux OUTPUTS to scan for names/faders. Over-scanning is harmless — the desk just ignores ones it doesn’t have.'),
   matrixCount: z.number().int().min(0).max(64).default(16)
@@ -77,9 +77,9 @@ export const digicoConfigSchema = z.object({
 export type DigicoConfig = z.infer<typeof digicoConfigSchema>
 
 const fireMacroInput = z.object({ index: z.number().int().min(1).max(500) })
-const muteChannelInput = z.object({ channel: z.number().int().min(1).max(128), muted: z.boolean() })
-const faderInput = z.object({ channel: z.number().int().min(1).max(128), db: z.number().min(-150).max(10) })
-const auxSendInput = z.object({ channel: z.number().int().min(1).max(128), aux: z.number().int().min(1).max(64), db: z.number().min(-150).max(10).optional(), on: z.boolean().optional() })
+const muteChannelInput = z.object({ channel: z.number().int().min(1).max(256), muted: z.boolean() })
+const faderInput = z.object({ channel: z.number().int().min(1).max(256), db: z.number().min(-150).max(10) })
+const auxSendInput = z.object({ channel: z.number().int().min(1).max(256), aux: z.number().int().min(1).max(64), db: z.number().min(-150).max(10).optional(), on: z.boolean().optional() })
 const snapshotInput = z.object({ number: z.number().int().min(1).max(9999) })
 const noInput = z.object({})
 
