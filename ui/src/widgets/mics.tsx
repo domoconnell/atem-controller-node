@@ -33,23 +33,27 @@ export function useMicLive(mic: MicObj) {
 }
 
 // ---- status → colour, in keeping with the UI ------------------------------
-// Green: battery fine, unmuted, live. Orange: battery fine but muted/standby/
-// off. Red: no RF or low battery.
+// Red is reserved for a genuine FAULT you'd read as "down": the receiver is
+// OFFLINE, or the battery is low. Green: online, live and actually transmitting
+// (RF present), unmuted. Orange: online but standby — muted, not cued live, or
+// no transmitter RF (e.g. the handheld isn't keyed). A receiver being online
+// with no RF is NOT offline, so it must not go red (it just isn't live yet).
 type Tone = 'green' | 'orange' | 'red'
 const TONE: Record<Tone, string> = {
   green: 'border-live/25 bg-live/[0.04]',
   orange: 'border-busy/30 bg-busy/[0.05]',
   red: 'border-destructive/35 bg-destructive/[0.05]',
 }
-const noRf = (online: boolean, rf: number | null | undefined) => !online || rf == null || rf <= 0.02
+const noSignal = (rf: number | null | undefined) => rf == null || rf <= 0.02
 const lowBat = (b: number | null | undefined) => b != null && b <= 20
 function compositeTone(online: boolean, rf: number | null | undefined, battery: number | null | undefined, muted: boolean, cue: CueState): Tone {
-  if (noRf(online, rf) || lowBat(battery)) return 'red'
-  if (cue === 'live' && !muted) return 'green'
+  if (!online || lowBat(battery)) return 'red'
+  if (cue === 'live' && !muted && !noSignal(rf)) return 'green'
   return 'orange'
 }
 function receiverTone(online: boolean, rf: number | null | undefined, battery: number | null | undefined, muted: boolean): Tone {
-  if (noRf(online, rf) || lowBat(battery)) return 'red'
+  void rf
+  if (!online || lowBat(battery)) return 'red'
   return muted ? 'orange' : 'green'
 }
 
