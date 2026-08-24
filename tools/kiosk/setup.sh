@@ -114,15 +114,20 @@ done
 EOF
 
 # .bash_profile: on the physical console (tty1), start X — which runs .xinitrc.
-if ! grep -q 'startx.*kiosk-managed' "$KIOSK_HOME/.bash_profile" 2>/dev/null; then
-  cat >> "$KIOSK_HOME/.bash_profile" <<'EOF'
-
-# kiosk-managed: start the display on the physical console only
+# Idempotently rewrite our managed block. We LOOP startx rather than exec it
+# once: with no monitor attached startx fails immediately, and exec-once would
+# kill the login shell → getty respawns → hits its start-limit → 'failed'. The
+# loop just retries every few seconds, so the kiosk comes up the moment a
+# display is present and getty stays healthy.
+touch "$KIOSK_HOME/.bash_profile"
+sed -i '/# kiosk-managed-start/,/# kiosk-managed-end/d' "$KIOSK_HOME/.bash_profile"
+cat >> "$KIOSK_HOME/.bash_profile" <<'EOF'
+# kiosk-managed-start
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  exec startx -- -nocursor
+  while true; do startx -- -nocursor; sleep 3; done
 fi
+# kiosk-managed-end
 EOF
-fi
 chown "$KIOSK_USER:$KIOSK_USER" "$KIOSK_HOME/.xinitrc" "$KIOSK_HOME/.bash_profile"
 
 # ---- 5/6 kill console blanking at the kernel level -------------------------
@@ -152,8 +157,12 @@ if [ "$INSTALL_SATELLITE" = 1 ]; then
   for cfg in /boot/firmware/satellite-config /boot/satellite-config; do
     if [ -f "$cfg" ]; then
       echo "  setting $cfg -> $COMPANION_HOST:$COMPANION_PORT"
-      sed -i "s/^COMPANION_IP=.*/COMPANION_IP=$COMPANION_HOST/"   "$cfg"
-      sed -i "s/^COMPANION_PORT=.*/COMPANION_PORT=$COMPANION_PORT/" "$cfg"
+      # The template ships these COMMENTED (# COMPANION_IP=127.0.0.1), so match an
+      # optional leading '# ' and rewrite to an active setting; append if absent.
+      sed -i -E "s|^#?[[:space:]]*COMPANION_IP=.*|COMPANION_IP=$COMPANION_HOST|"     "$cfg"
+      sed -i -E "s|^#?[[:space:]]*COMPANION_PORT=.*|COMPANION_PORT=$COMPANION_PORT|" "$cfg"
+      grep -qE "^COMPANION_IP="   "$cfg" || echo "COMPANION_IP=$COMPANION_HOST"   >> "$cfg"
+      grep -qE "^COMPANION_PORT=" "$cfg" || echo "COMPANION_PORT=$COMPANION_PORT" >> "$cfg"
     fi
   done
   # REST API (documented): apply without waiting for a reboot. Retry while the
