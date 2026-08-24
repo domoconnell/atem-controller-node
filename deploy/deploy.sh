@@ -54,13 +54,21 @@ fi
 echo "Node on Pi: $(node -v)"
 REMOTE
 
-echo "== 3/5 Syncing project =="
-# 'P looks/***' and 'P macros/***' protect looks/macros captured ON the Pi
-# from being deleted by a later deploy; new local ones still sync over.
+echo "== 3/5 Syncing project (CODE ONLY — never runtime data) =="
+# Runtime/captured data lives ONLY on the Pi and is fully EXCLUDED from the sync
+# — never sent, never deleted. (A plain 'protect' filter guards against deletion
+# but NOT against a local copy overwriting the Pi's, which would clobber the live
+# DB. Full excludes make the deploy physically incapable of touching data.)
+#   data/   – the SQLite DB (all instances, surfaces, mics, settings) + layouts
+#   looks/  – looks captured on the Pi
+#   macros/ – macros captured on the Pi
+# To push a DB on purpose, use deploy/push-db.sh (deliberate, stops the service).
 rsync -az --delete \
   --exclude node_modules --exclude .git --exclude .DS_Store \
   --exclude ui --exclude ui-legacy --exclude test \
-  --filter='P looks/***' --filter='P macros/***' --filter='P data/***' \
+  --exclude data --exclude 'data/**' \
+  --exclude looks --exclude 'looks/**' \
+  --exclude macros --exclude 'macros/**' \
   -e "ssh -o ControlMaster=auto -o ControlPath=$CTRL -o ControlPersist=600" \
   "$PROJECT_DIR/" "$PI:$APP_DIR/"
 
