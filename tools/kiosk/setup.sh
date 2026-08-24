@@ -124,7 +124,14 @@ sed -i '/# kiosk-managed-start/,/# kiosk-managed-end/d' "$KIOSK_HOME/.bash_profi
 cat >> "$KIOSK_HOME/.bash_profile" <<'EOF'
 # kiosk-managed-start
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  while true; do startx -- -nocursor; sleep 3; done
+  # Only start X when a display is actually connected — otherwise idle quietly.
+  # (Repeatedly launching Xorg on a headless Pi thrashes the KMS layer.)
+  while true; do
+    if grep -qx connected /sys/class/drm/*/status 2>/dev/null; then
+      startx -- -nocursor
+    fi
+    sleep 5
+  done
 fi
 # kiosk-managed-end
 EOF
