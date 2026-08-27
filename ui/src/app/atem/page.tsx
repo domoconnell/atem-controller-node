@@ -177,6 +177,7 @@ export default function Page() {
                       onSelect={() => setTargetName(look.name)}
                       onGoto={() => cmd('/goto', [look.name])}
                       onOpen={() => { setOpenLook(look); setSheetOpen(true) }}
+                      onDelete={() => cmd('/look/delete', [look.name])}
                     />
                   )
                   const gridCls = 'grid gap-2.5 grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 min-[2000px]:grid-cols-8'

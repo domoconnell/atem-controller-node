@@ -4,10 +4,10 @@ import { cn } from '@/lib/utils'
 import { SsMonitor } from './ss-monitor'
 import { lookScene, liveScene, ppMediaThumb } from '@/lib/scene'
 import { useLookPreview } from '@/hooks/use-look-preview'
-import { Play, Info, MonitorPlay, Zap, Film } from 'lucide-react'
+import { Play, Info, MonitorPlay, Zap, Film, Trash2 } from 'lucide-react'
 
 export function LookTile({
-  look, state, isCurrent, isTarget, grade, locked, onGoto, onSelect, onOpen,
+  look, state, isCurrent, isTarget, grade, locked, onGoto, onSelect, onOpen, onDelete,
 }: {
   look: Look
   state: Snapshot
@@ -18,6 +18,7 @@ export function LookTile({
   onGoto: () => void
   onSelect: () => void
   onOpen: () => void
+  onDelete?: () => void
 }) {
   const inputName = (id: number) => state.atem.inputs[id] ?? String(id)
   const usks = look.me?.uskOnAir ?? []
@@ -40,6 +41,16 @@ export function LookTile({
         !isCurrent && !isTarget && 'hover:border-foreground/25'
       )}
     >
+      {onDelete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete look '${look.name}'?`)) onDelete() }}
+          disabled={locked}
+          className="absolute top-3 right-3 z-10 size-7 rounded-md bg-black/55 backdrop-blur-sm border border-border/50 text-muted-foreground/90 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive hover:border-destructive/60 grid place-items-center transition-all disabled:opacity-0"
+          title={`Delete '${look.name}'`}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
       <SsMonitor scene={anim.scene} mixTo={anim.mixTo} inputName={inputName} mediaThumbUrl={ppMediaThumb(look.pro?.media, 200)} displayBox={state.displayBox} proInput={state.propresenterInput} showLabels showGrid={false} className="p-1 rounded-lg" />
 
       <div className="mt-2 flex items-start gap-2">
