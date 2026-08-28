@@ -45,7 +45,7 @@ export function LookTile({
         <button
           onClick={(e) => { e.stopPropagation(); if (confirm(`Delete look '${look.name}'?`)) onDelete() }}
           disabled={locked}
-          className="absolute top-3 right-3 z-10 size-7 rounded-md bg-black/55 backdrop-blur-sm border border-border/50 text-muted-foreground/90 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive hover:border-destructive/60 grid place-items-center transition-all disabled:opacity-0"
+          className="absolute top-3 right-3 z-10 size-7 rounded-md bg-black/55 backdrop-blur-sm border border-border/50 text-muted-foreground opacity-80 hover:opacity-100 hover:text-destructive hover:border-destructive/60 grid place-items-center transition-all disabled:opacity-30 disabled:pointer-events-none"
           title={`Delete '${look.name}'`}
         >
           <Trash2 className="size-3.5" />
